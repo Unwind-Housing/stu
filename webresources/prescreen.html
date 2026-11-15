@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pre-screen</title>
+<link rel="stylesheet" href="pages.css">
+<script src="pages.js"></script>
+<script src="prescreen.js"></script>
+</head>
+<body>
+<div class="page">
+
+  <div class="banner">
+    <img data-logo alt="">
+    <div>
+      <h1>Pre-screen a project's applications</h1>
+      <p>Tests each screener against the project's rules, shows the result, and saves it when you're ready.</p>
+    </div>
+  </div>
+
+  <h2>1. Project</h2>
+  <div class="toolbar">
+    <label>Pre-screen
+      <select id="project"><option value="">Loading projects...</option></select>
+    </label>
+    <span id="projectinfo" class="d" style="color: var(--muted); align-self: center"></span>
+  </div>
+  <p class="warnline" id="gaps" hidden></p>
+
+  <h2>2. Results <small id="count"></small></h2>
+  <div class="tablewrap">
+    <table class="data">
+      <thead><tr>
+        <th>Application</th><th>Household</th><th>Income</th><th>% AMI</th><th>Sizes wanted</th>
+        <th>Result</th><th>Eligible for</th><th>Why</th><th>Saved now</th>
+      </tr></thead>
+      <tbody id="rows"><tr><td colspan="9">Pick a project.</td></tr></tbody>
+    </table>
+  </div>
+  <div class="bottombar">
+    <button class="btn primary" id="save" type="button" disabled>Save results</button>
+    <span class="msg" id="msg"></span>
+  </div>
+
+  <p class="note">The pre-screen uses what applicants said on the screener; nothing is verified yet. Certification checks the
+    same rules again against verified figures. Select a result to see every test. An application with
+    <b>Pre-screen overridden</b> ticked, or one already past the pre-screen with a saved result, is shown but never changed.
+    To override a result, open the application, change <b>Pre-screen result</b>, tick <b>Pre-screen overridden</b>,
+    and say who, when and why in <b>Pre-screen notes</b>.</p>
+</div>
+
+<script>
+(function () {
+  var P = CLTPage, fv = P.fv, PS = CLTPrescreen;
+  var projects = [], org = {}, apps = [], rules = null, choices = null, sets = {};
+  var $ = function (id) { return document.getElementById(id); };
+  var money = function (n) { return n == null ? "" : "$" + Math.round(n).toLocaleString(); };
+  var first = function (a, b) { return a === null || a === undefined || a === "" ? b : a; };
+  var RULE_COLS = "clt_maxami,clt_minami,clt_firsttimebuyer,clt_localtie,clt_assetlimit,clt_housingratiomax,clt_debtratiomax";
+  var OPEN = { "": 1, "Screener submitted": 1, "Pre-screened": 1 };   // stages the pre-screen may still change
+
+  function load() {
+    return Promise.all(["clt_eligibility", "clt_eligibilitycheck", "clt_projectpriority"].map(function (t) {
+      return P.entitySet(t).then(function (es) { sets[t] = es; });
+    })).then(function () {
+      return Promise.all([
+        P.getAll("clt_projects?$select=clt_projectid,clt_name,clt_status,clt_incomebuffer,clt_housingratiobuffer,clt_debtratiobuffer,clt_mincreditrange," +
+                 "clt_bankruptcyyears,clt_minaffordabilitycheck,clt_monthlycoststudio,clt_monthlycost1br,clt_monthlycost2br," +
+                 "clt_monthlycost3br,clt_monthlycost4br," + RULE_COLS + "&$filter=statecode eq 0&$orderby=clt_name"),
+        P.get(sets.clt_eligibility + "?$select=" + RULE_COLS + "&$filter=statecode eq 0&$top=1")
+      ]);
+    }).then(function (r) {
+      projects = r[0].filter(function (p) { return fv(p, "clt_status") !== "Closed"; });
+      org = r[1].value[0] || {};
+      var sel = $("project"); sel.innerHTML = "";
+      var o = document.createElement("option"); o.value = "";
+      o.textContent = projects.length ? "Pick a project" : "No open projects: create one first"; sel.appendChild(o);
+      projects.forEach(function (p) {
+        var x = document.createElement("option"); x.value = p.clt_projectid; x.textContent = p.clt_name; sel.appendChild(x);
+      });
+      var want = new URLSearchParams(location.search).get("data");
+      if (want && projects.some(function (p) { return p.clt_projectid === want; })) { sel.value = want; return projectChanged(); }
+    }).catch(fail("Couldn't load the projects"));
+  }
+
+  function fail(what) {
+    return function (e) { $("msg").textContent = what + " (" + e.message + ")."; $("msg").className = "msg err"; };
+  }
+
+  // The project's rule, or the organization's where the project leaves it blank.
+  function rulesFor(p) {
+    var req = function (col) { return (fv(p, col) || fv(org, col)) === "Required"; };
+    return {
+      maxAmi: first(p.clt_maxami, org.clt_maxami), minAmi: first(p.clt_minami, org.clt_minami),
+      incomeBuffer: p.clt_incomebuffer, firstTimeBuyerRequired: req("clt_firsttimebuyer"), localTieRequired: req("clt_localtie"),
+      assetLimit: first(p.clt_assetlimit, org.clt_assetlimit),
+      housingRatioMax: first(p.clt_housingratiomax, org.clt_housingratiomax), housingRatioBuffer: p.clt_housingratiobuffer || 0,
+      debtRatioMax: first(p.clt_debtratiomax, org.clt_debtratiomax), debtRatioBuffer: p.clt_debtratiobuffer || 0,
+      minCredit: fv(p, "clt_mincreditrange"), bankruptcyYears: p.clt_bankruptcyyears,
+      checkAffordability: p.clt_minaffordabilitycheck !== false,
+      cost: { 0: p.clt_monthlycoststudio, 1: p.clt_monthlycost1br, 2: p.clt_monthlycost2br, 3: p.clt_monthlycost3br, 4: p.clt_monthlycost4br }
+    };
+  }
+
+  function facts(a) {
+    var size = first(a.clt_householdsize, a.clt_adults == null && a.clt_children == null ? null : (a.clt_adults || 0) + (a.clt_children || 0));
+    return {
+      householdSize: size, income: a.clt_statedannualincome, monthlyDebt: a.clt_statedmonthlydebt,
+      assets: a.clt_statednonretirementassets, amiPct: a.clt_amipct, credit: fv(a, "clt_creditrange"),
+      bankruptcy: a.clt_bankruptcy3yrs, firstTimeBuyer: a.clt_firsttimebuyer,
+      fthbException: fv(a, "clt_fthbexceptions").split(";").some(function (x) { x = x.trim(); return x && x !== "None of these apply"; }),
+      localTie: a.clt_localtie, primaryResidence: a.clt_primaryresidence, sizesWanted: PS.sizesFromLabels(fv(a, "clt_homesizes"))
+    };
+  }
+
+  function projectChanged() {
+    var p = projects.filter(function (x) { return x.clt_projectid === $("project").value; })[0];
+    apps = []; rules = null; $("gaps").hidden = true; $("msg").textContent = ""; $("msg").className = "msg";
+    if (!p) { $("projectinfo").textContent = ""; return render(); }
+    $("rows").innerHTML = '<tr><td colspan="9">Working...</td></tr>';
+    rules = rulesFor(p);
+    var cols = "clt_applicationid,clt_name,clt_stage,clt_adults,clt_children,clt_householdsize,clt_statedannualincome," +
+               "clt_statedmonthlydebt,clt_statednonretirementassets,clt_amipct,clt_creditrange,clt_bankruptcy3yrs," +
+               "clt_firsttimebuyer,clt_fthbexceptions,clt_localtie,clt_primaryresidence,clt_homesizes,clt_prescreenresult," +
+               "clt_prescreenoverridden,clt_prescreenedon";
+    return Promise.all([
+      P.getAll(sets.clt_projectpriority + "?$select=clt_bedrooms,clt_householdsize&$filter=statecode eq 0 and _clt_project_value eq " + p.clt_projectid),
+      P.getAll("clt_applications?$select=" + cols + "&$filter=statecode eq 0 and _clt_project_value eq " + p.clt_projectid +
+               "&$orderby=clt_firstsubmittedon asc")
+    ]).then(function (r) {
+      var prio = r[0].map(function (x) { return { bedrooms: x.clt_bedrooms, householdSize: x.clt_householdsize }; });
+      apps = r[1];
+      apps.forEach(function (a) {
+        a.out = PS.run(facts(a), rules, prio);
+        // Left alone: overridden by staff, or past the pre-screen with a result already saved. One that went
+        // past without ever being pre-screened can still get its result saved; its stage isn't touched.
+        a.skip = a.clt_prescreenoverridden ? "Overridden by staff: left alone"
+               : !OPEN[fv(a, "clt_stage")] && fv(a, "clt_prescreenresult") ? "Already " + fv(a, "clt_stage").toLowerCase() + ": left alone" : "";
+      });
+      $("projectinfo").textContent = [
+        rules.maxAmi == null ? "no income limit" : "up to " + rules.maxAmi + "% of AMI",
+        rules.housingRatioMax == null ? "" : "housing ratio " + rules.housingRatioMax + "%",
+        rules.debtRatioMax == null ? "" : "debt ratio " + rules.debtRatioMax + "%",
+        prio.length + " priorit" + (prio.length === 1 ? "y" : "ies")].filter(Boolean).join(" · ");
+      // What the project still needs before the results mean much.
+      var gaps = [], wanted = {};
+      apps.forEach(function (a) { facts(a).sizesWanted.forEach(function (b) { wanted[b] = 1; }); });
+      if (!prio.length) gaps.push("it has no priorities (which household sizes fit each home size)");
+      var nocost = Object.keys(wanted).filter(function (b) { return !(rules.cost[b] > 0); }).map(function (b) { return PS.sizeName(+b); });
+      if (rules.checkAffordability && nocost.length) gaps.push("it has no monthly housing cost for: " + nocost.join(", "));
+      $("gaps").hidden = !gaps.length;
+      $("gaps").textContent = gaps.length ? "Before you save, open the project and fix this: " + gaps.join("; ") + "." : "";
+      render();
+    }).catch(function (e) { apps = []; render(); fail("Couldn't load the applications")(e); });
+  }
+
+  function pill(result) {
+    var s = document.createElement("span");
+    s.className = "pill " + (result === "Eligible for selection" || result === "Pass" ? "ok" : result === "Needs review" ? "warn" : "bad");
+    s.textContent = result;
+    return s;
+  }
+
+  function render() {
+    var body = $("rows"); body.innerHTML = "";
+    if (!$("project").value) body.innerHTML = '<tr><td colspan="9">Pick a project.</td></tr>';
+    else if (!apps.length) body.innerHTML = '<tr><td colspan="9">This project has no applications yet. Add some under Projects, Add to a project.</td></tr>';
+    apps.forEach(function (a) {
+      var tr = document.createElement("tr"), o = a.out, id = a.clt_applicationid;
+      if (a.skip) tr.className = "locked";
+      var saved = fv(a, "clt_prescreenresult");
+      var cells = [null, facts(a).householdSize, money(a.clt_statedannualincome), a.clt_amipct == null ? "" : a.clt_amipct + "%",
+                   fv(a, "clt_homesizes"), null, o.sizes.map(PS.sizeName).join(", "), o.notes,
+                   a.skip || (saved ? saved + (saved === o.result ? "" : " (will change)") : "Not saved yet")];
+      cells.forEach(function (c, i) {
+        var td = document.createElement("td");
+        if (i === 0) {
+          var link = document.createElement("a"); link.textContent = a.clt_name || "(no name)";
+          link.addEventListener("click", function () { P.openRecord("clt_application", id); });
+          td.appendChild(link);
+        } else if (i === 5) {
+          var b = pill(o.result); b.style.cursor = "pointer"; b.title = "Show every test";
+          b.addEventListener("click", function () { toggle(tr, a); });
+          td.appendChild(b);
+        } else td.textContent = c == null ? "" : c;
+        if (i === 2 || i === 3) td.className = "num";
+        if (i === 7) td.style.whiteSpace = "pre-line";
+        tr.appendChild(td);
+      });
+      body.appendChild(tr);
+    });
+    var n = saving().length, tally = {};
+    apps.forEach(function (a) { tally[a.out.result] = (tally[a.out.result] || 0) + 1; });
+    $("count").textContent = apps.length ? apps.length + " applications: " + Object.keys(tally).map(function (k) { return tally[k] + " " + k.toLowerCase(); }).join(", ") : "";
+    $("save").disabled = !n;
+    $("save").textContent = "Save results (" + n + ")";
+  }
+
+  // Every test for one application, under its row.
+  function toggle(tr, a) {
+    if (tr.nextSibling && tr.nextSibling.className === "detail") { tr.nextSibling.remove(); return; }
+    var d = document.createElement("tr"); d.className = "detail";
+    var td = document.createElement("td"); td.colSpan = 9;
+    var t = document.createElement("table"); t.className = "checks";
+    a.out.checks.forEach(function (c) {
+      var r = document.createElement("tr");
+      [c.test, null, c.value == null ? "" : c.value, c.limit == null ? "" : c.limit, c.notes].forEach(function (v, i) {
+        var x = document.createElement("td");
+        if (i === 1) x.appendChild(pill(c.result)); else x.textContent = v;
+        if (i === 2 || i === 3) x.className = "num";
+        r.appendChild(x);
+      });
+      t.appendChild(r);
+    });
+    td.appendChild(t); d.appendChild(td);
+    tr.parentNode.insertBefore(d, tr.nextSibling);
+  }
+
+  function saving() { return apps.filter(function (a) { return !a.skip; }); }
+
+  function loadChoices() {
+    if (choices) return Promise.resolve(choices);
+    var names = ["clt_checkstage", "clt_checktest", "clt_checkresult", "clt_prescreenresult", "clt_applicationstage", "clt_homesize"];
+    return Promise.all(names.map(P.choice)).then(function (r) {
+      choices = {}; names.forEach(function (n, i) { choices[n] = r[i]; });
+      return choices;
+    });
+  }
+
+  // One application: replace its pre-screen checks, then set its result.
+  function saveOne(a, c) {
+    var id = a.clt_applicationid, o = a.out, es = sets.clt_eligibilitycheck;
+    return P.getAll(es + "?$select=clt_eligibilitycheckid&$filter=_clt_application_value eq " + id +
+                    " and clt_stage eq " + c.clt_checkstage["Pre-screen"]).then(function (old) {
+      return old.reduce(function (p, x) { return p.then(function () { return P.del(es + "(" + x.clt_eligibilitycheckid + ")"); }); }, Promise.resolve());
+    }).then(function () {
+      return o.checks.reduce(function (p, k) {
+        return p.then(function () {
+          return P.post(es, {
+            clt_name: k.test + (k.size == null ? "" : ", " + PS.sizeName(k.size)), clt_stage: c.clt_checkstage["Pre-screen"],
+            clt_test: c.clt_checktest[k.test], clt_result: c.clt_checkresult[k.result], clt_value: k.value, clt_limit: k.limit,
+            clt_notes: k.notes, "clt_application@odata.bind": "/clt_applications(" + id + ")" });
+        });
+      }, Promise.resolve());
+    }).then(function () {
+      var body = {
+        clt_prescreenresult: c.clt_prescreenresult[o.result], clt_prescreennotes: o.notes,
+        clt_prescreensizes: o.sizes.map(function (b) { return c.clt_homesize[PS.sizeName(b)]; }).join(",") || null,
+        clt_prescreenedon: new Date().toISOString() };
+      if (fv(a, "clt_stage") === "Screener submitted" || !fv(a, "clt_stage")) body.clt_stage = c.clt_applicationstage["Pre-screened"];
+      return P.patch("clt_applications(" + id + ")", body);
+    });
+  }
+
+  function save() {
+    var list = saving(), name = $("project").options[$("project").selectedIndex].text;
+    P.confirm("Save pre-screen results", "Save the result and every test for " + list.length + " application" +
+      (list.length === 1 ? "" : "s") + " in " + name + "? Earlier pre-screen checks for them are replaced.").then(function (ok) {
+      if (!ok) return;
+      $("save").disabled = true; $("msg").className = "msg"; $("msg").textContent = "Saving...";
+      return loadChoices().then(function (c) {
+        var queue = list.slice(), done = 0, failed = [];
+        function next() {
+          var a = queue.shift();
+          if (!a) return Promise.resolve();
+          return saveOne(a, c).then(null, function (e) { failed.push((a.clt_name || "?") + ": " + e.message); })
+            .then(function () { done++; $("msg").textContent = "Saving... " + done + " of " + list.length; return next(); });
+        }
+        return Promise.all([next(), next(), next()]).then(function () {
+          return projectChanged().then(function () {
+            $("msg").textContent = (list.length - failed.length) + " saved." +
+              (failed.length ? " " + failed.length + " couldn't be saved: " + failed.slice(0, 3).join("; ") : "");
+            if (failed.length) $("msg").className = "msg err";
+          });
+        });
+      }).catch(fail("Couldn't save"));
+    });
+  }
+
+  $("project").addEventListener("change", projectChanged);
+  $("save").addEventListener("click", save);
+  P.brand();
+  load();
+})();
+</script>
+</body>
+</html>

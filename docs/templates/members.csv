@@ -1,0 +1,7 @@
+Household ref,First name,Last name,Applicant role,Relationship to primary applicant,Date of birth,Email,Phone,On title
+H1,Jordan,Example,Primary applicant,,1988-04-02,jordan.example@example.com,(360) 555-0190,Yes
+H1,Sam,Example,Co-applicant,Spouse or partner,1989-11-17,,,Yes
+H1,Riley,Example,Other household member,Child,2016-08-30,,,No
+H2,Priya,Sample,Primary applicant,,1975-02-14,priya.sample@example.com,(360) 555-0191,Yes
+H2,Dev,Sample,Other household member,Parent,1950-06-05,,,No
+H3,Lee,Placeholder,Primary applicant,,1995-09-09,lee.placeholder@example.com,(360) 555-0192,Yes

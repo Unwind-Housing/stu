@@ -1,0 +1,33 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  offline-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - name: Check specs
+        run: |
+          python build_schema.py --check
+          python build_app.py --check
+          python build_app.py --check --app core
+          python build_app.py --check --app intake
+          python build_flows.py --check
+      - name: Offline tests (fake Dataverse)
+        run: |
+          python tests/test_offline.py
+          python tests/test_app_offline.py
+          python tests/test_counties.py
+          python tests/test_branding.py
+          python tests/test_flows.py
+          python tests/test_ami.py
+          python tests/test_import.py
+          python tests/test_prescreen.py

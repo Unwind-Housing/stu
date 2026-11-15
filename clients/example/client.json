@@ -1,0 +1,20 @@
+{
+  "client": "Example Community Land Trust",
+  "environments": {
+    "dev": "https://yourorg-dev.crm.dynamics.com",
+    "prod": "https://yourorg.crm.dynamics.com"
+  },
+  "flowServiceAccount": "automation@yourorg.onmicrosoft.com",
+  "sharepointSite": "https://yourorg.sharepoint.com/sites/Stewardship",
+  "sharepointFolder": {
+    "dev": "DEV"
+  },
+  "settings": {
+    "OrgName": "Example Community Land Trust",
+    "BrandHeaderColor": "#344734",
+    "BrandHeaderTextColor": "#FFFFFF",
+    "BrandAccentColor": "#526B50",
+    "BrandLogoUrl": "https://example.org/logo.png"
+  },
+  "notes": "Copy this file to clients/<yourname>/client.json and fill it in. Files in clients/ other than this one are not committed."
+}

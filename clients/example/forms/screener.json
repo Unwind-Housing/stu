@@ -1,0 +1,66 @@
+{
+  "type": "screener",
+  "provider": "Cognito Forms",
+  "notes": "Example screener. Copy this file, then change each path to the question name on your own form.",
+  "entry": {
+    "id": "Id",
+    "submitted": "Entry.DateSubmitted",
+    "updated": "Entry.DateUpdated",
+    "adminLink": "Entry.AdminLink",
+    "formId": "Form.Id",
+    "formName": "Form.Name"
+  },
+  "applicant": {
+    "firstName": "PrimaryApplicantInformation.Name.First",
+    "lastName": "PrimaryApplicantInformation.Name.Last",
+    "email": "PrimaryApplicantInformation.EmailAddress",
+    "phone": "PrimaryApplicantInformation.PhoneNumber",
+    "street": "PrimaryApplicantInformation.Address.StreetAddress",
+    "city": "PrimaryApplicantInformation.Address.City",
+    "state": "PrimaryApplicantInformation.Address.State",
+    "zip": "PrimaryApplicantInformation.Address.PostalCode",
+    "county": "PrimaryApplicantInformation.WhatCountyDoYouResideWithin",
+    "housingStatus": "PrimaryApplicantInformation.CurrentHousingStatus",
+    "hasCoApplicant": "PrimaryApplicantInformation.IsThereACoapplicant",
+    "coFirstName": "PrimaryApplicantInformation.CoApplicantName.First",
+    "coLastName": "PrimaryApplicantInformation.CoApplicantName.Last"
+  },
+  "answers": {
+    "localtie": "PrimaryApplicantInformation.HaveYouLivedOrWorkedInOurServiceAreaForAtLeastOneYear",
+    "firsttimebuyer": "PrimaryApplicantInformation.AreYouAFirstTimeHomebuyer",
+    "fthbexceptions": "PrimaryApplicantInformation.WhichExceptionApplies",
+    "ownsproperty": "PrimaryApplicantInformation.DoesAnyoneOnThisApplicationCurrentlyOwnAnyHomeOrResidentialProperty",
+    "adults": "HouseholdDetails.HowManyAdults18AreInYourHouseholdNow",
+    "children": "HouseholdDetails.HowManyChildrenAreInYourHouseholdNow",
+    "homesizes": "HouseholdDetails.WhichHomeSizesAreYouInterestedIn",
+    "statedannualincome": "HouseholdDetails.WhatWasYourCombinedAnnualIncomeForAllAdults",
+    "incomepastyear": "HouseholdDetails.HaveYouHadAnIncomeForAtLeastThePastYear",
+    "age62": "HouseholdDetails.IsThePrimaryApplicantOrCoapplicantAge62OrOlder",
+    "statednonretirementassets": "FinancesAndReadiness.WhatAreYourCombinedNonRetirementAssetsForAllAdults",
+    "statedretirementassets": "FinancesAndReadiness.WhatAreYourCombinedRetirementAssetsForAllAdults",
+    "has1000forclosing": "FinancesAndReadiness.DoYouHaveAtLeast1000InReadilyAvailableSavingsForClosingCosts",
+    "statedmonthlydebt": "FinancesAndReadiness.HowMuchAreYourMonthlyDebtPayments",
+    "creditrange": "FinancesAndReadiness.WhatIsYourCreditScoreRange",
+    "bankruptcy3yrs": "FinancesAndReadiness.AnyBankruptcyFilingsInThePast3Years",
+    "primaryresidence": "FinancesAndReadiness.WillYouUseTheHomeAsYourPrimaryResidence",
+    "hbeducation": "FinancesAndReadiness.HaveYouTakenAHomebuyerEducationCourse",
+    "preapproval": "FinancesAndReadiness.HaveYouTalkedWithALenderAboutAMortgagePreapproval",
+    "accommodation": "FinalQuestionsAndCertification.DoYouNeedAReasonableAccommodationToCompleteTheApplicationProcess",
+    "applicantquestions": "FinalQuestionsAndCertification.DoYouHaveAnyQuestionsCommentsOrConcerns"
+  },
+  "choices": {
+    "hbeducation": {
+      "Yes, I have completed a course": "Completed",
+      "I have a course scheduled": "Scheduled",
+      "Not yet": "Not yet"
+    },
+    "fthbexception": {
+      "a": "a) Single parent, home owned only with a former spouse",
+      "b": "b) Displaced homemaker, home owned only with a spouse",
+      "c": "c) Home not on a permanent foundation",
+      "d": "d) Home found uninhabitable",
+      "N": "None of these apply"
+    }
+  },
+  "firstLetterChoices": ["fthbexception"]
+}

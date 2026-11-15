@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How it works</title>
+<link rel="stylesheet" href="pages.css">
+<script src="pages.js"></script>
+<style>
+  .step-n { display: inline-block; min-width: 26px; font-weight: 700; color: var(--accent, #2b6cb0); }
+  .now { font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 10px; margin-left: 8px;
+         background: #e6f4ea; color: #1e6b34; vertical-align: middle; }
+  .soon { font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 10px; margin-left: 8px;
+          background: #f1f1f1; color: #666; vertical-align: middle; }
+  @media (prefers-color-scheme: dark) {
+    .now { background: #1f3b28; color: #9bd3a9; }
+    .soon { background: #333; color: #bbb; }
+  }
+  .flowline { margin: 6px 0 4px; line-height: 1.7; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="banner">
+    <img data-logo alt="">
+    <div>
+      <h1>How it works</h1>
+      <p>Intake and selection at <span data-org>your land trust</span>, step by step.
+        For today's figures, see the <a href="#" id="go-hub">Hub</a>.</p>
+    </div>
+  </div>
+
+  <h2>The steps</h2>
+  <p class="flowline">Screener comes in &rsaquo; add it to a project &rsaquo; close applications &rsaquo; pre-screen &rsaquo;
+    lock the lists &rsaquo; draw &rsaquo; invite &rsaquo; full application &rsaquo; certify &rsaquo; offer a home &rsaquo;
+    hand off to CLT Stewardship</p>
+
+  <div class="guides">
+    <main id="guides" style="grid-column: 1 / -1">
+
+      <section class="guide" id="screener">
+        <h3><span class="step-n">1</span>Screeners come in <span class="now">works now</span></h3>
+        <p class="where">Applicants &rsaquo; Applications &rsaquo; view <span class="ui">Not in a project yet</span></p>
+        <ol>
+          <li>People fill in an online screener whenever they like. The general screener isn't tied to a project; a screener made for one project can add its applications to that project automatically (see the tip below).</li>
+          <li>Within a minute, the screener intake flow adds them here: a <span class="ui">Household</span> (named after the primary applicant), its members, and an <span class="ui">Application</span> with stage <span class="ui">Screener submitted</span> and all their answers. The application's <span class="ui">Source form</span> shows which online form it came from.</li>
+          <li>Someone who applied before (same email) keeps their household and gets a new application.</li>
+          <li>If they edit their screener later, the application updates, until Unique IDs are assigned. After that, the change isn't applied: the submission shows under <span class="ui">Form problems</span> so staff can compare it with the application.</li>
+        </ol>
+        <p class="tip">If an entry can't be processed, it shows under <span class="ui">Messages &rsaquo; Form submissions</span> with status <span class="ui">Needs attention</span> and the reason.</p>
+        <p class="tip"><b>Adding another screener form</b> (for example one for a single project): in Cognito, copy the existing screener (Forms, the form's menu, Copy) so the questions keep their names, and paste the same flow web address into its Submission Settings (Post JSON Data to a Website, on Submit and on Update). Its first entry adds it under <span class="ui">Settings &rsaquo; Source forms</span>. To send its applications straight into a project, open that row and fill in <span class="ui">Add new applications to project</span>; to have that from the very first entry, add the row yourself beforehand (Forms platform <span class="ui">Cognito Forms</span>, Form ID = the number in the form's Cognito web address). If you reword or add questions, tell Unwind so the flow can be checked.</p>
+        <div class="actions"><button class="btn" data-list="clt_application">Open Applications</button>
+          <button class="btn" data-list="clt_formsubmission">Open Form submissions</button></div>
+      </section>
+
+      <section class="guide" id="project">
+        <h3><span class="step-n">2</span>Set up a project <span class="now">works now</span></h3>
+        <p class="where">Projects &rsaquo; Projects</p>
+        <ol>
+          <li>Select <span class="ui">+ New</span>. Give it a name (for example Maple Court Phase 2), the type (new construction or resale) and the selection method (lottery or first come, first served).</li>
+          <li>Fill in when applications open and close, then <span class="ui">Save</span>.</li>
+          <li>Under <span class="ui">Eligibility</span>, fill in only what differs from the organization's rules (Settings &rsaquo; Organization eligibility), for example a lower max % of AMI. Put any funder requirements in <span class="ui">Notes</span>.</li>
+          <li>Under <span class="ui">Monthly housing cost by home size</span>, type what a home of each size will cost a month in this project: mortgage, taxes, insurance, dues and lease fee together. Fill in only the sizes you're selling. The pre-screen uses these for the housing ratio and the total debt ratio.</li>
+          <li>Under <span class="ui">Pre-screen</span>, set the buffers if you want them. Screener answers are rough, so a buffer lets someone a little over a limit through to be checked properly at certification. <span class="ui">Income buffer</span> is a percent over the limit (10 turns an 80% limit into 88%). The two ratio buffers are points added to the limit (2 turns 35% into 37%).</li>
+          <li>On the <span class="ui">Homes</span> tab, add the homes. On the <span class="ui">Priorities</span> tab, add which household sizes fit each bedroom size, and their tier.</li>
+        </ol>
+        <div class="actions"><button class="btn primary" data-new="clt_project">+ New project</button></div>
+      </section>
+
+      <section class="guide" id="assign">
+        <h3><span class="step-n">3</span>Add applications to the project <span class="now">works now</span></h3>
+        <p class="where">Projects &rsaquo; Add to a project</p>
+        <ol>
+          <li>Pick the project at the top.</li>
+          <li>Filter the screeners: not in a project yet (the default) or all of them, source form, county, home size wanted, household size, income, submission dates, first-time buyer.</li>
+          <li>Tick the ones joining, or the box in the header to tick everyone shown, then select <span class="ui">Add ticked</span>. <span class="ui">Add everyone shown</span> adds every row that matches, in one go.</li>
+        </ol>
+        <p>For a few at a time, you can also tick rows in any Applications view, select <span class="ui">Edit</span>, pick the <span class="ui">Project</span> and <span class="ui">Save</span>.</p>
+        <div class="actions"><button class="btn primary" id="go-assign">Open Add to a project</button></div>
+        <p class="tip">One application belongs to one project. Once it has a Unique ID it's locked to that project. If a household is also interested in a later project, it fills in the screener again then.</p>
+      </section>
+
+      <section class="guide" id="close">
+        <h3><span class="step-n">4</span>Close applications and assign Unique IDs <span class="soon">coming next</span></h3>
+        <p>A <span class="ui">Close applications</span> button on the project will number its applications ID-0001, ID-0002 and so on, in the order the screeners were first submitted, and freeze their answers. The lottery lists only ever show these IDs, never names.</p>
+      </section>
+
+      <section class="guide" id="prescreen">
+        <h3><span class="step-n">5</span>Pre-screen <span class="now">works now</span></h3>
+        <p class="where">Projects &rsaquo; Pre-screen</p>
+        <p>The pre-screen tests what each applicant said on the screener against the project's rules, and the organization's where the project leaves one blank. It decides who goes into the lottery. Nothing is verified yet: certification checks the same rules again later.</p>
+        <ol>
+          <li>Pick the project. Every application in it is tested straight away and shown with its result: <b>Eligible for selection</b>, <b>Not eligible</b> or <b>Needs review</b>. Nothing is saved yet.</li>
+          <li>Select a result to see every test behind it, with the applicant's figure and the limit.</li>
+          <li>If a yellow line says the project is missing priorities or a monthly housing cost, open the project, fill them in, and come back.</li>
+          <li>Select <span class="ui">Save results</span>. Each application gets its result, its reasons, the home sizes it's eligible for, and one saved check per test. Its stage moves to <b>Pre-screened</b>.</li>
+          <li>Run it again any time before the lists lock, for example after late screeners arrive or a rule changes. Saved results are replaced.</li>
+        </ol>
+        <p><b>The tests:</b> income limit (with the project's income buffer: 10% over the limit unless you change it), minimum income, first-time buyer, local tie, primary residence, asset limit, credit range, bankruptcy, and whether the household size fits a home size they asked for. Then, for each size that fits, the housing ratio (monthly cost &divide; monthly income) and the total debt ratio (monthly cost plus stated monthly debt &divide; monthly income). A household only needs one home size to work.</p>
+        <p><b>To override a result</b> (for example Needs review to Eligible): open the application, change <span class="ui">Pre-screen result</span>, tick <span class="ui">Pre-screen overridden</span>, and write who, when and why in <span class="ui">Pre-screen notes</span>. The pre-screen then leaves that application alone.</p>
+        <div class="actions"><button class="btn primary" id="go-prescreen">Open Pre-screen</button></div>
+        <p class="tip">Income over the limit but inside the buffer passes, with a note. Stated income is rough; certification uses verified income against the real limit.</p>
+      </section>
+
+      <section class="guide" id="draw">
+        <h3><span class="step-n">6</span>Lock the lists and draw <span class="soon">coming later</span></h3>
+        <p>Buttons on the selection round will build one list per bedroom size, lock them with check numbers for the Board Observer, take the seed from ten dice rolls, and rank everyone. Nobody can re-order a list by hand.</p>
+      </section>
+
+      <section class="guide" id="invite">
+        <h3><span class="step-n">7</span>Invite to the full application <span class="soon">coming later</span></h3>
+        <p>An <span class="ui">Invite next</span> button will email the next households on each list a full application link, with a response deadline. For now, invite people the way you do today.</p>
+      </section>
+
+      <section class="guide" id="certify">
+        <h3><span class="step-n">8</span>Review and certify <span class="soon">coming later</span></h3>
+        <p>Staff review income, debts and assets on the application, work through the document checklist, and run the checks. <span class="ui">Certify</span> locks the certification and copies the household's documents into SharePoint.</p>
+      </section>
+
+      <section class="guide" id="handoff">
+        <h3><span class="step-n">9</span>Offer a home and hand off <span class="soon">coming later</span></h3>
+        <p><span class="ui">Offer home</span> checks the list order and starts a sale. When the purchase and sale agreement is signed, the household becomes an occupancy in CLT Stewardship.</p>
+      </section>
+
+    </main>
+  </div>
+
+</div>
+
+<script>
+(function () {
+  CLTPage.brand();
+  CLTPage.wire();
+  document.getElementById("go-assign").addEventListener("click", function () {
+    CLTPage.go({ pageType: "webresource", webresourceName: "clt_/pages/assign.html" });
+  });
+  document.getElementById("go-prescreen").addEventListener("click", function () {
+    CLTPage.go({ pageType: "webresource", webresourceName: "clt_/pages/prescreen.html" });
+  });
+  document.getElementById("go-hub").addEventListener("click", function (e) {
+    e.preventDefault();
+    CLTPage.go({ pageType: "webresource", webresourceName: "clt_/pages/intake.html" });
+  });
+})();
+</script>
+</body>
+</html>

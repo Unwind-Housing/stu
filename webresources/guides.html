@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How-to guides</title>
+<link rel="stylesheet" href="pages.css">
+<script src="pages.js"></script>
+</head>
+<body>
+<div class="page">
+
+  <div class="banner">
+    <img data-logo alt="">
+    <div>
+      <h1>How-to guides</h1>
+      <p>Step-by-step instructions for the everyday jobs at <span data-org>your land trust</span>.</p>
+    </div>
+  </div>
+
+  <div class="guides">
+    <nav class="toc" id="toc"></nav>
+    <main id="guides">
+
+      <section class="guide" id="property" data-title="Add a property">
+        <h3>Add a property</h3>
+        <p class="where">Portfolio &rsaquo; Properties</p>
+        <ol>
+          <li>Select <span class="ui">+ New</span>.</li>
+          <li>Fill in <span class="ui">Street address</span>, <span class="ui">Unit</span> (if any), <span class="ui">City</span>, <span class="ui">State</span>, <span class="ui">County</span> and <span class="ui">ZIP code</span>. Pick the State first: the County list only shows that state's counties.</li>
+          <li>Pick the <span class="ui">Neighborhood</span> if the home belongs to one (for example Maple Court). Homes and shared parcels in the same neighborhood sort together in the view <span class="ui">Properties by neighborhood</span>.</li>
+          <li>Add the <span class="ui">Parcel number</span> and the details you have (type, bedrooms, year built).</li>
+          <li>Under <span class="ui">Program</span>, set the <span class="ui">Status</span> (for example Vacant or Owner-occupied) and the <span class="ui">Tenure type</span>.</li>
+          <li>Select <span class="ui">Save</span>. The property gets its record number (P-00001) and its name, which is the address. You don't need to type the name.</li>
+          <li>Wait a few seconds while the form says it's setting up the document folder. The form reopens by itself when the folder is ready (named like <span class="ui">412 Fir St - P-00004</span>).</li>
+          <li>Open the <span class="ui">Documents</span> tab to upload the deed, photos or inspections. The <span class="ui">Documents folder</span> link opens the same folder in SharePoint.</li>
+        </ol>
+        <p class="tip">A new neighborhood is added under <span class="ui">Settings &rsaquo; Lists</span>: select <span class="ui">+ New</span>, set <span class="ui">List</span> to Neighborhood and type its name. Land that isn't housing uses the property types <b>Commercial</b>, <b>Agricultural</b>, <b>Land only</b> or <b>Common area</b>. A common area has no status, so the Overview doesn't count it as a home.</p>
+        <div class="actions"><button class="btn primary" data-new="clt_property">+ New property</button>
+          <button class="btn" data-list="clt_property">Open Properties</button></div>
+      </section>
+
+      <section class="guide" id="household" data-title="Set up a household">
+        <h3>Set up a household</h3>
+        <p class="where">People &rsaquo; Households</p>
+        <ol>
+          <li>Select <span class="ui">+ New</span>, add the <span class="ui">Primary email</span> and phone, and set the <span class="ui">Status</span> (Applicant, Homeowner and so on).</li>
+          <li>Select <span class="ui">Save</span>. Leave the name blank: it fills in from the primary applicant.</li>
+          <li>Open the <span class="ui">Members</span> tab and select <span class="ui">+ New household member</span>.</li>
+          <li>Enter <span class="ui">First name</span> and <span class="ui">Last name</span>, and set <span class="ui">Applicant role</span> to <span class="ui">Primary applicant</span>. Save and close.</li>
+          <li>Add everyone else in the household the same way, with a <span class="ui">Relationship to primary applicant</span>. Tick <span class="ui">On title</span> for anyone who will be on the deed.</li>
+        </ol>
+        <p class="tip">The household is named after the primary applicant's last name, for example <b>Rivera</b>. If another household already has that name, the first name is added: <b>Rivera, Maria</b>.</p>
+        <div class="actions"><button class="btn primary" data-new="clt_household">+ New household</button>
+          <button class="btn" data-list="clt_household">Open Households</button></div>
+      </section>
+
+      <section class="guide" id="occupancy" data-title="Move a household into a home">
+        <h3>Move a household into a home</h3>
+        <p class="where">Portfolio &rsaquo; Occupancies (or the property's <span class="ui">Occupancies and sales</span> tab)</p>
+        <p>An <b>occupancy</b> links a household to a property for the time they live there. It holds the resale formula, insurance and annual verifications.</p>
+        <ol>
+          <li>Select <span class="ui">+ New</span>. Pick the <span class="ui">Property</span> and the <span class="ui">Household</span>. The name fills in, for example <b>Rivera - 123 Main St</b>.</li>
+          <li>Set <span class="ui">Role</span> (Owner or Tenant), <span class="ui">Status</span> = Current, and the <span class="ui">Start date</span>.</li>
+          <li>Add the <span class="ui">Lease or covenant recording number</span>.</li>
+          <li>On the <span class="ui">Resale price</span> tab, choose the <span class="ui">Resale formula</span> and fill in <span class="ui">Base price</span>, <span class="ui">Base date</span> and <span class="ui">Annual rate (%)</span> (or the appraisal share terms).</li>
+          <li>Save. Wait a few seconds while the form sets up the occupancy's document folder (named like <span class="ui">Rivera - 123 Main St - O-00004</span>), then upload the ground lease and closing papers on the <span class="ui">Documents</span> tab.</li>
+          <li>On the <span class="ui">Stewardship</span> tab, add the household's <span class="ui">Insurance policy</span> (see below).</li>
+          <li>On the property, set <span class="ui">Current occupancy</span> to this occupancy and its <span class="ui">Status</span> to Owner-occupied.</li>
+        </ol>
+        <p><b>Insurance policy:</b> enter <span class="ui">Carrier</span>, <span class="ui">Policy number</span>, <span class="ui">Renewal date</span>, <span class="ui">Dwelling coverage (A)</span>, <span class="ui">Extended dwelling (%)</span> and <span class="ui">Replacement cost</span>. Tick <span class="ui">CLT listed as additional insured</span> once you've seen it on the declarations page, and set <span class="ui">Verified date</span>.</p>
+        <p class="later">Later, a sale's closing will update the property's current occupancy and status automatically. For now, do the last step by hand.</p>
+        <div class="actions"><button class="btn primary" data-new="clt_occupancy">+ New occupancy</button></div>
+      </section>
+
+      <section class="guide" id="verification" data-title="Run annual verifications">
+        <h3>Run annual verifications</h3>
+        <p class="where">Stewardship &rsaquo; Annual verifications &rsaquo; view <span class="ui">Verifications to do</span></p>
+        <ol>
+          <li>For each current occupancy, add a verification: <span class="ui">+ New</span>, pick the <span class="ui">Occupancy</span>, and set the <span class="ui">Year</span> and <span class="ui">Due date</span>. <span class="ui">Status</span> starts at Due.</li>
+          <li>When you send the form to the homeowner, set <span class="ui">Status</span> = Sent and the <span class="ui">Sent date</span>.</li>
+          <li>When it comes back, set <span class="ui">Status</span> = Received and the <span class="ui">Received date</span>, then fill in the findings: <span class="ui">Primary residence confirmed</span>, <span class="ui">Rental status</span> and <span class="ui">Insurance declarations received</span>.</li>
+          <li>Finish with <span class="ui">Approved</span>, or <span class="ui">Issue found</span> (add a note saying what's wrong and follow up). Use <span class="ui">Waived</span> if this year's check doesn't apply.</li>
+        </ol>
+        <p class="later">Coming later: verifications created automatically 60 days before each anniversary, and online replies matched by their verification code.</p>
+        <div class="actions"><button class="btn" data-list="clt_annualverification">Open Annual verifications</button></div>
+      </section>
+
+      <section class="guide" id="request" data-title="Handle a homeowner request">
+        <h3>Handle a homeowner request</h3>
+        <p class="where">Stewardship &rsaquo; Homeowner requests &rsaquo; view <span class="ui">Open requests</span></p>
+        <p>Use a request for anything a homeowner needs the land trust's OK for: a capital improvement, an ERRR repair draw, a refinance, renting or subletting, a leave of absence, or an intent to sell.</p>
+        <ol>
+          <li>Select <span class="ui">+ New</span>. Pick the <span class="ui">Occupancy</span> and <span class="ui">Property</span>, the <span class="ui">Request type</span> and the <span class="ui">Request date</span>, and describe it under <span class="ui">Details</span>.</li>
+          <li>While you look into it, set <span class="ui">Status</span> = Under review.</li>
+          <li>Record the decision: <span class="ui">Status</span> (Approved, Approved with conditions or Denied), <span class="ui">Decision date</span> and any <span class="ui">Conditions</span>.</li>
+          <li>For a capital improvement, enter the <span class="ui">Approved resale credit</span>. For a repair paid from the reserve, enter the <span class="ui">Approved ERRR draw</span>, then add the payment on the <span class="ui">ERRR draws</span> tab.</li>
+          <li>When the work is done, set <span class="ui">Status</span> = Completed and the <span class="ui">Completed date</span>.</li>
+        </ol>
+        <div class="actions"><button class="btn primary" data-new="clt_homeownerrequest">+ New request</button>
+          <button class="btn" data-list="clt_homeownerrequest">Open Homeowner requests</button></div>
+      </section>
+
+      <section class="guide" id="sale" data-title="Record a sale or resale">
+        <h3>Record a sale or resale</h3>
+        <p class="where">Portfolio &rsaquo; Sales</p>
+        <p>The sale form follows the deal in three steps, top to bottom.</p>
+        <ol>
+          <li><b>1. Property:</b> pick the <span class="ui">Property</span> and <span class="ui">Sale type</span>. For a resale, pick the <span class="ui">Seller's occupancy</span> and record the <span class="ui">Maximum resale price at sale</span> from that occupancy's Resale price tab.</li>
+          <li><b>2. Buyer and contract:</b> pick the <span class="ui">Buyer household</span> and enter the <span class="ui">Contract date</span>, <span class="ui">Purchase price</span>, lender and title company. Status stays Pending.</li>
+          <li><b>3. Closing:</b> on closing day, enter the <span class="ui">Closing date</span> and set <span class="ui">Status</span> = Closed.</li>
+          <li>Then update the occupancies: set the seller's occupancy to Past with an End date, create the buyer's occupancy (see <a href="#occupancy">Move a household into a home</a>), and pick it as the sale's <span class="ui">Buyer's occupancy</span>.</li>
+        </ol>
+        <p class="later">Coming later: closing a sale will update occupancies, the property and statuses automatically.</p>
+        <div class="actions"><button class="btn primary" data-new="clt_sale">+ New sale</button></div>
+      </section>
+
+      <section class="guide" id="documents" data-title="Find and add documents">
+        <h3>Find and add documents</h3>
+        <p class="where">The <span class="ui">Documents</span> tab on a property, occupancy or household</p>
+        <ol>
+          <li>Open the property, occupancy or household and select the <span class="ui">Documents</span> tab.</li>
+          <li>Select <span class="ui">Upload</span> and pick the file. It's saved in SharePoint, in that record's own folder.</li>
+          <li>To work in SharePoint directly, select <span class="ui">Open location</span>. You'll go straight to the folder.</li>
+        </ol>
+        <p><b>What goes where:</b></p>
+        <ul>
+          <li><b>Property:</b> what stays with the home whoever lives there. Deeds, surveys, inspections, permits and photos.</li>
+          <li><b>Occupancy:</b> what belongs to one household's time in that home. The ground lease and its memorandum, closing papers, insurance, and repair reserve (ERRR) requests. A resale starts a new occupancy with its own empty folder.</li>
+          <li><b>Household:</b> application and certification documents only. Household documents are restricted to staff.</li>
+        </ul>
+        <p class="tip">Applicants' uploads stay in the online forms until the household is certified. Never store Social Security numbers or bank account numbers in the app.</p>
+      </section>
+
+      <section class="guide" id="lists" data-title="Add a dropdown choice">
+        <h3>Add a dropdown choice</h3>
+        <p class="where">Settings &rsaquo; Lists</p>
+        <p>Many dropdowns (State, County, Property type, Tenure type, Relationship, Income type and others) come from <b>Lists</b>, which staff can add to.</p>
+        <ol>
+          <li>Select <span class="ui">+ New</span>.</li>
+          <li>Pick which <span class="ui">List</span> it belongs to (for example Property type), and type the value as its name.</li>
+          <li>Optionally set a <span class="ui">Sort order</span> to control where it appears in the dropdown.</li>
+          <li>If online forms send this value with different wording, add each wording on its own line under <span class="ui">Form answers</span>.</li>
+          <li>Save. It shows up in the dropdown right away.</li>
+        </ol>
+        <p class="later">Statuses and stages (for example Property status or Request status) are fixed, because automations depend on them. To change one, ask your system administrator.</p>
+        <div class="actions"><button class="btn" data-list="clt_listitem">Open Lists</button></div>
+      </section>
+
+    </main>
+  </div>
+</div>
+
+<script>
+(function () {
+  CLTPage.brand();
+  CLTPage.wire();
+  var toc = document.getElementById("toc"), links = {};
+  document.querySelectorAll(".guide").forEach(function (g) {
+    var a = document.createElement("a");
+    a.href = "#" + g.id;
+    a.textContent = g.dataset.title;
+    a.addEventListener("click", function (e) { e.preventDefault(); show(g.id); });
+    toc.appendChild(a);
+    links[g.id] = a;
+  });
+  function show(id) {
+    var g = document.getElementById(id);
+    if (!g) return;
+    g.scrollIntoView({ behavior: "smooth", block: "start" });
+    Object.keys(links).forEach(function (k) { links[k].classList.toggle("on", k === id); });
+  }
+  // In-page links (#occupancy) inside the guides
+  document.querySelectorAll('main a[href^="#"]').forEach(function (a) {
+    a.addEventListener("click", function (e) { e.preventDefault(); show(a.getAttribute("href").slice(1)); });
+  });
+  // Opened from the Overview with a guide picked: ?data=property
+  var want = new URLSearchParams(location.search).get("data") || location.hash.slice(1);
+  if (want) setTimeout(function () { show(want); }, 50);
+})();
+</script>
+</body>
+</html>

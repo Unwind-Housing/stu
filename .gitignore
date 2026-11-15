@@ -1,0 +1,28 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Build output (environment-specific)
+build-log.txt
+app-build-log.txt
+choice-values.json
+
+# Credentials: never commit these
+.env
+*.secret
+*.pfx
+
+# Archives and OS files
+*.zip
+.DS_Store
+flows-build-log.txt
+
+# Client data dropped in for loading: never commit
+export/
+
+# Each CLT's own settings and notes: never commit (clients/example/client.json is the template)
+clients/*
+!clients/example/
+CLAUDE.local.md
+private-*/

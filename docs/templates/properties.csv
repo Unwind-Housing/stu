@@ -1,0 +1,5 @@
+Property ref,Record number,Street address,Unit,City,State,County,ZIP code,Neighborhood,Parcel number,Property type,Tenure type,Status,Bedrooms,Bathrooms,Square feet,Year built,AMI target (%),Acquisition date,Replacement cost,Replacement cost as of,Notes
+P1,,1010 Example Hill Rd,1,Port Townsend,WA,Jefferson County,98368,Example Hill,001012345,Townhome,Ground lease,For sale,2,1.5,1050,2025,80,2024-06-15,285000,2025-01-01,EXAMPLE ROW (made up)
+P2,,1010 Example Hill Rd,2,Port Townsend,WA,Jefferson County,98368,Example Hill,001012346,Townhome,Ground lease,Owner-occupied,3,2,1240,2025,80,2024-06-15,320000,2025-01-01,EXAMPLE ROW (made up)
+P3,,77 Sample Ave,,Port Angeles,WA,Clallam County,98362,,063000123,Single-family detached,Ground lease,Owner-occupied,3,1,1180,1978,80,2019-03-01,298000,2024-07-01,EXAMPLE ROW (made up)
+,P-00002,,,,,,,,,,,Sale pending,,,,,,,,,Fill only the columns to change; blank cells are left alone

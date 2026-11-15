@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Overview</title>
+<link rel="stylesheet" href="pages.css">
+<script src="pages.js"></script>
+</head>
+<body>
+<div class="page">
+
+  <div class="banner">
+    <img data-logo alt="">
+    <div>
+      <h1><span id="hello">Welcome</span></h1>
+      <p><span data-org>Your land trust</span> stewardship: homes, households and the work that keeps them affordable.</p>
+    </div>
+  </div>
+
+  <h2>Needs attention <small>click a tile to open the list</small></h2>
+  <div class="tiles" id="attention"></div>
+
+  <h2>Properties <small>by status; homes that left the program and common areas aren't counted</small></h2>
+  <div class="tiles" id="properties"></div>
+
+  <h2>Households</h2>
+  <div class="tiles" id="households"></div>
+
+  <h2>Add something</h2>
+  <div class="actions">
+    <button class="btn primary" data-new="clt_property">+ Property</button>
+    <button class="btn primary" data-new="clt_household">+ Household</button>
+    <button class="btn" data-new="clt_occupancy">+ Occupancy</button>
+    <button class="btn" data-new="clt_homeownerrequest">+ Homeowner request</button>
+    <button class="btn" data-new="clt_sale">+ Sale</button>
+  </div>
+
+  <h2>How do I...? <small>step-by-step guides</small></h2>
+  <div class="cards">
+    <div class="card" data-guide="property"><b>Add a property</b><span>Address, details, and its document folder</span></div>
+    <div class="card" data-guide="household"><b>Set up a household</b><span>Members, and how the household gets its name</span></div>
+    <div class="card" data-guide="occupancy"><b>Move a household into a home</b><span>Occupancy, resale formula, insurance</span></div>
+    <div class="card" data-guide="verification"><b>Run annual verifications</b><span>From due to approved</span></div>
+    <div class="card" data-guide="request"><b>Handle a homeowner request</b><span>Improvements, repairs, refinances, sales</span></div>
+    <div class="card" data-guide="sale"><b>Record a sale or resale</b><span>Contract to closing</span></div>
+    <div class="card" data-guide="documents"><b>Find and add documents</b><span>Where files live in SharePoint</span></div>
+    <div class="card" data-guide="lists"><b>Add a dropdown choice</b><span>Property types, counties and other lists</span></div>
+  </div>
+
+  <p class="note">Counts come from the same lists you see when you click through, and include only records you have access to.</p>
+</div>
+
+<script>
+(function () {
+  // Tiles run saved views by name (see app_spec.py VIEWS). A view that doesn't exist yet is skipped.
+  var ATTENTION = [
+    { e: "clt_homeownerrequest", v: "Open requests", t: "Open homeowner requests", d: "Submitted or under review", hot: true },
+    { e: "clt_annualverification", v: "Verifications to do", t: "Verifications to do", d: "Due, sent, received or with an issue", hot: true },
+    { e: "clt_insurancepolicy", v: "Renewing in the next 60 days", t: "Insurance renewing soon", d: "Renewal in the next 60 days" },
+    { e: "clt_insurancepolicy", v: "Underinsured policies", t: "Underinsured homes", d: "Coverage below replacement cost", hot: true },
+    { e: "clt_sale", v: "Pending sales", t: "Pending sales", d: "Under contract, not closed" },
+    { e: "clt_formsubmission", v: "Submissions needing attention", t: "Form problems", d: "Entries that couldn't be processed", hot: true }
+  ];
+  // Homes by status. Left program isn't shown, and a property with no status (a common area) isn't counted.
+  // zero: "hide" drops the tile when there are none.
+  var PROPERTIES = [
+    { e: "clt_property", v: "Owner-occupied properties", t: "Owner-occupied", d: "Homes with a homeowner living in them" },
+    { e: "clt_property", v: "Rented properties", t: "Rented", d: "Homes with a tenant", zero: "hide" },
+    { e: "clt_property", v: "Properties for sale", t: "For sale", d: "Ready for a buyer" },
+    { e: "clt_property", v: "Properties with a sale pending", t: "Sale pending", d: "Under contract, not closed", zero: "hide" },
+    { e: "clt_property", v: "Vacant properties", t: "Vacant", d: "Empty homes and lots" },
+    { e: "clt_property", v: "Properties under construction", t: "Under construction", d: "Being built or renovated", zero: "hide" },
+    { e: "clt_property", v: "Prospective acquisitions", t: "Prospective", d: "Being looked at, not owned yet", zero: "hide" }
+  ];
+  var HOUSEHOLDS = [
+    { e: "clt_household", v: "Homeowners", t: "Homeowners", d: "Households that own a home now" },
+    { e: "clt_household", v: "Potential purchasers", t: "Potential purchasers", d: "Invited to the full application, or certified" },
+    { e: "clt_household", v: "Applicants", t: "Applicants", d: "Sent a screener, not invited yet" },
+    { e: "clt_household", v: "Former homeowners", t: "Former homeowners", d: "Sold or left" }
+  ];
+
+  function tile(box, cfg) {
+    var el = document.createElement("button");
+    el.className = "tile";
+    el.innerHTML = '<div class="n">&middot;</div><div class="t"></div><div class="d"></div>';
+    el.querySelector(".t").textContent = cfg.t;
+    el.querySelector(".d").textContent = cfg.d;
+    box.appendChild(el);
+    CLTPage.viewCount(cfg.e, cfg.v).then(function (r) {
+      if (!r) { el.remove(); return; }
+      el.querySelector(".n").textContent = r.count + (r.more ? "+" : "");
+      if (!r.count && cfg.zero === "hide") { el.remove(); return; }
+      if (!r.count) el.classList.add("zero");
+      else if (cfg.hot) el.classList.add("hot");
+      el.title = "Open " + cfg.v;
+      el.addEventListener("click", function () { CLTPage.openList(cfg.e, r.id); });
+    });
+  }
+
+  var hour = new Date().getHours();
+  document.getElementById("hello").textContent =
+    hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+  CLTPage.brand();
+  ATTENTION.forEach(function (c) { tile(document.getElementById("attention"), c); });
+  PROPERTIES.forEach(function (c) { tile(document.getElementById("properties"), c); });
+  HOUSEHOLDS.forEach(function (c) { tile(document.getElementById("households"), c); });
+  CLTPage.wire();
+})();
+</script>
+</body>
+</html>

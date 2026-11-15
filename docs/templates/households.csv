@@ -1,0 +1,4 @@
+Household ref,Status,Primary email,Phone,Mailing street address,Mailing unit,Mailing city,Mailing state,Mailing ZIP code,Preferred language,Income certification date,Certification expires,Certified household size,Certified annual income,Certified income (% of AMI),Notes
+H1,Homeowner,jordan.example@example.com,(360) 555-0190,1010 Example Hill Rd,2,Port Townsend,WA,98368,English,2025-03-10,2026-03-10,3,64500,71,EXAMPLE ROW (made up)
+H2,Homeowner,priya.sample@example.com,(360) 555-0191,77 Sample Ave,,Port Angeles,WA,98362,English,2019-01-20,,2,48000,66,EXAMPLE ROW (made up)
+H3,Applicant,lee.placeholder@example.com,(360) 555-0192,500 Test St,4B,Port Townsend,WA,98368,Spanish,,,,,,EXAMPLE ROW (made up)

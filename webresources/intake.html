@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hub</title>
+<link rel="stylesheet" href="pages.css">
+<script src="pages.js"></script>
+</head>
+<body>
+<div class="page">
+
+  <div class="banner">
+    <img data-logo alt="">
+    <div>
+      <h1>Intake &amp; Selection hub</h1>
+      <p>From screener to certified buyer at <span data-org>your land trust</span>.
+        New here? See <a href="#" id="go-guide">How it works</a>.</p>
+    </div>
+  </div>
+
+  <h2>Applications <small>click a tile to open the list</small></h2>
+  <div class="tiles" id="pipeline"></div>
+
+  <h2>Applicant pool <small>from the screener answers (self-reported)</small></h2>
+  <div class="toolbar" style="margin-bottom: 12px">
+    <label>Show figures for <select id="scope"><option value="all">All screeners</option>
+      <option value="none">Not in a project yet</option></select></label>
+  </div>
+  <div class="stats" id="stats"><div class="stat"><div class="d">Loading...</div></div></div>
+
+  <h2>Projects taking applications <small>accepting applications, or with the application window open today</small></h2>
+  <div class="projs" id="projects"><div class="stat"><div class="d">Loading...</div></div></div>
+
+  <h2>Needs attention</h2>
+  <div class="tiles" id="attention"></div>
+
+
+  <p class="note">Counts come from the same lists you see when you click through, and include only records you have access to.</p>
+</div>
+
+<script>
+(function () {
+  // Tiles run saved views by name (app_spec_intake.py and app_spec.py VIEWS). A view that doesn't exist is skipped.
+  var PIPELINE = [
+    { e: "clt_application", v: "Screeners", t: "Screeners", d: "Every screener received" },
+    { e: "clt_application", v: "Full applications in progress", t: "Full applications in progress", d: "Invited or started, not submitted" },
+    { e: "clt_application", v: "Full applications submitted", t: "Full applications submitted", d: "Completed full applications" },
+    { e: "clt_project", v: "Open projects", t: "Open projects", d: "Projects that aren't closed" }
+  ];
+  var ATTENTION = [
+    { e: "clt_application", v: "Not in a project yet", t: "Not in a project yet", d: "Screeners to add to a project", hot: true },
+    { e: "clt_application", v: "Pre-screen needs review", t: "Pre-screen needs review", d: "The automatic pre-screen couldn't decide", hot: true },
+    { e: "clt_application", v: "Applications in review", t: "Full applications in review", d: "Submitted, in review or needing follow-up" },
+    { e: "clt_certification", v: "Certifications in progress", t: "Certifications in progress", d: "Reviewing or waiting for information" },
+    { e: "clt_checklistitem", v: "Documents to review", t: "Documents to review", d: "Received, not reviewed yet", hot: true },
+    { e: "clt_formsubmission", v: "Submissions needing attention", t: "Form problems", d: "Entries that couldn't be processed", hot: true }
+  ];
+
+  function tile(box, cfg) {
+    var el = document.createElement("button");
+    el.className = "tile";
+    el.innerHTML = '<div class="n">&middot;</div><div class="t"></div><div class="d"></div>';
+    el.querySelector(".t").textContent = cfg.t;
+    el.querySelector(".d").textContent = cfg.d;
+    box.appendChild(el);
+    CLTPage.viewCount(cfg.e, cfg.v).then(function (r) {
+      if (!r) { el.remove(); return; }
+      el.querySelector(".n").textContent = r.count + (r.more ? "+" : "");
+      if (!r.count) el.classList.add("zero");
+      else if (cfg.hot) el.classList.add("hot");
+      el.title = "Open " + cfg.v;
+      el.addEventListener("click", function () { CLTPage.openList(cfg.e, r.id); });
+    });
+  }
+
+  CLTPage.brand();
+  PIPELINE.forEach(function (c) { tile(document.getElementById("pipeline"), c); });
+  ATTENTION.forEach(function (c) { tile(document.getElementById("attention"), c); });
+  CLTPage.wire();
+  document.getElementById("go-guide").addEventListener("click", function (e) {
+    e.preventDefault();
+    CLTPage.go({ pageType: "webresource", webresourceName: "clt_/pages/intake-guide.html" });
+  });
+})();
+</script>
+<script>
+// Applicant pool cards: worked out here from the screener answers, for the group picked in "Show figures for".
+// % of AMI is each application's Stated income (% of AMI), worked out by the intake flow (and tools/recalc_ami.py)
+// from the newest HUD AMI Limits for its county: 100% AMI = twice the 50% limit for the household size.
+function stats() {
+  var P = CLTPage, fv = P.fv, apps = [];
+  var box = document.getElementById("stats"), scope = document.getElementById("scope");
+  var size = function (a) { return (a.clt_adults || 0) + (a.clt_children || 0); };
+  var pct = function (n, d) { return d ? Math.round(100 * n / d) + "%" : "-"; };
+  var money = function (n) { return "$" + Math.round(n).toLocaleString(); };
+
+  function card(n, t, d, bars) {
+    var el = document.createElement("div"); el.className = "stat";
+    el.innerHTML = '<div class="n"></div><div class="t"></div><div class="d"></div>';
+    el.querySelector(".n").textContent = n; el.querySelector(".t").textContent = t; el.querySelector(".d").textContent = d || "";
+    if (!n) el.querySelector(".n").remove();
+    if (bars) {
+      var max = Math.max.apply(null, bars.map(function (b) { return b[1]; }).concat([1]));
+      var wrap = document.createElement("div"); wrap.className = "bars";
+      bars.forEach(function (b) {
+        var row = document.createElement("div"); row.className = "bar";
+        row.innerHTML = '<span></span><div class="track"><div class="fill"></div></div><span class="c"></span>';
+        row.children[0].textContent = b[0]; row.children[2].textContent = b[1];
+        row.querySelector(".fill").style.width = (100 * b[1] / max) + "%";
+        wrap.appendChild(row);
+      });
+      el.appendChild(wrap);
+    }
+    box.appendChild(el);
+  }
+
+  function counts(list, keys) {
+    var c = {};
+    list.forEach(function (a) { keys(a).forEach(function (k) { if (k) c[k] = (c[k] || 0) + 1; }); });
+    return c;
+  }
+
+  function draw() {
+    var v = scope.value;
+    var list = apps.filter(function (a) {
+      return v === "all" ? true : v === "none" ? !a._clt_project_value : a._clt_project_value === v;
+    });
+    box.innerHTML = "";
+    if (!list.length) { card("", "No screeners in this group yet", ""); return; }
+    var n = list.length;
+    var sizes = list.map(size).filter(Boolean);
+    var inc = list.map(function (a) { return a.clt_statedannualincome; }).filter(function (x) { return x != null; }).sort(function (a, b) { return a - b; });
+    var median = inc.length ? (inc.length % 2 ? inc[(inc.length - 1) / 2] : (inc[inc.length / 2 - 1] + inc[inc.length / 2]) / 2) : null;
+    var pcts = list.map(function (a) { return a.clt_amipct; })
+                   .filter(function (x) { return x != null; });
+    var avgAmi = pcts.length ? pcts.reduce(function (s, x) { return s + x; }, 0) / pcts.length : null;
+    var band = function (lo, hi) { return pcts.filter(function (x) { return x > lo && x <= hi; }).length; };
+    var fthb = list.filter(function (a) { return a.clt_firsttimebuyer === true; }).length;
+    var homes = counts(list, function (a) { return fv(a, "clt_homesizes").split("; "); });
+    var counties = counts(list, function (a) { return [fv(a, "_clt_county_value") || "Not given"]; });
+    var top = function (c, k) { return Object.keys(c).sort(function (a, b) { return c[b] - c[a]; }).slice(0, k).map(function (x) { return [x, c[x]]; }); };
+    var preapp = list.filter(function (a) { return fv(a, "clt_preapproval") === "Yes, I have a pre-approval letter"; }).length;
+    var edu = list.filter(function (a) { return fv(a, "clt_hbeducation") === "Completed"; }).length;
+
+    card(String(n), "Screeners", v === "all" ? "Every screener received" : scope.options[scope.selectedIndex].text);
+    card(sizes.length ? (sizes.reduce(function (s, x) { return s + x; }, 0) / sizes.length).toFixed(1) : "-",
+         "Average household size", "Adults plus children");
+    card(median != null ? money(median) : "-", "Median household income",
+         inc.length ? "Average " + money(inc.reduce(function (s, x) { return s + x; }, 0) / inc.length) + ", as stated" : "");
+    card(avgAmi != null ? Math.round(avgAmi) + "%" : "-", "Average % of AMI",
+         pcts.length ? pcts.length + " of " + n + " have a figure (county, size and income given, and HUD limits loaded)"
+                     : "Add HUD AMI Limits for their counties under Settings to see this");
+    if (pcts.length) card("", "Income bands (% of AMI)", "", [["30% or less", band(-1, 30)], ["31 to 50%", band(30, 50)],
+      ["51 to 80%", band(50, 80)], ["81 to 100%", band(80, 100)], ["Over 100%", band(100, 1e9)]]);
+    card(pct(fthb, n), "First-time buyers", fthb + " of " + n);
+    card("", "Home sizes wanted", "Applicants can pick more than one", top(homes, 6).sort(function (a, b) { return a[0] < b[0] ? -1 : 1; }));
+    card("", "Where they live", "Top counties", top(counties, 5));
+    card(pct(preapp, n), "Lender pre-approval letter", pct(edu, n) + " have finished homebuyer education");
+  }
+
+  var cols = "clt_adults,clt_children,clt_statedannualincome,clt_homesizes,clt_firsttimebuyer,clt_preapproval," +
+             "clt_hbeducation,clt_amipct,clt_iseligible,clt_firstsubmittedon,_clt_project_value,_clt_county_value";
+  Promise.all([
+    P.getAll("clt_applications?$select=" + cols + "&$filter=statecode eq 0 and clt_screenerentryid ne null"),
+    P.getAll("clt_projects?$select=clt_projectid,clt_name,clt_status,clt_selectionmethod,clt_applicationopens," +
+             "clt_applicationcloses&$filter=statecode eq 0&$orderby=clt_name"),
+    P.getAll("clt_projecthomes?$select=_clt_project_value,clt_bedrooms&$filter=statecode eq 0")
+      .catch(function () { return []; })
+  ]).then(function (r) {
+    apps = r[0];
+    projects(apps, r[1], r[2]);
+    r[1].forEach(function (p) {
+      var o = document.createElement("option"); o.value = p.clt_projectid;
+      o.textContent = p.clt_name + (fv(p, "clt_status") === "Closed" ? " (closed)" : ""); scope.appendChild(o);
+    });
+  }).then(draw, function (e) {
+    box.innerHTML = ""; card("", "Couldn't load the figures", e.message);
+  });
+  scope.addEventListener("change", draw);
+}
+stats();
+
+// Projects taking applications: one card per project with status Accepting applications, or whose window is
+// open today. Single-series bars in the brand accent; numbers in text, with hover titles on each bar.
+function projects(apps, list, homes) {
+  var P = CLTPage, fv = P.fv, box = document.getElementById("projects");
+  var DAY = 864e5, today = new Date(); today.setHours(0, 0, 0, 0);
+  var day = function (d) { return d ? new Date(d.slice(0, 10) + "T00:00:00") : null; };
+  var short = function (d) { return d.toLocaleDateString(undefined, { month: "short", day: "numeric" }); };
+  var el = function (tag, cls, text) {
+    var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e;
+  };
+  var SIZES = ["Studio", "1 bedroom", "2 bedrooms", "3 bedrooms", "4+ bedrooms"];
+  var sizeOf = function (beds) { return SIZES[Math.min(Math.max(beds || 0, 0), 4)]; };
+
+  var open = list.filter(function (p) {
+    var st = fv(p, "clt_status"), o = day(p.clt_applicationopens), c = day(p.clt_applicationcloses);
+    if (st === "Closed") return false;
+    return st === "Accepting applications" || (o && o <= today && (!c || c >= today));
+  });
+  box.innerHTML = "";
+  if (!open.length) {
+    var none = el("div", "stat");
+    none.appendChild(el("div", "t", "No projects are taking applications right now"));
+    none.appendChild(el("div", "d", "Set a project's status to Accepting applications, or its application window, to see it here."));
+    var nb = el("button", "btn", "+ New project"); nb.dataset.new = "clt_project"; nb.style.marginTop = "8px";
+    none.appendChild(nb); box.appendChild(none); P.wire(none);
+    return;
+  }
+
+  open.forEach(function (p) {
+    var mine = apps.filter(function (a) { return a._clt_project_value === p.clt_projectid; });
+    var card = el("div", "proj");
+
+    // Title and window
+    var head = el("div", "ph");
+    var name = el("a", "pn", p.clt_name); name.addEventListener("click", function () { P.openRecord("clt_project", p.clt_projectid); });
+    head.appendChild(name);
+    var add = el("button", "btn", "Add applicants");
+    add.addEventListener("click", function () {
+      P.go({ pageType: "webresource", webresourceName: "clt_/pages/assign.html", data: p.clt_projectid });
+    });
+    head.appendChild(add);
+    card.appendChild(head);
+    var o = day(p.clt_applicationopens), c = day(p.clt_applicationcloses);
+    var sub = [fv(p, "clt_selectionmethod"), fv(p, "clt_status")].filter(Boolean);
+    if (c) {
+      var left = Math.round((c - today) / DAY);
+      sub.push("closes " + short(c) + " (" + (left === 0 ? "today" : left + " day" + (left === 1 ? "" : "s") + " left") + ")");
+    } else sub.push("rolling, no closing date");
+    card.appendChild(el("div", "d", sub.join(" · ")));
+    if (o && c && c > o) {
+      var tl = el("div", "timeline"), done = Math.min(1, Math.max(0, (today - o) / (c - o)));
+      var fill = el("div", "fill"); fill.style.width = (100 * done) + "%"; tl.appendChild(fill);
+      tl.title = "Opened " + short(o) + ", closes " + short(c) + ": " + Math.round(100 * done) + "% of the window gone";
+      card.appendChild(tl);
+      var ends = el("div", "ends"); ends.appendChild(el("span", null, short(o))); ends.appendChild(el("span", null, short(c)));
+      card.appendChild(ends);
+    }
+
+    // Headline numbers
+    var elig = mine.filter(function (a) { return a.clt_iseligible === true; }).length;
+    var pcts = mine.map(function (a) { return a.clt_amipct; }).filter(function (x) { return x != null; });
+    var avg = pcts.length ? Math.round(pcts.reduce(function (s, x) { return s + x; }, 0) / pcts.length) + "%" : "-";
+    var nums = el("div", "nums");
+    [[String(mine.length), "applications"], [String(elig), "eligible" + (mine.length ? " (" + Math.round(100 * elig / mine.length) + "%)" : "")],
+     [avg, "average % of AMI"]].forEach(function (x) {
+      var b = el("div"); b.appendChild(el("div", "n", x[0])); b.appendChild(el("div", "d", x[1])); nums.appendChild(b);
+    });
+    card.appendChild(nums);
+
+    // Applications per week, last 8 weeks (weeks start Monday)
+    var start = new Date(today); start.setDate(start.getDate() - ((start.getDay() + 6) % 7) - 7 * 7);
+    var weeks = [];
+    for (var i = 0; i < 8; i++) { var w = new Date(start); w.setDate(w.getDate() + 7 * i); weeks.push({ from: w, n: 0 }); }
+    mine.forEach(function (a) {
+      var d = day(a.clt_firstsubmittedon); if (!d || d < start) return;
+      var k = Math.floor((d - start) / (7 * DAY)); if (k >= 0 && k < 8) weeks[k].n++;
+    });
+    var max = Math.max.apply(null, weeks.map(function (w) { return w.n; }).concat([1]));
+    var peak = Math.max.apply(null, weeks.map(function (w) { return w.n; }));
+    card.appendChild(el("div", "t", "Applications per week" + (peak ? " (busiest: " + peak + ")" : ", last 8 weeks: none yet")));
+    var cols = el("div", "cols");
+    weeks.forEach(function (w) {
+      var col = el("div", "col");
+      var bar = el("div", "cb"); bar.style.height = (w.n ? Math.max(6, 100 * w.n / max) : 0) + "%";
+      col.title = "Week of " + short(w.from) + ": " + w.n + " application" + (w.n === 1 ? "" : "s");
+      col.appendChild(bar); cols.appendChild(col);
+    });
+    card.appendChild(cols);
+    var wends = el("div", "ends");
+    wends.appendChild(el("span", null, "Week of " + short(weeks[0].from))); wends.appendChild(el("span", null, "this week"));
+    card.appendChild(wends);
+
+    // Home sizes wanted, against homes offered
+    var want = {}, have = {};
+    mine.forEach(function (a) { fv(a, "clt_homesizes").split("; ").forEach(function (h) { if (h) want[h] = (want[h] || 0) + 1; }); });
+    homes.forEach(function (h) { if (h._clt_project_value === p.clt_projectid) { var k = sizeOf(h.clt_bedrooms); have[k] = (have[k] || 0) + 1; } });
+    var sizes = SIZES.filter(function (k) { return want[k] || have[k]; });
+    if (sizes.length) {
+      card.appendChild(el("div", "t", "Home sizes wanted"));
+      var wmax = Math.max.apply(null, sizes.map(function (k) { return want[k] || 0; }).concat([1]));
+      var bars = el("div", "bars");
+      sizes.forEach(function (k) {
+        var row = el("div", "bar"); row.appendChild(el("span", null, k));
+        var track = el("div", "track"), f = el("div", "fill"); f.style.width = (100 * (want[k] || 0) / wmax) + "%";
+        track.appendChild(f); row.appendChild(track);
+        row.appendChild(el("span", "c", String(want[k] || 0)));
+        row.title = k + ": " + (want[k] || 0) + " applicant" + (want[k] === 1 ? "" : "s") + " want it, " +
+                    (have[k] || 0) + " home" + (have[k] === 1 ? "" : "s") + " offered";
+        bars.appendChild(row);
+        var hs = el("div", "homes", (have[k] || 0) + " home" + (have[k] === 1 ? "" : "s") + " offered");
+        bars.appendChild(hs);
+      });
+      card.appendChild(bars);
+    }
+    box.appendChild(card);
+  });
+}
+</script>
+</body>
+</html>
