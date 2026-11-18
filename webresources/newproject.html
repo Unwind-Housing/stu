@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>New project</title>
+<link rel="stylesheet" href="pages.css">
+<script src="pages.js"></script>
+<script src="newproject.js"></script>
+</head>
+<body>
+<div class="page">
+
+  <div class="banner">
+    <img data-logo alt="">
+    <div>
+      <h1>New project</h1>
+      <p>Six short steps. Nothing is saved until you choose Create project on the last one.</p>
+    </div>
+  </div>
+
+  <ol class="steps" id="steps"></ol>
+
+  <!-- 1 -->
+  <section class="panel" data-step="1">
+    <h2>The basics</h2>
+    <div class="fields">
+      <label class="field wide">Project name
+        <input id="name" type="text" maxlength="100" placeholder="For example: Maple Court phase 1">
+      </label>
+      <fieldset class="field">
+        <legend>What kind of project is it?</legend>
+        <label class="opt"><input type="radio" name="type" value="New construction sale"> <span><b>New homes</b> being sold for the first time</span></label>
+        <label class="opt"><input type="radio" name="type" value="Resale"> <span><b>Resale</b> of a home that has an owner now</span></label>
+      </fieldset>
+      <fieldset class="field">
+        <legend>How will buyers be selected?</legend>
+        <label class="opt"><input type="radio" name="method" value="Lottery"> <span><b>Lottery.</b> Applications close on a date, then one draw ranks everyone.</span></label>
+        <label class="opt"><input type="radio" name="method" value="First come first served"> <span><b>First come, first served.</b> Ranked by when each household first applied.</span></label>
+      </fieldset>
+      <label class="field">Applications open <small>optional</small>
+        <input id="opens" type="date">
+      </label>
+      <label class="field">Applications close <small id="closeshint">optional</small>
+        <input id="closes" type="date">
+      </label>
+    </div>
+  </section>
+
+  <!-- 2 -->
+  <section class="panel" data-step="2" hidden>
+    <h2>The homes <small>tick the homes in this project</small></h2>
+    <div class="toolbar">
+      <label>Show
+        <select id="h-scope">
+          <option value="open">Homes without an owner</option>
+          <option value="all">All properties</option>
+        </select>
+      </label>
+      <label>Neighborhood <select id="h-hood"><option value="">Any</option></select></label>
+      <span class="d" id="h-count" style="color: var(--muted); align-self: center"></span>
+    </div>
+    <div class="tablewrap" style="margin-top: 10px">
+      <table class="data">
+        <thead><tr><th></th><th>Property</th><th>Neighborhood</th><th>Type</th><th>Status</th><th>Bedrooms</th></tr></thead>
+        <tbody id="h-rows"><tr><td colspan="6">Loading properties...</td></tr></tbody>
+      </table>
+    </div>
+    <p class="note" style="margin-top: 10px">A home missing from this list? Add it under Stewardship, Portfolio, Properties first.
+      Bedrooms come from the property; change one here only if this project should treat it differently.</p>
+  </section>
+
+  <!-- 3 -->
+  <section class="panel" data-step="3" hidden>
+    <h2>Price and monthly cost <small>what a buyer pays, for each home size</small></h2>
+    <p class="lead">Stu works out the mortgage payment from the sale price, the down payment and the interest rate, then adds the other
+      monthly costs to get the monthly housing cost. The pre-screen divides that by each applicant's income to test whether they can
+      afford the home.</p>
+
+    <h3 class="sub">The loan</h3>
+    <div class="fields">
+      <label class="field">Down payment (% of the price) <small>the rest is the loan</small>
+        <input id="f-down" type="text" inputmode="decimal" placeholder="For example 3">
+      </label>
+      <label class="field">Loan term (years) <small>blank is 30</small>
+        <input id="f-term" type="number" min="1" max="50" step="1" placeholder="30">
+      </label>
+    </div>
+
+    <h3 class="sub">Interest rate <small>by income band, if lower-income buyers can get a lower rate</small></h3>
+    <div class="tablewrap bandswrap">
+      <table class="data bands">
+        <thead><tr><th>Buyers</th><th>Interest rate (%)</th><th></th></tr></thead>
+        <tbody id="bands"></tbody>
+      </table>
+    </div>
+    <div class="actions" style="margin-top: 8px">
+      <button class="btn" id="b-add" type="button">Add an income band</button>
+    </div>
+    <p class="note" style="margin-top: 6px">One band is enough when every buyer gets the same rate. Add a band when a loan program gives
+      households below an income line a lower rate, or when homes are priced by the buyer's income.</p>
+    <label class="field check" id="perbandwrap" hidden style="margin-top: 10px"><input id="f-perband" type="checkbox">
+      <span>Homes have a different sale price for each income band</span></label>
+
+    <h3 class="sub">Each home size</h3>
+    <div class="costcards" id="costs"></div>
+    <p class="note" style="margin-top: 10px">Every home of the same size gets the same price and costs. You can change one home, or a
+      band's figures, on the project afterwards.</p>
+  </section>
+
+  <!-- 4 -->
+  <section class="panel" data-step="4" hidden>
+    <h2>The rules <small>leave a box blank to use your organization's rule</small></h2>
+    <div class="tablewrap">
+      <table class="data rules">
+        <thead><tr><th>Rule</th><th>Your organization's rule</th><th>For this project</th></tr></thead>
+        <tbody id="rules"></tbody>
+      </table>
+    </div>
+    <h2>Pre-screen settings <small>for this project only</small></h2>
+    <div class="fields">
+      <label class="field">Income buffer (% over the limit) <small>blank is 10: an 80% limit lets 88% through</small>
+        <input id="r-incomebuffer" type="number" min="0" max="100" step="1" placeholder="10">
+      </label>
+      <label class="field">Housing ratio buffer (points) <small>2 turns a 35% limit into 37%</small>
+        <input id="r-housingratiobuffer" type="number" min="0" max="50" step="0.5" placeholder="0">
+      </label>
+      <label class="field">Total debt ratio buffer (points) <small>2 turns a 44% limit into 46%</small>
+        <input id="r-debtratiobuffer" type="number" min="0" max="50" step="0.5" placeholder="0">
+      </label>
+      <label class="field">Lowest credit score range accepted
+        <select id="r-mincreditrange"><option value="">No minimum</option></select>
+      </label>
+      <label class="field">No bankruptcy in the last (years) <small>blank is no check</small>
+        <input id="r-bankruptcyyears" type="number" min="0" max="20" step="1">
+      </label>
+      <label class="field check"><input id="r-minaffordabilitycheck" type="checkbox" checked>
+        <span>Test the housing and debt ratios in the pre-screen</span></label>
+    </div>
+  </section>
+
+  <!-- 5 -->
+  <section class="panel" data-step="5" hidden>
+    <h2>Who fits which home <small>which household sizes can apply for each home size, and in which tier</small></h2>
+    <p class="lead">Tier 1 ranks ahead of tier 2 on that home size's list. Leave a box blank and households of that size can't apply
+      for that home size.</p>
+    <div class="actions" style="margin-bottom: 10px">
+      <button class="btn" id="p-start" type="button">Fill in a common starting point</button>
+      <button class="btn" id="p-clear" type="button">Clear</button>
+    </div>
+    <div class="tablewrap">
+      <table class="data grid">
+        <thead><tr id="p-head"></tr></thead>
+        <tbody id="p-rows"></tbody>
+      </table>
+    </div>
+    <p class="note" style="margin-top: 10px">The starting point: at least one person per bedroom and no more than two is tier 1; one
+      person fewer than the bedrooms is tier 2. Change it to match your own policy.</p>
+  </section>
+
+  <!-- 6 -->
+  <section class="panel" data-step="6" hidden>
+    <h2>Review and create</h2>
+    <div id="review"></div>
+    <p class="note" style="margin-top: 12px">Invitation settings (how many households to invite, how long they have to respond) start
+      at their usual values. You can change anything on the project afterwards.</p>
+  </section>
+
+  <div id="problems"></div>
+
+  <div class="bottombar">
+    <button class="btn" id="back" type="button">Back</button>
+    <button class="btn primary" id="next" type="button">Next</button>
+    <span class="msg" id="msg"></span>
+  </div>
+</div>
+
+<script>
+(function () {
+  var P = CLTPage, N = CLTNewProject, fv = P.fv;
+  var $ = function (id) { return document.getElementById(id); };
+  var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); };
+  var money = function (n) { n = N.num(n); return n === null || isNaN(n) ? "" : "$" + Math.round(n).toLocaleString(); };
+
+  var step = 1, reached = 1, busy = false, done = false;
+  var state = { name: "", type: "", method: "", opens: "", closes: "", homes: [], finance: { down: "", term: "", perBandPrice: false },
+                bands: [{ maxami: "", rate: "" }], costs: {}, rules: {}, priorities: {} };
+  var properties = [], inProject = {}, org = null, choices = {}, names = [], ticked = {};
+  var NOT_HOMES = ["Common area", "Commercial", "Agricultural", "Land only"];
+  var OWNED = ["Owner-occupied", "Rented", "Left program"];
+  // The rules shown side by side with the organization's: [key, label, kind]
+  var SHOWN = [["maxami", "Max income (% of AMI)", "pct"], ["minami", "Min income (% of AMI)", "pct"],
+               ["firsttimebuyer", "First-time buyer", "rule"], ["localtie", "Lives or works locally", "rule"],
+               ["assetlimit", "Asset limit", "money"], ["housingratiomax", "Housing ratio max (%)", "pct"],
+               ["debtratiomax", "Total debt ratio max (%)", "pct"]];
+
+  // ---------------------------------------------------------------- loading
+  function load() {
+    var names_ = ["projecttype", "selectionmethod", "projectstatus", "rulechoice", "creditrange", "projecthomestatus"];
+    return Promise.all([
+      P.getAll("clt_properties?$select=clt_propertyid,clt_name,clt_recordnumber,clt_bedrooms,clt_status," +
+               "_clt_neighborhood_value,_clt_propertytype_value&$filter=statecode eq 0&$orderby=clt_name"),
+      P.entitySet("clt_eligibility").then(function (es) {
+        return P.get(es + "?$select=clt_maxami,clt_minami,clt_firsttimebuyer,clt_localtie,clt_assetlimit," +
+                     "clt_housingratiomax,clt_debtratiomax&$filter=statecode eq 0&$orderby=createdon asc&$top=1"); }),
+      P.getAll("clt_projects?$select=clt_projectid,clt_name,clt_status&$filter=statecode eq 0"),
+      P.entitySet("clt_projecthome").then(function (es) {
+        return P.getAll(es + "?$select=_clt_property_value,_clt_project_value&$filter=statecode eq 0"); }),
+      Promise.all(names_.map(function (n) { return P.choice("clt_" + n); }))
+    ]).then(function (r) {
+      properties = r[0];
+      org = r[1].value[0] || null;
+      names = r[2].map(function (p) { return (p.clt_name || "").trim().toLowerCase(); });
+      var open = {};
+      r[2].forEach(function (p) { if (fv(p, "clt_status") !== "Closed") open[p.clt_projectid] = p.clt_name; });
+      r[3].forEach(function (h) { if (open[h._clt_project_value]) inProject[h._clt_property_value] = open[h._clt_project_value]; });
+      names_.forEach(function (n, i) { choices[n] = r[4][i]; });
+      var hoods = {};
+      properties.forEach(function (p) { var h = fv(p, "_clt_neighborhood_value"); if (h) hoods[h] = 1; });
+      Object.keys(hoods).sort().forEach(function (h) {
+        var o = document.createElement("option"); o.value = h; o.textContent = h; $("h-hood").appendChild(o); });
+      Object.keys(choices.creditrange).forEach(function (label) {
+        if (label.indexOf("know") >= 0) return;
+        var o = document.createElement("option"); o.value = label; o.textContent = label + " or better"; $("r-mincreditrange").appendChild(o); });
+      // Opened from the Resale page with a home: start as a resale of that home.
+      var want = /(?:^|&)property=([0-9a-f-]+)/i.exec(decodeURIComponent((/[?&]data=([^&]*)/.exec(location.search) || [])[1] || ""));
+      var home = want && properties.filter(function (p) { return p.clt_propertyid === want[1].toLowerCase(); })[0];
+      if (home) {
+        ticked[home.clt_propertyid] = { propertyId: home.clt_propertyid, name: home.clt_name || "(no name)", bedrooms: home.clt_bedrooms == null ? "" : home.clt_bedrooms };
+        syncHomes();
+        if (!$("name").value) $("name").value = (home.clt_name || "Home") + " resale";
+        var resale = document.querySelector('input[name="type"][value="Resale"]');
+        if (resale) resale.checked = true;
+        readBasics();
+      }
+      renderHomes(); renderRules();
+    }).catch(function (e) {
+      $("msg").textContent = "Couldn't load what this page needs (" + e.message + "). Refresh to try again."; $("msg").className = "msg err";
+      $("next").disabled = true;
+    });
+  }
+
+  // ---------------------------------------------------------------- step 1
+  function readBasics() {
+    state.name = $("name").value;
+    state.opens = $("opens").value; state.closes = $("closes").value;
+    ["type", "method"].forEach(function (k) {
+      var on = document.querySelector('input[name="' + k + '"]:checked'); state[k] = on ? on.value : ""; });
+    $("closeshint").textContent = state.method === "First come first served" ? "leave blank for a rolling list" : "optional";
+  }
+
+  // ---------------------------------------------------------------- step 2
+  function homeShown(p) {
+    var scope = $("h-scope").value, hood = $("h-hood").value;
+    if (ticked[p.clt_propertyid]) return !hood || fv(p, "_clt_neighborhood_value") === hood;
+    if (hood && fv(p, "_clt_neighborhood_value") !== hood) return false;
+    if (scope === "all") return true;
+    return NOT_HOMES.indexOf(fv(p, "_clt_propertytype_value")) < 0 && OWNED.indexOf(fv(p, "clt_status")) < 0;
+  }
+  function renderHomes() {
+    var body = $("h-rows"), shown = properties.filter(homeShown); body.innerHTML = "";
+    if (!properties.length) body.innerHTML = '<tr><td colspan="6">There are no properties yet. Add them under Stewardship, Portfolio, Properties.</td></tr>';
+    else if (!shown.length) body.innerHTML = '<tr><td colspan="6">No properties match. Try "All properties".</td></tr>';
+    shown.forEach(function (p) {
+      var id = p.clt_propertyid, t = ticked[id], tr = document.createElement("tr");
+      var other = inProject[id] ? ' <span class="pill warn" title="Already a home in this project">in ' + esc(inProject[id]) + "</span>" : "";
+      tr.innerHTML = '<td><input type="checkbox" id="h-' + id + '"' + (t ? " checked" : "") + '></td>' +
+        '<td><label for="h-' + id + '">' + esc(p.clt_name || "(no name)") + "</label>" + other + "</td>" +
+        "<td>" + esc(fv(p, "_clt_neighborhood_value")) + "</td><td>" + esc(fv(p, "_clt_propertytype_value")) + "</td>" +
+        "<td>" + esc(fv(p, "clt_status")) + "</td>" +
+        '<td><input class="short" type="number" min="0" max="12" step="1" data-k="bedrooms" value="' +
+          esc(t ? t.bedrooms : (p.clt_bedrooms == null ? "" : p.clt_bedrooms)) + '"' + (t ? "" : " disabled") + '></td>';
+      tr.querySelector('input[type="checkbox"]').addEventListener("change", function (e) {
+        if (e.target.checked) ticked[id] = { propertyId: id, name: p.clt_name || "(no name)",
+                                             bedrooms: p.clt_bedrooms == null ? "" : p.clt_bedrooms };
+        else delete ticked[id];
+        syncHomes(); renderHomes();
+      });
+      tr.querySelectorAll("input[data-k]").forEach(function (inp) {
+        inp.addEventListener("input", function () { if (ticked[id]) { ticked[id][inp.dataset.k] = inp.value; syncHomes(); } });
+      });
+      body.appendChild(tr);
+    });
+    syncHomes();
+  }
+  function syncHomes() {
+    state.homes = properties.filter(function (p) { return ticked[p.clt_propertyid]; }).map(function (p) { return ticked[p.clt_propertyid]; });
+    var n = state.homes.length;
+    $("h-count").textContent = n + (n === 1 ? " home ticked" : " homes ticked");
+  }
+
+  // ---------------------------------------------------------------- step 3
+  var refreshCosts = [];   // one function per card: redraws its totals when a band, the loan or an amount changes
+
+  function renderBands() {
+    var body = $("bands"), bands = state.bands, last = bands.length - 1; body.innerHTML = "";
+    bands.forEach(function (b, i) {
+      var tr = document.createElement("tr");
+      var who = bands.length === 1 ? "All buyers"
+        : i < last ? 'Households up to <input class="short" type="text" inputmode="decimal" data-k="maxami" aria-label="Top of band ' + (i + 1) +
+                     ', percent of AMI" value="' + esc(b.maxami) + '"> % of AMI'
+        : "Everyone above that";
+      tr.innerHTML = "<td>" + who + '</td><td><input class="short" type="text" inputmode="decimal" data-k="rate" aria-label="Interest rate, band ' + (i + 1) +
+        '" placeholder="%" value="' + esc(b.rate) + '"></td><td>' +
+        (bands.length > 1 && i < last ? '<button class="btn small" type="button" data-remove>Remove</button>' : "") + "</td>";
+      tr.querySelectorAll("input").forEach(function (inp) {
+        inp.addEventListener("input", function () {
+          b[inp.dataset.k] = inp.value;
+          if (inp.dataset.k === "maxami" && state.finance.perBandPrice) renderCosts(); else refreshCosts.forEach(function (f) { f(); });
+        });
+      });
+      var rm = tr.querySelector("[data-remove]");
+      if (rm) rm.addEventListener("click", function () {
+        bands.splice(i, 1);
+        Object.keys(state.costs).forEach(function (size) { delete state.costs[size].prices; });
+        if (bands.length === 1) { state.finance.perBandPrice = false; $("f-perband").checked = false; }
+        renderBands(); renderCosts();
+      });
+      body.appendChild(tr);
+    });
+    $("perbandwrap").hidden = bands.length < 2;
+  }
+
+  function renderCosts() {
+    var box = $("costs"), sizes = N.sizesFor(state), bands = state.bands; box.innerHTML = ""; refreshCosts = [];
+    var perBand = state.finance.perBandPrice && bands.length > 1;
+    var label = function (i) { var t = N.bandName(state, i); return /NaN|null/.test(t) ? "Band " + (i + 1) : t; };
+    sizes.forEach(function (size) {
+      var homes = state.homes.filter(function (h) { return N.sizeOf(N.num(h.bedrooms)) === size; });
+      var c = state.costs[size] = state.costs[size] || {};
+      c.prices = c.prices || {};
+      var card = document.createElement("div"); card.className = "costcard";
+      var line = function (attr, label_, value) {
+        return '<label class="costline"><span>' + esc(label_) + '</span><input type="text" inputmode="decimal" ' + attr +
+               ' placeholder="$" value="' + esc(value == null ? "" : value) + '"></label>';
+      };
+      var prices = perBand ? bands.map(function (b, i) { return line('data-band="' + i + '"', "Sale price, " + label(i).toLowerCase(), c.prices[i]); }).join("")
+                           : line('data-k="price"', "Sale price", c.price);
+      card.innerHTML = "<h3>" + esc(N.sizeName(size)) + " <small>" + homes.length + (homes.length === 1 ? " home: " : " homes: ") +
+          esc(homes.map(function (h) { return h.name; }).join(", ")) + "</small></h3>" + prices +
+        '<div class="costsub">Each month, the same for every buyer</div>' +
+        N.COST_PARTS.map(function (part) { return line('data-k="' + part[0] + '"', part[2], c[part[0]]); }).join("") +
+        '<div class="costsub">What it comes to</div><div class="scrollx"><table class="costout"><thead></thead><tbody></tbody></table></div>';
+      var refresh = function () {
+        var cols = bands.map(function (b, i) { return N.bandCost(state, size, i); });
+        var cell = function (v) { return v === null ? '<span class="mutedtext">not yet</span>' : isNaN(v) ? '<span class="mutedtext">check</span>' : money(v); };
+        var row = function (name, key, strong) {
+          return "<tr" + (strong ? ' class="total"' : "") + "><th>" + name + "</th>" + cols.map(function (x) { return "<td>" + cell(x[key]) + "</td>"; }).join("") + "</tr>";
+        };
+        card.querySelector("thead").innerHTML = bands.length > 1
+          ? "<tr><th></th>" + bands.map(function (b, i) { return "<th>" + esc(label(i)) + (N.num(b.rate) === null ? "" : "<small>" + esc(b.rate) + "%</small>") + "</th>"; }).join("") + "</tr>" : "";
+        card.querySelector("tbody").innerHTML = row("Principal and interest", "pi") + row("Taxes, insurance and fees", "shared") + row("Monthly housing cost", "total", true);
+      };
+      card.querySelectorAll("input").forEach(function (inp) {
+        inp.addEventListener("input", function () {
+          if (inp.dataset.band !== undefined) c.prices[inp.dataset.band] = inp.value; else c[inp.dataset.k] = inp.value;
+          refresh();
+        });
+      });
+      refresh(); refreshCosts.push(refresh);
+      box.appendChild(card);
+    });
+  }
+
+  // ---------------------------------------------------------------- step 4
+  function orgValue(key, kind) {
+    if (!org) return "";
+    var v = org["clt_" + key];
+    if (kind === "rule") return fv(org, "clt_" + key);
+    if (v == null) return key === "minami" ? "No minimum" : key === "assetlimit" ? "No limit" : "";
+    return kind === "money" ? money(v) : v + "%";
+  }
+  function renderRules() {
+    var body = $("rules"); body.innerHTML = "";
+    SHOWN.forEach(function (r) {
+      var tr = document.createElement("tr"), id = "r-" + r[0];
+      var input = r[2] === "rule"
+        ? '<select id="' + id + '"><option value="">Same as your organization</option><option>Required</option><option>Not required</option></select>'
+        : '<input id="' + id + '" class="mid" type="text" inputmode="decimal" placeholder="Same">';
+      tr.innerHTML = '<td><label for="' + id + '">' + esc(r[1]) + "</label></td><td>" +
+        (org ? esc(orgValue(r[0], r[2])) || '<span class="mutedtext">Not set</span>' : '<span class="mutedtext">No organization rules yet (Settings, Organization eligibility)</span>') +
+        "</td><td>" + input + "</td>";
+      body.appendChild(tr);
+    });
+  }
+  function readRules() {
+    N.NUMBER_RULES.concat(N.CHOICE_RULES).forEach(function (r) { var el = $("r-" + r[0]); if (el) state.rules[r[0]] = el.value; });
+    state.rules.minaffordabilitycheck = $("r-minaffordabilitycheck").checked;
+  }
+
+  // ---------------------------------------------------------------- step 5
+  function renderPriorities() {
+    var sizes = N.sizesFor(state), head = "<th>Home size</th>";
+    for (var n = 1; n <= N.MAX_HOUSEHOLD; n++) head += "<th>" + n + (n === 1 ? " person" : n === N.MAX_HOUSEHOLD ? "+ people" : " people") + "</th>";
+    $("p-head").innerHTML = head;
+    var body = $("p-rows"); body.innerHTML = "";
+    sizes.forEach(function (size) {
+      var tr = document.createElement("tr"), row = state.priorities[size] || {};
+      var cells = "<th>" + esc(N.sizeName(size)) + "</th>";
+      for (var n = 1; n <= N.MAX_HOUSEHOLD; n++) {
+        cells += '<td><select data-n="' + n + '" aria-label="' + esc(N.sizeName(size)) + ", " + n + ' people">' +
+          ["", 1, 2, 3].map(function (t) { return '<option value="' + t + '"' + (String(row[n] == null ? "" : row[n]) === String(t) ? " selected" : "") + ">" +
+            (t === "" ? "" : "Tier " + t) + "</option>"; }).join("") + "</select></td>";
+      }
+      tr.innerHTML = cells;
+      tr.querySelectorAll("select").forEach(function (sel) {
+        sel.addEventListener("change", function () {
+          state.priorities[size] = state.priorities[size] || {};
+          if (sel.value === "") delete state.priorities[size][sel.dataset.n]; else state.priorities[size][sel.dataset.n] = +sel.value;
+          sel.className = sel.value ? "on" : "";
+        });
+        sel.className = sel.value ? "on" : "";
+      });
+      body.appendChild(tr);
+    });
+  }
+
+  // ---------------------------------------------------------------- step 6
+  function renderReview() {
+    var sizes = N.sizesFor(state), r = state.rules;
+    var row = function (k, v) { return "<tr><td>" + esc(k) + "</td><td>" + (v || '<span class="mutedtext">Not set</span>') + "</td></tr>"; };
+    var over = N.NUMBER_RULES.filter(function (x) { return N.num(r[x[0]]) !== null; }).map(function (x) { return esc(x[2]) + ": <b>" + esc(r[x[0]]) + "</b>"; })
+      .concat(["firsttimebuyer", "localtie"].filter(function (k) { return r[k]; }).map(function (k) { return (k === "firsttimebuyer" ? "First-time buyer" : "Lives or works locally") + ": <b>" + esc(r[k]) + "</b>"; }))
+      .concat(r.mincreditrange ? ["Lowest credit range: <b>" + esc(r.mincreditrange) + "</b>"] : [])
+      .concat(r.minaffordabilitycheck === false ? ["Housing and debt ratios are <b>not</b> tested in the pre-screen"] : []);
+    var prio = sizes.map(function (size) {
+      var pr = state.priorities[size] || {}, byTier = {};
+      Object.keys(pr).forEach(function (n) { (byTier[pr[n]] = byTier[pr[n]] || []).push(+n); });
+      var text = Object.keys(byTier).sort().map(function (t) { return "tier " + t + ": " + byTier[t].sort(function (a, b) { return a - b; }).join(", ") + " people"; }).join("; ");
+      return "<li><b>" + esc(N.sizeName(size)) + ":</b> " + (text || '<span class="mutedtext">nobody yet</span>') + "</li>";
+    }).join("");
+    $("review").innerHTML =
+      '<div class="summary"><h3>The basics</h3><table class="kv">' +
+        row("Name", "<b>" + esc(state.name.trim()) + "</b>") + row("Kind", esc(state.type === "Resale" ? "Resale" : "New homes")) +
+        row("Selection", esc(state.method === "Lottery" ? "Lottery" : "First come, first served")) +
+        row("Applications open", esc(state.opens)) +
+        row("Applications close", esc(state.closes) || (state.method === "First come first served" ? "Rolling list, no closing date" : "")) +
+        row("Status", "Planning") + "</table></div>" +
+      '<div class="summary"><h3>' + state.homes.length + (state.homes.length === 1 ? " home" : " homes") + '</h3><table class="kv">' +
+        state.homes.map(function (h) { return row(h.name, esc(N.sizeName(N.sizeOf(N.num(h.bedrooms))))); }).join("") + "</table></div>" +
+      '<div class="summary"><h3>Price and monthly cost</h3><p class="mutedtext">' +
+        (N.num(state.finance.down) === null ? "No down payment" : esc(state.finance.down) + "% down") + ", " +
+        esc(N.num(state.finance.term) === null ? N.DEFAULT_TERM : state.finance.term) + '-year loan.</p><div class="scrollx"><table class="costout review"><thead><tr><th></th>' +
+        state.bands.map(function (b, i) { return "<th>" + esc(N.bandName(state, i)) + (N.num(b.rate) === null ? "" : "<small>" + esc(b.rate) + "%</small>") + "</th>"; }).join("") +
+        "</tr></thead><tbody>" +
+        sizes.map(function (size) {
+          var cols = state.bands.map(function (b, i) { return N.bandCost(state, size, i); });
+          return "<tr><th>" + esc(N.sizeName(size)) + "</th>" + cols.map(function (x) {
+            return "<td>" + (x.price === null ? '<span class="mutedtext">no sale price yet</span>'
+              : money(x.price) + " sale price<br>" + (x.total ? "<b>" + money(x.total) + "</b> a month (" + money(x.pi) + " mortgage + " + money(x.shared || 0) + " other)"
+                                                           : '<span class="mutedtext">no monthly cost yet</span>')) + "</td>"; }).join("") + "</tr>";
+        }).join("") + "</tbody></table></div></div>" +
+      '<div class="summary"><h3>Rules</h3>' + (over.length ? "<ul><li>" + over.join("</li><li>") + "</li></ul><p class=\"mutedtext\">Everything else uses your organization's rules.</p>"
+                                                            : '<p class="mutedtext">Uses your organization\'s rules throughout.</p>') + "</div>" +
+      '<div class="summary"><h3>Who fits which home</h3><ul>' + prio + "</ul></div>";
+  }
+
+  // ---------------------------------------------------------------- moving between steps
+  function readFinance() {
+    state.finance.down = $("f-down").value; state.finance.term = $("f-term").value;
+    state.finance.perBandPrice = $("f-perband").checked && state.bands.length > 1;
+  }
+  function collect() { readBasics(); readFinance(); readRules(); }
+
+  function showProblems(result) {
+    var html = "";
+    if (result.errors.length) html += '<div class="msgbox bad"><b>Fix before going on:</b><ul><li>' + result.errors.map(esc).join("</li><li>") + "</li></ul></div>";
+    if (result.warnings.length) html += '<div class="msgbox warn"><b>Worth knowing:</b><ul><li>' + result.warnings.map(esc).join("</li><li>") + "</li></ul></div>";
+    $("problems").innerHTML = html;
+  }
+
+  function extraWarnings(n) {
+    var w = [];
+    if ((!n || n === 1) && state.name.trim() && names.indexOf(state.name.trim().toLowerCase()) >= 0)
+      w.push("There is already a project called " + state.name.trim() + ".");
+    if (!n || n === 2) state.homes.forEach(function (h) { if (inProject[h.propertyId]) w.push(h.name + " is already a home in " + inProject[h.propertyId] + "."); });
+    if ((!n || n === 4) && !org) w.push("Your organization's rules aren't set yet (Settings, Organization eligibility). Rules left blank here will have nothing to fall back on.");
+    return w;
+  }
+
+  function show(n) {
+    step = n; reached = Math.max(reached, n);
+    if (n === 2 && state.type === "Resale" && !state.homes.length) $("h-scope").value = "all";
+    if (n === 2) renderHomes();
+    if (n === 3) { renderBands(); renderCosts(); }
+    if (n === 5) renderPriorities();
+    if (n === 6) renderReview();
+    document.querySelectorAll(".panel").forEach(function (p) { p.hidden = +p.dataset.step !== n; });
+    $("steps").innerHTML = N.STEPS.map(function (label, i) {
+      var k = i + 1, cls = k === n ? "on" : k <= reached ? "seen" : "";
+      return '<li class="' + cls + '"><button type="button" data-go="' + k + '"' + (k <= reached && !done ? "" : " disabled") + "><span>" + k + "</span>" + esc(label) + "</button></li>";
+    }).join("");
+    $("steps").querySelectorAll("button").forEach(function (b) { b.addEventListener("click", function () { go(+b.dataset.go); }); });
+    $("back").hidden = n === 1 || done;
+    $("next").textContent = n === 6 ? "Create project" : "Next";
+    $("next").hidden = done;
+    if (done) { /* keep the "created" message */ }
+    else if (n === 6) { var all = N.check(state); all.warnings = all.warnings.concat(extraWarnings()); showProblems(all); $("next").disabled = !!all.errors.length; }
+    else { $("problems").innerHTML = ""; $("next").disabled = false; }
+    window.scrollTo(0, 0);
+  }
+
+  // Going forward checks every step on the way; going back never does.
+  function go(target) {
+    if (busy || done) return;
+    collect();
+    for (var k = step; k < target; k++) {
+      var res = N.check(state, k);
+      if (res.errors.length) { show(k); res.warnings = res.warnings.concat(extraWarnings(k)); showProblems(res); return; }
+    }
+    show(target);
+    if (target > 1 && target < 6) {
+      var prev = N.check(state, target - 1); prev.errors = []; prev.warnings = prev.warnings.concat(extraWarnings(target - 1));
+      showProblems(prev);
+    }
+  }
+
+  function create() {
+    collect();
+    var all = N.check(state);
+    if (all.errors.length) { showProblems(all); return; }
+    var body;
+    try { body = N.plan(state, choices); } catch (e) { $("msg").textContent = e.message; $("msg").className = "msg err"; return; }
+    busy = true; $("next").disabled = true; $("back").disabled = true;
+    $("msg").className = "msg"; $("msg").textContent = "Creating the project, its homes and its priorities...";
+    P.create("clt_projects", body).then(function (rec) {
+      done = true; busy = false;
+      $("problems").innerHTML = '<div class="msgbox ok"><b>' + esc(body.clt_name) + " is created,</b> with " + body.clt_project_projecthome_project.length +
+        " homes and " + body.clt_project_projectpriority_project.length + ' priorities. <a id="open">Open the project</a></div>';
+      $("msg").textContent = "";
+      show(6);
+      $("open").addEventListener("click", function () { P.openRecord("clt_project", rec.clt_projectid); });
+      P.openRecord("clt_project", rec.clt_projectid);
+    }, function (e) {
+      busy = false; $("next").disabled = false; $("back").disabled = false;
+      $("msg").className = "msg err";
+      $("msg").textContent = "Nothing was created. Dataverse said: " + e.message;
+    });
+  }
+
+  $("back").addEventListener("click", function () { go(step - 1); });
+  $("next").addEventListener("click", function () { if (step === 6) create(); else go(step + 1); });
+  $("h-scope").addEventListener("change", renderHomes);
+  $("h-hood").addEventListener("change", renderHomes);
+  document.querySelectorAll('input[name="type"], input[name="method"]').forEach(function (el) { el.addEventListener("change", readBasics); });
+  $("b-add").addEventListener("click", function () {
+    state.bands.splice(state.bands.length - 1, 0, { maxami: "", rate: "" });
+    Object.keys(state.costs).forEach(function (size) { delete state.costs[size].prices; });
+    renderBands(); renderCosts();
+    var boxes = $("bands").querySelectorAll('input[data-k="maxami"]'); if (boxes.length) boxes[boxes.length - 1].focus();
+  });
+  ["f-down", "f-term"].forEach(function (id) {
+    $(id).addEventListener("input", function () { readFinance(); refreshCosts.forEach(function (f) { f(); }); });
+  });
+  $("f-perband").addEventListener("change", function () { readFinance(); renderCosts(); });
+  $("p-start").addEventListener("click", function () { state.priorities = N.startingPriorities(N.sizesFor(state)); renderPriorities(); });
+  $("p-clear").addEventListener("click", function () { state.priorities = {}; renderPriorities(); });
+
+  P.brand();
+  show(1);
+  load();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Review and certify</title>
+<link rel="stylesheet" href="pages.css">
+<script src="pages.js"></script>
+<script src="prescreen.js"></script>
+<script src="certify.js"></script>
+</head>
+<body>
+<div class="page">
+
+  <div class="banner">
+    <img data-logo alt="">
+    <div>
+      <h1>Review and certify</h1>
+      <p>Check a household's full application against its documents, line by line. Stu adds up the verified figures and runs
+        the project's tests on them. Then certify the household, or record why not.</p>
+    </div>
+  </div>
+
+  <!-- choosing a household -->
+  <div id="picker">
+    <div class="toolbar" style="margin-top: 18px">
+      <label>Project
+        <select id="project"><option value="">Loading projects...</option></select>
+      </label>
+      <span id="projectinfo" class="d" style="color: var(--muted); align-self: center"></span>
+    </div>
+    <h2>Full applications <small id="pickcount"></small></h2>
+    <div class="tablewrap">
+      <table class="data">
+        <thead><tr><th>Household</th><th>Application</th><th>Full application in</th><th>Stage</th><th>Certification</th><th></th></tr></thead>
+        <tbody id="pickrows"><tr><td colspan="6">Pick a project.</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- reviewing one household -->
+  <div id="work" hidden>
+    <div class="reviewhead">
+      <div><h2 id="who" style="margin: 0"></h2><span class="mutedtext" id="whosub"></span></div>
+      <div class="actions">
+        <button class="btn" id="openapp" type="button">Open the application</button>
+        <a class="btn" id="openentry" target="_blank" rel="noopener" hidden>Open the form entry and documents</a>
+        <button class="btn" id="tolist" type="button">Back to the list</button>
+      </div>
+    </div>
+    <div class="docstrip" id="docstrip"></div>
+    <div id="locked"></div>
+
+    <div id="sheet">
+      <h2>1. The household <small>who will live in the home</small></h2>
+      <div class="tablewrap"><table class="data"><thead><tr><th>Name</th><th>Role</th><th>Age</th></tr></thead><tbody id="members"></tbody></table></div>
+      <div class="fields" style="margin-top: 10px">
+        <label class="field">Certified household size <small id="sizehint"></small>
+          <input id="size" class="mid" type="number" min="1" max="20" step="1">
+        </label>
+      </div>
+
+      <h2>2. Income <small>accept what they entered, adjust it to what the documents show, or exclude it</small></h2>
+      <div class="sectiondocs" id="g-income"></div>
+      <div class="tablewrap"><table class="data lines"><thead><tr><th>Who</th><th>Source</th><th class="num">As entered, a year</th><th>Decision</th><th>Verified, a year</th><th>Why</th></tr></thead>
+        <tbody id="l-income"></tbody><tfoot><tr><td colspan="2">Certified annual income</td><td></td><td></td><td class="num" id="t-income"></td><td></td></tr></tfoot></table></div>
+
+      <h2>3. Debts <small>monthly payments</small></h2>
+      <div class="sectiondocs" id="g-debts"></div>
+      <div class="tablewrap"><table class="data lines"><thead><tr><th>Who</th><th>Debt</th><th class="num">As entered, a month</th><th>Decision</th><th>Verified, a month</th><th>Why</th></tr></thead>
+        <tbody id="l-debt"></tbody><tfoot><tr><td colspan="2">Certified monthly debt</td><td></td><td></td><td class="num" id="t-debt"></td><td></td></tr></tfoot></table></div>
+
+      <h2>4. Assets <small>exclude any account your asset limit doesn't count, such as retirement accounts, and say why</small></h2>
+      <div class="sectiondocs" id="g-assets"></div>
+      <div class="tablewrap"><table class="data lines"><thead><tr><th>Who</th><th>Account</th><th class="num">As entered</th><th>Decision</th><th>Verified</th><th>Why</th></tr></thead>
+        <tbody id="l-asset"></tbody><tfoot><tr><td colspan="2">Certified assets</td><td></td><td></td><td class="num" id="t-asset"></td><td></td></tr></tfoot></table></div>
+
+      <h2>5. Other documents <small>uploaded for the household, and not tied to a step above or below</small></h2>
+      <div class="tablewrap"><table class="data"><thead><tr><th>What it is for</th><th>Files uploaded</th></tr></thead><tbody id="otherdocs"></tbody></table></div>
+
+      <h2>6. Confirmed by staff <small>tick each one you have checked against the documents</small></h2>
+      <div class="confirms" id="confirms"></div>
+
+      <h2>7. The result <small>worked out as you go</small></h2>
+      <div class="stats" id="figures"></div>
+      <div class="tablewrap" style="margin-top: 12px"><table class="data"><thead><tr><th>Test</th><th>Result</th><th>How it was worked out</th></tr></thead><tbody id="checks"></tbody></table></div>
+      <div id="blockers"></div>
+
+      <h2>8. Notes <small>optional</small></h2>
+      <div class="emailform">
+        <label for="opendocs">Documents still outstanding</label>
+        <textarea id="opendocs" rows="2" placeholder="For example: November pay stub for Ben; signed gift letter"></textarea>
+        <label for="reason">If not certified, why <small>needed for Not certified</small></label>
+        <textarea id="reason" rows="2"></textarea>
+      </div>
+    </div>
+
+    <div id="problems"></div>
+    <div class="bottombar" id="actions">
+      <button class="btn" id="save" type="button">Save and come back later</button>
+      <button class="btn" id="waitinfo" type="button">Save: waiting for more information</button>
+      <button class="btn primary" id="certify" type="button">Certify this household</button>
+      <button class="btn" id="notcertified" type="button">Not certified</button>
+      <span class="msg" id="msg"></span>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var P = CLTPage, C = CLTCertify, PS = CLTPrescreen, fv = P.fv;
+  var $ = function (id) { return document.getElementById(id); };
+  var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); };
+  var money = function (n) { return n == null || isNaN(n) ? "" : "$" + Math.round(n).toLocaleString("en-US"); };
+  var day = P.day;   // timestamps are shown as the local day
+  var first = function (a, b) { return a === null || a === undefined || a === "" ? b : a; };
+  var RULE_COLS = "clt_maxami,clt_minami,clt_firsttimebuyer,clt_localtie,clt_assetlimit,clt_housingratiomax,clt_debtratiomax,clt_education,clt_validdays";
+  var KINDS = { income: { table: "clt_incomesource", verified: "clt_verifiedannualamount", type: "_clt_incometype_value", other: "clt_incometypeother" },
+                debt: { table: "clt_debt", verified: "clt_verifiedmonthlypayment", type: "_clt_debttype_value", other: "clt_debttypeother" },
+                asset: { table: "clt_asset", verified: "clt_verifiedvalue", type: "_clt_assettype_value", other: "clt_assettypeother" } };
+  var sets = {}, choices = {}, projects = [], org = {}, list = [], D = null, busy = false, folderPattern = "", orgFolder = "";
+
+  function show(kind, text) { $("problems").innerHTML = text ? '<div class="msgbox ' + kind + '">' + esc(text) + "</div>" : ""; }
+  function fail(what) { return function (e) { busy = false; show("bad", what + ". Dataverse said: " + e.message); if (D) render(); }; }
+  function today() { var d = new Date(); return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2); }
+  function me() {
+    try { var id = (window.parent.Xrm || window.Xrm).Utility.getGlobalContext().userSettings.userId; return String(id).replace(/[{}]/g, "").toLowerCase(); }
+    catch (e) { return ""; }
+  }
+
+  // ---------------------------------------------------------------- the list of households
+  function start() {
+    var tables = ["clt_certification", "clt_incomesource", "clt_debt", "clt_asset", "clt_eligibilitycheck", "clt_householdmember", "clt_household",
+                  "clt_incomelimitset", "clt_eligibility", "clt_projectpriority", "clt_projectband", "clt_selectionround", "clt_selectionentry"];
+    var names = ["reviewstatus", "certificationstatus", "checkstage", "checktest", "checkresult", "applicationstage", "householdstatus", "entrystatus", "homesize", "formtype"];
+    return Promise.all([
+      Promise.all(tables.map(function (t) { return P.entitySet(t).then(function (es) { sets[t] = es; }); })),
+      Promise.all(names.map(function (n) { return P.choice("clt_" + n).then(function (c) { choices[n] = c; }); })),
+      P.getAll("clt_projects?$select=clt_projectid,clt_name,clt_status&$filter=statecode eq 0&$orderby=clt_name"),
+      P.settings()
+    ]).then(function (r) {
+      projects = r[2].filter(function (p) { return fv(p, "clt_status") !== "Closed"; });
+      folderPattern = r[3].ApplicationFolderName || ""; orgFolder = (r[3].ApplicationDocumentsFolder || "").trim();
+      return P.get(sets.clt_eligibility + "?$select=" + RULE_COLS + "&$filter=statecode eq 0&$orderby=createdon asc&$top=1");
+    }).then(function (r) {
+      org = r.value[0] || {};
+      var sel = $("project"); sel.innerHTML = "";
+      var o = document.createElement("option"); o.value = "";
+      o.textContent = projects.length ? "Pick a project" : "No open projects"; sel.appendChild(o);
+      projects.forEach(function (p) { var x = document.createElement("option"); x.value = p.clt_projectid; x.textContent = p.clt_name; sel.appendChild(x); });
+      var want = new URLSearchParams(location.search).get("data") || "";
+      if (projects.some(function (p) { return p.clt_projectid === want; })) sel.value = want;
+      else if (projects.length === 1) sel.value = projects[0].clt_projectid;
+      // opened for one application (from Buyer Selection): go straight to it
+      if (want && !sel.value) return P.get("clt_applications(" + want + ")?$select=_clt_project_value").then(function (a) {
+        sel.value = a._clt_project_value || ""; return loadList().then(function () { return open(want); });
+      }, function () { return loadList(); });
+      return loadList();
+    }).catch(fail("Couldn't load the page"));
+  }
+
+  function loadList() {
+    var id = $("project").value;
+    if (!id) { list = []; renderList(); return Promise.resolve(); }
+    return Promise.all([
+      P.getAll("clt_applications?$select=clt_applicationid,clt_recordnumber,clt_stage,clt_fullappsubmitted,_clt_household_value" +
+               "&$filter=statecode eq 0 and _clt_project_value eq " + id + " and clt_fullappsubmitted ne null&$orderby=clt_fullappsubmitted asc"),
+      P.getAll(sets.clt_certification + "?$select=clt_certificationid,clt_status,clt_certifiedon,clt_expireson,_clt_application_value" +
+               "&$filter=statecode eq 0 and _clt_project_value eq " + id + "&$orderby=createdon asc")
+    ]).then(function (r) {
+      var cert = {}; r[1].forEach(function (c) { cert[c._clt_application_value] = c; });
+      list = r[0].map(function (a) { return { app: a, cert: cert[a.clt_applicationid] || null }; });
+      renderList();
+    });
+  }
+
+  function renderList() {
+    var body = $("pickrows"), n = list.length;
+    $("pickcount").textContent = !$("project").value ? "" : n + (n === 1 ? " household" : " households") + ", " +
+      list.filter(function (x) { return x.cert && fv(x.cert, "clt_status") === "Certified"; }).length + " certified";
+    if (!$("project").value) { body.innerHTML = '<tr><td colspan="6">Pick a project.</td></tr>'; return; }
+    if (!n) { body.innerHTML = '<tr><td colspan="6">No full applications have come in for this project yet.</td></tr>'; return; }
+    body.innerHTML = list.map(function (x) {
+      var a = x.app, st = x.cert ? fv(x.cert, "clt_status") : "Not started";
+      return "<tr><td>" + esc(fv(a, "_clt_household_value")) + "</td><td>" + esc(a.clt_recordnumber) + "</td><td>" + esc(day(a.clt_fullappsubmitted)) + "</td><td>" + esc(fv(a, "clt_stage")) +
+        '</td><td><span class="pill ' + (st === "Certified" ? "ok" : st === "Not certified" ? "bad" : st === "Not started" ? "idle" : "warn") + '">' + esc(st) +
+        (st === "Certified" && x.cert.clt_expireson ? ", to " + esc(day(x.cert.clt_expireson)) : "") + '</span></td><td><button class="btn small" type="button" data-open="' + a.clt_applicationid + '">' +
+        (st === "Certified" || st === "Not certified" ? "Open" : st === "Not started" ? "Review" : "Carry on") + "</button></td></tr>";
+    }).join("");
+    body.querySelectorAll("[data-open]").forEach(function (b) { b.addEventListener("click", function () { show("", ""); open(b.dataset.open).catch(fail("Couldn't open the application")); }); });
+  }
+
+  // ---------------------------------------------------------------- one household
+  function rulesFor(p) {
+    var req = function (col) { return (fv(p, col) || fv(org, col)) === "Required"; };
+    return { maxAmi: first(p.clt_maxami, org.clt_maxami), minAmi: first(p.clt_minami, org.clt_minami),
+             firstTimeBuyerRequired: req("clt_firsttimebuyer"), localTieRequired: req("clt_localtie"), educationRequired: req("clt_education"),
+             assetLimit: first(p.clt_assetlimit, org.clt_assetlimit), housingRatioMax: first(p.clt_housingratiomax, org.clt_housingratiomax),
+             debtRatioMax: first(p.clt_debtratiomax, org.clt_debtratiomax), checkAffordability: p.clt_minaffordabilitycheck !== false,
+             validDays: first(p.clt_validdays, org.clt_validdays),
+             cost: { 0: p.clt_monthlycoststudio, 1: p.clt_monthlycost1br, 2: p.clt_monthlycost2br, 3: p.clt_monthlycost3br, 4: p.clt_monthlycost4br } };
+  }
+
+  function open(appId) {
+    var byApp = "&$filter=statecode eq 0 and _clt_application_value eq " + appId;
+    return P.get("clt_applications(" + appId + ")?$select=clt_applicationid,clt_recordnumber,clt_stage,clt_fullappsubmitted,clt_fullapplink,clt_adults,clt_children," +
+                 "clt_householdsize,clt_firsttimebuyer,clt_fthbexceptions,clt_ownedhome3yrs,clt_fthbcertified,clt_localtie,clt_residencydetails,clt_primaryresidence," +
+                 "clt_hbeducation,clt_hbeducationdetails,clt_fullappentryid,_clt_household_value,_clt_project_value,_clt_amilimits_value").then(function (a) {
+      var pid = a._clt_project_value, mine = "&$filter=statecode eq 0 and _clt_project_value eq " + pid;
+      return Promise.all([
+        P.get("clt_projects(" + pid + ")?$select=clt_projectid,clt_name,clt_documentsfolderlink,clt_minaffordabilitycheck,clt_monthlycoststudio,clt_monthlycost1br,clt_monthlycost2br," +
+              "clt_monthlycost3br,clt_monthlycost4br," + RULE_COLS),
+        P.getAll(sets.clt_projectpriority + "?$select=clt_bedrooms,clt_householdsize" + mine),
+        P.getAll(sets.clt_projectband + "?$select=clt_name,clt_maxami,clt_monthlycoststudio,clt_monthlycost1br,clt_monthlycost2br,clt_monthlycost3br,clt_monthlycost4br" + mine),
+        P.getAll(sets.clt_householdmember + "?$select=clt_name,clt_lastname,clt_applicantrole,clt_age&$filter=statecode eq 0 and _clt_household_value eq " + a._clt_household_value),
+        P.getAll(sets.clt_incomesource + "?$select=clt_incomesourceid,clt_formitemid,clt_memberasentered,clt_incometypeother,clt_payer,clt_payfrequency,clt_grosspayperperiod,clt_annualbonus," +
+                 "clt_annualovertime,clt_reviewstatus,clt_excludedreason,clt_verifiedannualamount,_clt_incometype_value,_clt_member_value" + byApp),
+        P.getAll(sets.clt_debt + "?$select=clt_debtid,clt_formitemid,clt_memberasentered,clt_debttypeother,clt_creditor,clt_monthlypayment,clt_reviewstatus,clt_excludedreason," +
+                 "clt_verifiedmonthlypayment,_clt_debttype_value,_clt_member_value" + byApp),
+        P.getAll(sets.clt_asset + "?$select=clt_assetid,clt_formitemid,clt_holderasentered,clt_assettypeother,clt_institution,clt_currentvalue,clt_reviewstatus,clt_excludedreason," +
+                 "clt_verifiedvalue,_clt_assettype_value,_clt_member_value" + byApp),
+        P.getAll(sets.clt_certification + "?$select=clt_certificationid,clt_status,clt_certifiedsize,clt_certifiedon,clt_expireson,clt_notcertifiedreason,clt_opendocuments," +
+                 "clt_confirmedfthb,clt_confirmedlocal,clt_confirmedresidence,clt_confirmededucation" + byApp + "&$orderby=createdon desc&$top=1"),
+        a._clt_amilimits_value ? P.get(sets.clt_incomelimitset + "(" + a._clt_amilimits_value + ")?$select=clt_year,clt_size1,clt_size2,clt_size3,clt_size4,clt_size5,clt_size6,clt_size7,clt_size8") : null,
+        P.get(sets.clt_selectionround + "?$select=clt_selectionroundid" + mine + "&$orderby=createdon desc&$top=1"),
+        // the entry as the form posted it: it names every file the household uploaded, and which line each belongs to
+        P.get("clt_formsubmissions?$select=clt_payload&$filter=_clt_application_value eq " + appId + " and clt_formtype eq " +
+              choices.formtype["Full application"] + "&$orderby=createdon desc&$top=1")
+      ]).then(function (r) {
+        var docs = null;
+        try { var raw = r[10].value[0] && r[10].value[0].clt_payload; if (raw) docs = C.documents(JSON.parse(raw)); } catch (e) { docs = null; }
+        var round = r[9].value[0];
+        return (round ? P.getAll(sets.clt_selectionentry + "?$select=clt_selectionentryid,clt_bedrooms,clt_status&$filter=statecode eq 0 and _clt_round_value eq " +
+                                 round.clt_selectionroundid + " and _clt_application_value eq " + appId) : Promise.resolve([])).then(function (entries) {
+          var lim = r[8], cert = r[7][0] || null, who = function (x, entered) { return fv(x, "_clt_member_value") || x[entered] || ""; };
+          var line = function (kind, x, id, label, detail, entered) {
+            var k = KINDS[kind], st = fv(x, "clt_reviewstatus") || "Not reviewed";
+            var on = docs ? C.lineFor(docs, x.clt_formitemid, label) : null;   // this line as it is on the form entry
+            return { kind: kind, id: id, files: on ? on.files : null, tag: on ? C.lineTag(kind, on.number) : "",
+                     who: who(x, kind === "asset" ? "clt_holderasentered" : "clt_memberasentered"), type: fv(x, k.type) || x[k.other] || "",
+                     detail: detail, label: label, entered: entered, decision: st, verified: st === "Adjusted" && x[k.verified] != null ? String(x[k.verified]) : "",
+                     reason: x.clt_excludedreason || "" };
+          };
+          D = { app: a, project: r[0], rules: rulesFor(r[0]), cert: cert, entries: entries, docs: docs,
+                priorities: r[1].map(function (x) { return { bedrooms: x.clt_bedrooms, householdSize: x.clt_householdsize }; }),
+                members: r[3], limits: lim ? { 1: lim.clt_size1, 2: lim.clt_size2, 3: lim.clt_size3, 4: lim.clt_size4, 5: lim.clt_size5, 6: lim.clt_size6, 7: lim.clt_size7, 8: lim.clt_size8 } : null,
+                limitSet: a._clt_amilimits_value || null, limitYear: lim ? lim.clt_year : null,
+                lines: r[4].map(function (x) {
+                    var e = C.annual({ gross: x.clt_grosspayperperiod, frequency: fv(x, "clt_payfrequency"), bonus: x.clt_annualbonus, overtime: x.clt_annualovertime });
+                    return line("income", x, x.clt_incomesourceid, (x.clt_payer || fv(x, "_clt_incometype_value") || "Income"),
+                                money(x.clt_grosspayperperiod) + " " + (fv(x, "clt_payfrequency") || "").toLowerCase() +
+                                (x.clt_annualbonus ? ", bonus " + money(x.clt_annualbonus) : "") + (x.clt_annualovertime ? ", overtime " + money(x.clt_annualovertime) : ""), e); })
+                  .concat(r[5].map(function (x) { return line("debt", x, x.clt_debtid, x.clt_creditor || fv(x, "_clt_debttype_value") || "Debt", "", x.clt_monthlypayment || 0); }))
+                  .concat(r[6].map(function (x) { return line("asset", x, x.clt_assetid, x.clt_institution || fv(x, "_clt_assettype_value") || "Asset", "", x.clt_currentvalue || 0); })) };
+          D.rules.bands = r[2].sort(function (x, y) { return (x.clt_maxami == null ? 1e9 : x.clt_maxami) - (y.clt_maxami == null ? 1e9 : y.clt_maxami); }).map(function (x) {
+            return { name: x.clt_name || "Income band", maxAmi: x.clt_maxami,
+                     cost: { 0: x.clt_monthlycoststudio, 1: x.clt_monthlycost1br, 2: x.clt_monthlycost2br, 3: x.clt_monthlycost3br, 4: x.clt_monthlycost4br } }; });
+          var size = cert && cert.clt_certifiedsize != null ? cert.clt_certifiedsize : D.members.length || first(a.clt_householdsize, "");
+          $("size").value = size;
+          D.confirmed = { firstTimeBuyer: !!(cert && cert.clt_confirmedfthb), localTie: !!(cert && cert.clt_confirmedlocal),
+                          primaryResidence: !!(cert && cert.clt_confirmedresidence), education: !!(cert && cert.clt_confirmededucation) };
+          $("opendocs").value = (cert && cert.clt_opendocuments) || ""; $("reason").value = (cert && cert.clt_notcertifiedreason) || "";
+          render();
+          window.scrollTo(0, 0);
+        });
+      });
+    });
+  }
+
+  // ---------------------------------------------------------------- showing the review
+  function status() { return D && D.cert ? fv(D.cert, "clt_status") : ""; }
+  function decided() { var s = status(); return s === "Certified" || s === "Not certified"; }
+  function input() {
+    var of = function (kind) { return D.lines.filter(function (l) { return l.kind === kind; }); };
+    return { size: $("size").value, income: of("income"), debts: of("debt"), assets: of("asset"), limits: D.limits, confirmed: D.confirmed,
+             sizesListed: D.entries.filter(function (e) { return ["Declined", "Removed", "Withdrawn"].indexOf(fv(e, "clt_status")) < 0; })
+                                   .map(function (e) { return e.clt_bedrooms; }).sort() };
+  }
+  function outcome() { return C.run(input(), D.rules, D.priorities); }
+
+  function renderLines(kind) {
+    var body = $("l-" + kind), rows = D.lines.filter(function (l) { return l.kind === kind; }), lock = decided();
+    if (!rows.length) { body.innerHTML = '<tr><td colspan="6" class="mutedtext">None on the full application.</td></tr>'; return; }
+    body.innerHTML = rows.map(function (l) {
+      var i = D.lines.indexOf(l), adj = l.decision === "Adjusted", why = adj || l.decision === "Excluded";
+      return '<tr class="' + (l.decision === "Not reviewed" ? "todo" : l.decision === "Excluded" ? "locked" : "") + '"><td>' +
+        (l.tag ? '<span class="linetag">' + esc(l.tag) + "</span><br>" : "") + esc(l.who) + "</td><td><b>" + esc(l.label) + "</b>" +
+        (l.type && l.type !== l.label ? '<br><span class="mutedtext">' + esc(l.type) + "</span>" : "") + (l.detail ? '<br><span class="mutedtext">' + esc(l.detail) + "</span>" : "") +
+        (l.files === null ? "" : l.files.length ? '<br><span class="docnames">' + l.files.map(esc).join("<br>") + "</span>" : '<br><span class="nodocs">No documents uploaded</span>') +
+        '</td><td class="num">' + money(l.entered) + '</td><td><select data-i="' + i + '" data-f="decision"' + (lock ? " disabled" : "") + ' aria-label="Decision for ' + esc(l.label) + '">' +
+        C.DECISIONS.map(function (d) { return "<option" + (d === l.decision ? " selected" : "") + ">" + d + "</option>"; }).join("") + "</select></td>" +
+        '<td><input class="mid" type="text" inputmode="decimal" data-i="' + i + '" data-f="verified" value="' + esc(l.verified) + '"' + (adj && !lock ? "" : " disabled") +
+        ' placeholder="' + (adj ? "$" : "") + '" aria-label="Verified amount for ' + esc(l.label) + '"></td>' +
+        '<td><input type="text" data-i="' + i + '" data-f="reason" maxlength="200" value="' + esc(l.reason) + '"' + (why && !lock ? "" : " disabled") +
+        ' placeholder="' + (why ? "Why" : "") + '" aria-label="Why, for ' + esc(l.label) + '"></td></tr>';
+    }).join("");
+    body.querySelectorAll("[data-i]").forEach(function (el) {
+      el.addEventListener(el.tagName === "SELECT" ? "change" : "input", function () {
+        D.lines[+el.dataset.i][el.dataset.f] = el.value;
+        if (el.dataset.f === "decision") renderLines(kind);
+        renderResult();
+      });
+    });
+  }
+
+  function renderConfirms() {
+    var a = D.app, r = D.rules, yn = function (v) { return v === true ? "Yes" : v === false ? "No" : "not answered"; }, lock = decided();
+    var items = [];
+    if (r.firstTimeBuyerRequired) items.push(["firstTimeBuyer", "First-time buyer", "Screener: first-time buyer " + yn(a.clt_firsttimebuyer) +
+      (fv(a, "clt_fthbexceptions") ? " (" + fv(a, "clt_fthbexceptions") + ")" : "") + ". Full application: owned a home in the past three years " + yn(a.clt_ownedhome3yrs) +
+      ", signed the first-time buyer statement " + yn(a.clt_fthbcertified) + "."]);
+    if (r.localTieRequired) items.push(["localTie", "Lives or works locally", "Screener: " + yn(a.clt_localtie) + ". " + (a.clt_residencydetails || "")]);
+    items.push(["primaryResidence", "Will live in the home as their primary residence", "Screener: " + yn(a.clt_primaryresidence) + "."]);
+    if (r.educationRequired) items.push(["education", "Homebuyer education is complete", (fv(a, "clt_hbeducation") ? "Screener: " + fv(a, "clt_hbeducation") + ". " : "") + (a.clt_hbeducationdetails || "")]);
+    var placed = C.place(D.docs ? D.docs.groups : []);
+    $("confirms").innerHTML = items.map(function (x) {
+      var docs = placed[x[0]] || [];
+      return '<label class="confirm"><input type="checkbox" data-c="' + x[0] + '"' + (D.confirmed[x[0]] ? " checked" : "") + (lock ? " disabled" : "") + "><span><b>" + esc(x[1]) +
+        '</b><br><span class="mutedtext">' + esc(x[2]) + "</span>" + docList(docs) + "</span></label>";
+    }).join("");
+    $("confirms").querySelectorAll("[data-c]").forEach(function (cb) { cb.addEventListener("change", function () { D.confirmed[cb.dataset.c] = cb.checked; renderResult(); }); });
+  }
+
+  function renderResult() {
+    var o = outcome(), f = o.figures, lock = decided();
+    $("t-income").textContent = money(f.income); $("t-debt").textContent = money(f.monthlyDebt); $("t-asset").textContent = money(f.assets);
+    var tile = function (n, t, d) { return '<div class="stat"><div class="n">' + n + '</div><div class="t">' + esc(t) + '</div><div class="d">' + esc(d) + "</div></div>"; };
+    $("figures").innerHTML = tile(f.size || "-", "Household size", "certified") + tile(money(f.income) || "$0", "Annual income", "certified") +
+      tile(f.amiPct == null ? "-" : f.amiPct + "%", "Of AMI", f.ami100 == null ? "no AMI limits on the application" : "100% of AMI is " + money(f.ami100) + (D.limitYear ? " (" + D.limitYear + ")" : "")) +
+      tile(money(f.monthlyDebt) || "$0", "Monthly debt", "certified") + tile(money(f.assets) || "$0", "Assets", "certified");
+    $("checks").innerHTML = o.checks.map(function (k) {
+      return "<tr><td>" + esc(k.test) + '</td><td><span class="pill ' + (k.result === "Pass" ? "ok" : k.result === "Fail" ? "bad" : "warn") + '">' + esc(k.result) + "</span></td><td>" + esc(k.notes) + "</td></tr>";
+    }).join("");
+    $("blockers").innerHTML = lock ? "" : o.canCertify
+      ? '<div class="msgbox ok"><b>Ready to certify.</b> ' + esc(o.notes) + "</div>"
+      : '<div class="msgbox ' + (o.result === "Does not pass" ? "bad" : "warn") + '"><b>' + (o.result === "Does not pass" ? "Does not pass as it stands." : "Not ready to certify yet.") +
+        "</b><ul><li>" + o.blockers.map(esc).join("</li><li>") + "</li></ul></div>";
+    $("certify").disabled = busy || lock || !o.canCertify;
+    $("save").disabled = busy || lock; $("waitinfo").disabled = busy || lock; $("notcertified").disabled = busy || lock;
+  }
+
+  // The household's folder in the organization's share, and the documents that aren't tied to one line.
+  function folder() {
+    var primary = D.members.filter(function (m) { return fv(m, "clt_applicantrole") === "Primary applicant"; })[0] || D.members[0] || {};
+    var name = C.folderName(folderPattern, { "last name": (D.docs && D.docs.lastName) || primary.clt_lastname || fv(D.app, "_clt_household_value"), "entry number": C.entryNumber(D.app.clt_fullappentryid),
+                                             entry: D.app.clt_fullappentryid, "application number": D.app.clt_recordnumber, household: fv(D.app, "_clt_household_value") });
+    // the project's own folder if it has one, otherwise the organization's
+    return { name: name, link: C.folderLink(D.project.clt_documentsfolderlink || orgFolder, name) };
+  }
+  // Household-wide uploads as a short list: what each is for, then its files.
+  function docList(groups) {
+    return groups.map(function (g) { return '<span class="docgroup"><span class="docfor">' + esc(g.label) + '</span><span class="docnames">' + g.files.map(esc).join("<br>") + "</span></span>"; }).join("");
+  }
+  function renderDocs() {
+    var f = folder(), parent = D.project.clt_documentsfolderlink || orgFolder, strip = $("docstrip");
+    if (f.link) {
+      strip.innerHTML = '<a class="btn primary" id="openfolder" target="_blank" rel="noopener" href="' + esc(f.link) + '">Open this household\'s documents</a>' +
+        '<span class="mutedtext">Folder <b>' + esc(f.name) + "</b>. Each file's name there starts with what it is for: " +
+        "Income 1, Debt 1, Account 1 and so on match the lines below, and the rest start with the question they answer.</span>";
+    } else if (parent && !C.folderProblem(parent)) {
+      // the project's folder is known, but not this household's own folder inside it
+      strip.innerHTML = '<a class="btn" id="openfolder" target="_blank" rel="noopener" href="' + esc(parent) + '">Open the application documents folder</a>' +
+        '<span class="mutedtext">Stu can\'t tell which folder inside it is this household\'s, because their application has no full application entry number.</span>';
+    } else {
+      strip.innerHTML = '<label for="folderlink"><b>Where does your form save application documents?</b> <span class="mutedtext">This hasn\'t been set up yet. Open the folder your form saves them into ' +
+        '(the one that holds a folder for each household), copy the address from your browser\'s address bar, and paste it here. It is kept on this project. ' +
+        'To set it once for every project, whoever looks after Stu can put it in your organization\'s settings.</span></label>' +
+        '<div class="actions"><input id="folderlink" type="text" maxlength="500" placeholder="Paste the address here" value="' + esc(D.editFolder || "") + '">' +
+        '<button class="btn" type="button" id="savefolder">Save</button></div><span class="mutedtext" id="folderhint">Stu will look for a folder called ' + esc(f.name) + " inside it.</span>";
+      $("savefolder").addEventListener("click", function () {
+        var link = $("folderlink").value.trim(), problem = C.folderProblem(link);
+        if (problem) { $("folderhint").textContent = link ? problem : "This box is empty."; $("folderhint").className = "errtext"; return; }
+        P.patch("clt_projects(" + D.project.clt_projectid + ")", { clt_documentsfolderlink: link }).then(function () {
+          D.project.clt_documentsfolderlink = link; D.editFolder = ""; renderDocs(); show("ok", "Saved on the project. The button above opens this household's folder.");
+        }).catch(fail("Couldn't save the folder"));
+      });
+    }
+    var placed = C.place(D.docs ? D.docs.groups : []), groups = D.docs ? placed.other : null;
+    ["income", "debts", "assets"].forEach(function (k) {
+      $("g-" + k).innerHTML = placed[k].length ? '<span class="mutedtext">For the whole household:</span>' + docList(placed[k]) : "";
+    });
+    $("otherdocs").innerHTML = groups === null ? '<tr><td colspan="2" class="mutedtext">Stu has no copy of this household\'s form entry, so it can\'t list what was uploaded. Open the folder to see.</td></tr>'
+      : !groups.length ? '<tr><td colspan="2" class="mutedtext">Nothing else was uploaded.</td></tr>'
+      : groups.map(function (g) { return "<tr><td>" + esc(g.label) + '</td><td><span class="docnames">' + g.files.map(esc).join("<br>") + "</span></td></tr>"; }).join("");
+  }
+
+  function render() {
+    $("picker").hidden = !!D; $("work").hidden = !D;
+    if (!D) return;
+    renderDocs();
+    var a = D.app, st = status(), lock = decided();
+    $("who").textContent = fv(a, "_clt_household_value") + " household";
+    $("whosub").textContent = [a.clt_recordnumber, D.project.clt_name, "full application in " + day(a.clt_fullappsubmitted), fv(a, "clt_stage")].filter(Boolean).join(" · ");
+    $("openentry").hidden = !a.clt_fullapplink; if (a.clt_fullapplink) $("openentry").href = a.clt_fullapplink;
+    $("locked").innerHTML = st === "Certified"
+      ? '<div class="msgbox ok"><b>Certified ' + esc(day(D.cert.clt_certifiedon)) + ".</b> " + (D.cert.clt_expireson ? "Good until " + esc(day(D.cert.clt_expireson)) + ". " : "") +
+        'The figures are locked. To change anything, start the review again. <button class="btn small" type="button" id="reopen">Review again</button></div>'
+      : st === "Not certified" ? '<div class="msgbox bad"><b>Not certified.</b> ' + esc(D.cert.clt_notcertifiedreason || "") +
+        ' <button class="btn small" type="button" id="reopen">Review again</button></div>'
+      : st === "Waiting for more information" ? '<div class="msgbox warn"><b>Waiting for more information.</b> ' + esc(D.cert.clt_opendocuments || "") + "</div>" : "";
+    var re = $("reopen"); if (re) re.addEventListener("click", reopen);
+    $("members").innerHTML = D.members.map(function (m) { return "<tr><td>" + esc(m.clt_name) + "</td><td>" + esc(fv(m, "clt_applicantrole")) + '</td><td class="num">' + esc(m.clt_age == null ? "" : m.clt_age) + "</td></tr>"; }).join("") ||
+      '<tr><td colspan="3" class="mutedtext">No members on the household.</td></tr>';
+    $("sizehint").textContent = D.members.length + " on the household; the screener said " + (a.clt_householdsize == null ? "nothing" : a.clt_householdsize);
+    ["size", "opendocs", "reason"].forEach(function (id) { $(id).disabled = lock; });
+    ["income", "debt", "asset"].forEach(renderLines);
+    renderConfirms(); renderResult();
+  }
+
+  // ---------------------------------------------------------------- saving
+  // The certification record this review belongs to. Made the first time anything is saved.
+  function ensureCert() {
+    if (D.cert) return Promise.resolve(D.cert.clt_certificationid);
+    var a = D.app;
+    return P.create(sets.clt_certification, { clt_name: fv(a, "_clt_household_value") + " " + today(), clt_status: choices.certificationstatus.Reviewing,
+      "clt_household@odata.bind": "/" + sets.clt_household + "(" + a._clt_household_value + ")", "clt_application@odata.bind": "/clt_applications(" + a.clt_applicationid + ")",
+      "clt_project@odata.bind": "/clt_projects(" + D.project.clt_projectid + ")" }).then(function (rec) { D.cert = rec; return rec.clt_certificationid; });
+  }
+
+  // how: "save" | "wait" | "certify" | "no". Everything after the certification record exists is one change set.
+  function save(how) {
+    if (busy) return;
+    var o = outcome(), f = o.figures, a = D.app, aid = a.clt_applicationid, now = new Date().toISOString(), reason = $("reason").value.trim();
+    if (how === "certify" && !o.canCertify) return show("bad", "This household can't be certified yet. " + o.blockers[0]);
+    if (how === "no" && !reason) { $("reason").focus(); return show("bad", "Say why the household is not certified, in the box under Notes. You will need it when you write to them."); }
+    busy = true; show("", ""); renderResult();
+    var S = choices.certificationstatus, R = choices.reviewstatus;
+    ensureCert().then(function (cid) {
+      var ops = [], cbind = "/" + sets.clt_certification + "(" + cid + ")";
+      D.lines.forEach(function (l) {
+        var k = KINDS[l.kind], body = { clt_reviewstatus: R[l.decision], clt_excludedreason: l.decision === "Adjusted" || l.decision === "Excluded" ? l.reason.trim() : null,
+                                        "clt_certification@odata.bind": cbind };
+        body[k.verified] = l.decision === "Not reviewed" ? null : C.counted(l);
+        ops.push({ method: "PATCH", path: sets[k.table] + "(" + l.id + ")", body: body });
+      });
+      var cert = { clt_status: how === "certify" ? S.Certified : how === "no" ? S["Not certified"] : how === "wait" ? S["Waiting for more information"] : S.Reviewing,
+                   clt_certifiedsize: f.size && !isNaN(f.size) ? f.size : null, clt_certifiedincome: f.income, clt_certifiedassets: f.assets, clt_certifiedmonthlydebt: f.monthlyDebt,
+                   clt_certifiedamipct: f.amiPct, clt_ami100: f.ami100, clt_limityear: D.limitYear, clt_opendocuments: $("opendocs").value.trim() || null,
+                   clt_notcertifiedreason: how === "no" ? reason : null, clt_confirmedfthb: !!D.confirmed.firstTimeBuyer, clt_confirmedlocal: !!D.confirmed.localTie,
+                   clt_confirmedresidence: !!D.confirmed.primaryResidence, clt_confirmededucation: !!D.confirmed.education };
+      if (D.limitSet) cert["clt_limitset@odata.bind"] = "/" + sets.clt_incomelimitset + "(" + D.limitSet + ")";
+      var app = {}, stage = fv(a, "clt_stage"), AS = choices.applicationstage;
+      if (how === "certify" || how === "no") {
+        var exp = how === "certify" ? C.expires(today(), D.rules.validDays) : null, user = me();
+        cert.clt_checksrunon = now;
+        cert.clt_certifiedsizes = how === "certify" ? o.sizes.map(function (s) { return choices.homesize[PS.sizeName(s)]; }).join(",") : null;
+        if (how === "certify") { cert.clt_certifiedon = now; cert.clt_expireson = exp; if (user) cert["clt_certifiedby@odata.bind"] = "/systemusers(" + user + ")"; }
+        // the tests, kept with the certification so the decision shows its work
+        o.checks.forEach(function (k) {
+          ops.push({ method: "POST", path: sets.clt_eligibilitycheck, body: {
+            clt_name: k.test + (k.size == null ? "" : ", " + PS.sizeName(k.size)), clt_stage: choices.checkstage.Certification, clt_test: choices.checktest[k.test],
+            clt_result: choices.checkresult[k.result], clt_value: k.value, clt_limit: k.limit, clt_notes: k.notes,
+            "clt_application@odata.bind": "/clt_applications(" + aid + ")", "clt_certification@odata.bind": cbind } });
+        });
+        app.clt_stage = how === "certify" ? AS.Certified : AS["Not eligible"]; app.clt_decisiondate = today();
+        if (how === "certify") ops.push({ method: "PATCH", path: sets.clt_household + "(" + a._clt_household_value + ")", body: {
+          clt_status: choices.householdstatus.Eligible, clt_certificationdate: today(), clt_certificationexpires: exp, clt_certifiedhouseholdsize: f.size,
+          clt_certifiedincome: f.income, clt_certifiedamipercent: f.amiPct } });
+        // their places on the lists: approved where they passed, out where they didn't
+        D.entries.forEach(function (e) {
+          var st = fv(e, "clt_status");
+          if (["Declined", "Removed", "Withdrawn", "Unresponsive"].indexOf(st) >= 0) return;
+          var passed = how === "certify" && o.sizes.indexOf(Math.min(e.clt_bedrooms, 4)) >= 0;
+          ops.push({ method: "PATCH", path: sets.clt_selectionentry + "(" + e.clt_selectionentryid + ")", body: {
+            clt_status: passed ? choices.entrystatus.Approved : choices.entrystatus.Ineligible, clt_statusdate: today(),
+            clt_statusreason: passed ? null : how === "no" ? "Not certified" : "Not certified for this home size" } });
+        });
+      } else if (["Full application submitted", "Invited to full application", "Full application incomplete", "In review", "Needs follow-up"].indexOf(stage) >= 0) {
+        app.clt_stage = AS["In certification"];
+      }
+      ops.unshift({ method: "PATCH", path: sets.clt_certification + "(" + cid + ")", body: cert });
+      if (Object.keys(app).length) ops.push({ method: "PATCH", path: "clt_applications(" + aid + ")", body: app });
+      // earlier certification checks for this application are replaced
+      var old = how === "certify" || how === "no"
+        ? P.getAll(sets.clt_eligibilitycheck + "?$select=clt_eligibilitycheckid&$filter=_clt_application_value eq " + aid + " and clt_stage eq " + choices.checkstage.Certification)
+        : Promise.resolve([]);
+      return old.then(function (rows) {
+        rows.forEach(function (x) { ops.splice(1, 0, { method: "DELETE", path: sets.clt_eligibilitycheck + "(" + x.clt_eligibilitycheckid + ")" }); });
+        return P.batch(ops);
+      });
+    }).then(function () {
+      busy = false;
+      var said = how === "certify" ? "Certified." + (D.rules.validDays ? " Good until " + C.expires(today(), D.rules.validDays) + "." : "")
+               : how === "no" ? "Recorded as not certified. Stu doesn't write to the household: that is yours to do."
+               : how === "wait" ? "Saved, waiting for more information." : "Saved. You can carry on later.";
+      return open(aid).then(function () { show("ok", said); });
+    }).catch(fail("Couldn't save. Nothing was changed"));
+  }
+
+  function reopen() {
+    P.confirm("Review again", "Start this household's review again? Its certification goes back to Reviewing until you certify it again.").then(function (yes) {
+      if (!yes || busy) return;
+      busy = true;
+      var ops = [{ method: "PATCH", path: sets.clt_certification + "(" + D.cert.clt_certificationid + ")",
+                   body: { clt_status: choices.certificationstatus.Reviewing, clt_certifiedon: null, clt_expireson: null, clt_notcertifiedreason: null } },
+                 { method: "PATCH", path: "clt_applications(" + D.app.clt_applicationid + ")", body: { clt_stage: choices.applicationstage["In certification"] } }];
+      P.batch(ops).then(function () { busy = false; return open(D.app.clt_applicationid).then(function () { show("ok", "The review is open again."); }); })
+        .catch(fail("Couldn't reopen the review. Nothing was changed"));
+    });
+  }
+
+  $("size").addEventListener("input", function () { if (D) renderResult(); });
+  $("save").addEventListener("click", function () { save("save"); });
+  $("waitinfo").addEventListener("click", function () { save("wait"); });
+  $("notcertified").addEventListener("click", function () {
+    if (!$("reason").value.trim()) return save("no");
+    P.confirm("Not certified", "Record " + fv(D.app, "_clt_household_value") + " as not certified? Their places on the lists are closed.").then(function (yes) { if (yes) save("no"); });
+  });
+  $("certify").addEventListener("click", function () {
+    var docs = $("opendocs").value.trim();
+    P.confirm("Certify", "Certify the " + fv(D.app, "_clt_household_value") + " household? The figures lock." + (docs ? " Documents still outstanding: " + docs : "")).then(function (yes) { if (yes) save("certify"); });
+  });
+  $("openapp").addEventListener("click", function () { P.openRecord("clt_application", D.app.clt_applicationid); });
+  $("tolist").addEventListener("click", function () { D = null; show("", ""); render(); loadList().catch(fail("Couldn't load the list")); });
+  $("project").addEventListener("change", function () { show("", ""); loadList().catch(fail("Couldn't load the list")); });
+  P.brand();
+  start();
+})();
+</script>
+</body>
+</html>

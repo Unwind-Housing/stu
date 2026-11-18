@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Verification hub</title>
+<link rel="stylesheet" href="pages.css">
+<script src="pages.js"></script>
+<script src="stewardship.js"></script>
+<script src="loan.js"></script>
+<script src="resale.js"></script>
+<style>
+  .due { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; white-space: nowrap; }
+  .stat.hot { border-left: 4px solid var(--warn); }
+  .stat.hot .n { color: var(--warn); }
+  a.pill { cursor: pointer; text-decoration: none; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="banner">
+    <img data-logo alt="">
+    <div>
+      <h1>Verification hub</h1>
+      <p>Every current occupancy, and whether its occupancy verification and insurance verification are due.</p>
+    </div>
+  </div>
+
+  <h2>Where things stand <small id="every"></small></h2>
+  <div class="stats" id="stats"></div>
+
+  <h2>Homes <small id="count"></small></h2>
+  <div class="toolbar">
+    <label>Activity
+      <select id="f-activity"><option value="">Either one</option></select>
+    </label>
+    <label>Show
+      <select id="f-show">
+        <option value="attention">Overdue or due in the next 30 days</option>
+        <option value="overdue">Overdue only</option>
+        <option value="all">Every current occupancy</option>
+      </select>
+    </label>
+    <button class="btn" id="ask" type="button" hidden title="Opens Occupancy verification with the households that are overdue or due soon, and not yet asked, already ticked">Occupancy verification requests</button>
+  </div>
+  <div class="tablewrap" style="margin-top: 12px">
+    <table class="data">
+      <thead><tr id="head"></tr></thead>
+      <tbody id="rows"><tr><td colspan="6">Loading...</td></tr></tbody>
+    </table>
+  </div>
+  <div class="bottombar"><span class="msg" id="msg"></span></div>
+
+  <p class="note">The tick boxes are for occupancy verification: a home has one when its verification is overdue or due soon and the household hasn't been asked yet.
+    Untick any you don't want in this batch, then select Start occupancy verifications. Something that has never been recorded counts as overdue. The date used is the newest of the one typed on the
+    occupancy and the ones on its records (annual verifications approved, insurance verifications approved, insurance policies verified). Last contact is the newest relationship note or verification that came back.
+    How often each one falls due is an organization setting; whoever looks after Stu can change it.</p>
+</div>
+
+<script>
+(function () {
+  var P = CLTPage, R = CLTRegular, $ = function (id) { return document.getElementById(id); };
+  var fv = P.fv, list = [], settings = {}, sets = {}, choices = {}, unticked = {};
+  var TABLES = ["clt_occupancy", "clt_annualverification", "clt_insurancepolicy", "clt_relationshipnote", "clt_insuranceverification", "clt_improvementcredit"];
+
+  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+  function today() { var d = new Date(); return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2); }
+  function say(text, err) { $("msg").textContent = text || ""; $("msg").className = "msg" + (err ? " err" : ""); }
+  function byOccupancy(rows, col) {
+    var out = {};
+    rows.forEach(function (x) { if (x[col]) (out[x._clt_occupancy_value] = out[x._clt_occupancy_value] || []).push(x[col]); });
+    return out;
+  }
+
+  function load() {
+    var current = choices.status.Current;
+    return Promise.all([
+      P.getAll(sets.clt_occupancy + "?$select=clt_occupancyid,clt_name,clt_role,clt_lastoccupancyverified,clt_lastinsuranceverified,clt_lastcontact,clt_improvementcredits," +
+               "_clt_property_value,_clt_household_value&$filter=statecode eq 0 and clt_status eq " + current),
+      P.getAll(sets.clt_annualverification + "?$select=clt_annualverificationid,clt_receiveddate,clt_status,clt_method,clt_sentdate,createdon,_clt_occupancy_value&$filter=statecode eq 0"),
+      P.getAll(sets.clt_insurancepolicy + "?$select=clt_verifieddate,_clt_occupancy_value&$filter=statecode eq 0 and clt_verifieddate ne null"),
+      P.getAll(sets.clt_relationshipnote + "?$select=clt_date,_clt_occupancy_value&$filter=statecode eq 0 and clt_date ne null"),
+      P.getAll(sets.clt_insuranceverification + "?$select=clt_insuranceverificationid,clt_status,clt_verifieddate,_clt_occupancy_value&$filter=statecode eq 0"),
+      P.getAll(sets.clt_improvementcredit + "?$select=clt_originalvalue,clt_valuedate,clt_depreciationyears,_clt_occupancy_value&$filter=statecode eq 0").catch(function () { return []; })
+    ]).then(function (r) {
+      var occ = r[0].map(function (o) {
+        return { id: o.clt_occupancyid, name: o.clt_name, property: fv(o, "_clt_property_value"), household: fv(o, "_clt_household_value"),
+                 role: fv(o, "clt_role"),
+                 dates: { occupancy: o.clt_lastoccupancyverified, insurance: o.clt_lastinsuranceverified, contact: o.clt_lastcontact } };
+      });
+      // a request that has been started and not closed yet (Due, Sent or Received)
+      var requests = {};
+      r[1].forEach(function (x) {
+        var st = fv(x, "clt_status");
+        if (["Due", "Sent", "Received", "Issue found"].indexOf(st) >= 0) requests[x._clt_occupancy_value] = { id: x.clt_annualverificationid, status: st, method: fv(x, "clt_method"), sent: P.day(x.clt_sentdate || x.createdon) };
+      });
+      // insurance: an approved insurance verification counts like a verified policy; one still open shows on the row
+      var insurance = byOccupancy(r[2], "clt_verifieddate"), insuranceRequests = {};
+      // last contact: the newest relationship note, or verification that came back (occupancy received, insurance approved)
+      var counted = r[1].filter(function (x) { return fv(x, "clt_status") !== "Cancelled"; }), contact = byOccupancy(r[3], "clt_date");
+      counted.forEach(function (x) { if (x.clt_receiveddate) (contact[x._clt_occupancy_value] = contact[x._clt_occupancy_value] || []).push(x.clt_receiveddate); });
+      r[4].forEach(function (x) {
+        var st = fv(x, "clt_status");
+        if (st === "Approved" && x.clt_verifieddate) {
+          (insurance[x._clt_occupancy_value] = insurance[x._clt_occupancy_value] || []).push(x.clt_verifieddate);
+          (contact[x._clt_occupancy_value] = contact[x._clt_occupancy_value] || []).push(x.clt_verifieddate);
+        }
+        if (st === "Requested" || st === "To review" || st === "Needs contact" || st === "Issue found") insuranceRequests[x._clt_occupancy_value] = { id: x.clt_insuranceverificationid, status: st };
+      });
+      list = R.rows(occ, { requests: requests, insuranceRequests: insuranceRequests, occupancy: byOccupancy(counted.filter(function (x) { var st = fv(x, "clt_status"); return st === "Approved" || st === "Waived"; }), "clt_receiveddate"), insurance: insurance, contact: contact }, settings, today());
+      render();
+      // Bring the dates on each occupancy up to date with its records, so lists and views sorted on them are right too.
+      // The same for each occupancy's Improvement credits figure: its list at today's value (it feeds the maximum resale price).
+      var credits = {}, typed = {};
+      r[5].forEach(function (c) { (credits[c._clt_occupancy_value] = credits[c._clt_occupancy_value] || []).push({ original: c.clt_originalvalue, date: c.clt_valuedate, years: c.clt_depreciationyears }); });
+      r[0].forEach(function (o) { typed[o.clt_occupancyid] = o.clt_improvementcredits || 0; });
+      list.forEach(function (x) {
+        var total = CLTResale.creditsTotal(credits[x.id], today());
+        if (total !== null && total !== typed[x.id]) x.fix.clt_improvementcredits = total;
+      });
+      var ops = list.filter(function (x) { return Object.keys(x.fix).length; }).map(function (x) {
+        return { method: "PATCH", path: sets.clt_occupancy + "(" + x.id + ")", body: x.fix };
+      });
+      return P.batch(ops).catch(function () { /* the page still shows the right dates */ });
+    });
+  }
+
+  function pill(state) { return '<span class="pill ' + (state === R.OVERDUE ? "bad" : state === R.SOON ? "warn" : "ok") + '">' + state + "</span>"; }
+  function cell(s) {
+    return "<td>" + pill(s.state) + '<span class="due">' + (s.last ? "last " + s.last + " &middot; due " + s.dueOn : "never recorded") + "</span></td>";
+  }
+
+  // The occupancy verification cell also says whether the household has been asked, and leads into the request page.
+  function verifyCell(x) {
+    var s = x.activities.occupancy, q = x.request;
+    return "<td>" + pill(s.state) + '<span class="due">' + (s.last ? "last " + s.last + " &middot; due " + s.dueOn : "never recorded") + "</span>" +
+      (q ? '<span class="due"><a class="pill ' + (q.status === "Issue found" ? "bad" : "warn") + '" data-goto="verify" data-id="' + q.id + '" title="Open this request">' + (q.status === "Received" ? "To review" : q.status === "Issue found" ? "Issue found" : "In progress") + "</a> " + esc((q.method || "").toLowerCase()) + ", " + esc(q.sent) + '</span>'
+         : s.state !== R.OK ? '<span class="due"><a data-ask="' + x.id + '">Ask this household</a></span>' : "") + "</td>";
+  }
+  // The insurance cell says whether a review is open (proof to look at, or a household to contact), and leads to it.
+  function insuranceCell(x) {
+    var s = x.activities.insurance, q = x.insuranceRequest;
+    return "<td>" + pill(s.state) + '<span class="due">' + (s.last ? "last " + s.last + " &middot; due " + s.dueOn : "never recorded") + "</span>" +
+      (q ? '<span class="due"><a class="pill ' + (q.status === "Needs contact" || q.status === "Issue found" ? "bad" : "warn") + '" data-goto="insurance" data-id="' + q.id + '" title="Open this insurance verification">' +
+             (q.status === "Requested" ? "In progress" : esc(q.status)) + "</a></span>"
+         : s.state !== R.OK ? '<span class="due"><a data-goto="insurance" data-occ="' + x.id + '">Ask for proof of insurance</a></span>' : "") + "</td>";
+  }
+  function ask(ids) { P.go({ pageType: "webresource", webresourceName: "clt_/pages/verify.html", data: ids.length ? "occupancies=" + ids.join(",") : "" }); }
+
+  function render() {
+    // Households that can be asked start ticked; unticked holds the ones staff have taken out of this batch.
+    var sum = R.summary(list), askable = R.toAsk(list), can = {};
+    askable.forEach(function (id) { can[id] = 1; });
+    var asking = askable.filter(function (id) { return !unticked[id]; });
+    $("ask").hidden = !list.length;
+    $("ask").textContent = asking.length ? "Start " + asking.length + " occupancy verification" + (asking.length === 1 ? "" : "s") : "Occupancy verification requests";
+    $("ask").className = "btn" + (asking.length ? " primary" : "");
+    $("stats").innerHTML = R.ACTIVITIES.map(function (a) {
+      var c = sum[a.key];
+      return '<div class="stat' + (c.overdue ? " hot" : "") + '"><div class="n">' + c.overdue + '</div><div class="t">' + esc(a.label) + " overdue</div>" +
+             '<div class="d">' + c.soon + " due in the next " + R.SOON_DAYS + " days &middot; " + c.ok + " up to date</div></div>";
+    }).join("");
+    $("every").textContent = R.ACTIVITIES.map(function (a) {
+      var m = R.months(settings[a.setting]);
+      return a.label.toLowerCase() + " every " + (m === 12 ? "year" : m === 1 ? "month" : m + " months");
+    }).join(" · ");
+    var shown = R.filter(list, $("f-activity").value, $("f-show").value);
+    $("count").textContent = shown.length + " of " + list.length + " current occupanc" + (list.length === 1 ? "y" : "ies");
+    $("head").innerHTML = '<th><input type="checkbox" id="askall" title="Tick or untick every household that can be asked"' + (asking.length ? " checked" : "") +
+                          (askable.length ? "" : " disabled") + "></th><th>Home</th><th>Household</th>" + R.ACTIVITIES.map(function (a) { return "<th>" + esc(a.label) + "</th>"; }).join("") +
+                          "<th>Last contact</th>";
+    $("rows").innerHTML = shown.length ? shown.map(function (x) {
+      return "<tr><td>" + (can[x.id] ? '<input type="checkbox" data-pick="' + x.id + '" title="Include in the occupancy verifications you start"' + (unticked[x.id] ? "" : " checked") + ">" : "") +
+                '</td><td><a data-open="' + x.id + '">' + esc(x.property || x.name) + "</a>" + (x.role && x.role !== "Owner" ? '<span class="due">' + esc(x.role) + "</span>" : "") + "</td>" +
+                "<td>" + esc(x.household) + "</td>" + R.ACTIVITIES.map(function (a) { return a.key === "occupancy" ? verifyCell(x) : a.key === "insurance" ? insuranceCell(x) : cell(x.activities[a.key]); }).join("") +
+                "<td>" + (x.lastContact || '<span class="due">none recorded</span>') + "</td></tr>";
+    }).join("") : '<tr><td colspan="6">' + (list.length ? "Nothing to show with these filters." : "There are no current occupancies yet.") + "</td></tr>";
+  }
+
+  $("rows").addEventListener("click", function (e) {
+    var t = e.target;
+    if (t.dataset.open) { e.preventDefault(); P.openRecord("clt_occupancy", t.dataset.open); }
+    else if (t.dataset.goto) { e.preventDefault(); P.go({ pageType: "webresource", webresourceName: "clt_/pages/" + t.dataset.goto + ".html",
+                                                           data: t.dataset.id ? "open=" + t.dataset.id : "occupancies=" + t.dataset.occ }); }
+    else if (t.dataset.ask !== undefined) { e.preventDefault(); ask(t.dataset.ask ? [t.dataset.ask] : []); }
+  });
+  $("rows").addEventListener("change", function (e) {
+    if (e.target.dataset.pick) { if (e.target.checked) delete unticked[e.target.dataset.pick]; else unticked[e.target.dataset.pick] = 1; render(); }
+  });
+  $("ask").addEventListener("click", function () { ask(R.toAsk(list).filter(function (id) { return !unticked[id]; }).slice(0, 60)); });
+  $("head").addEventListener("change", function (e) {
+    if (e.target.id !== "askall") return;
+    R.toAsk(list).forEach(function (id) { if (e.target.checked) delete unticked[id]; else unticked[id] = 1; });
+    render();
+  });
+  $("f-activity").addEventListener("change", render);
+  $("f-show").addEventListener("change", render);
+  R.ACTIVITIES.forEach(function (a) {
+    var o = document.createElement("option"); o.value = a.key; o.textContent = a.label; $("f-activity").appendChild(o);
+  });
+
+  Promise.all([P.brand(), P.choice("clt_occupancystatus")].concat(TABLES.map(P.entitySet)))
+    .then(function (r) {
+      settings = r[0] || {}; choices = { status: r[1] };
+      TABLES.forEach(function (t, i) { sets[t] = r[2 + i]; });
+      return load();
+    }).catch(function (e) { $("rows").innerHTML = '<tr><td colspan="6">Couldn\'t load: ' + esc(e.message) + "</td></tr>"; });
+})();
+</script>
+</body>
+</html>

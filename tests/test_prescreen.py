@@ -94,11 +94,50 @@ r = P.run(app({ assets: 60000 }), rules({ assetLimit: 50000 }), prio); assert.st
 // A failure outranks an unknown
 r = P.run(app({ credit: "I don't know", localTie: false }), rules(), prio); assert.strictEqual(r.result, "Not eligible");
 
+// Income bands: the monthly housing cost depends on the band the household's stated income falls in
+const bands = [{ name: "Up to 65% of AMI", maxAmi: 65, cost: { 3: 1900 } }, { name: "Above 65% of AMI", maxAmi: null, cost: { 3: 2300 } }];
+r = P.run(app({ amiPct: 64 }), rules({ bands, cost: { 3: 9999 } }), prio);          // in the lower band: $1,900, as before; rules.cost is ignored
+assert.strictEqual(r.result, "Eligible for selection"); assert.strictEqual(find(r, "Housing ratio", 3).value, 33.3);
+assert.ok(/^3 bedrooms, up to 65% of ami: \$1,900 \//.test(find(r, "Housing ratio", 3).notes), find(r, "Housing ratio", 3).notes);
+assert.ok(/Costs tested for the income band: up to 65% of ami\./.test(r.notes), r.notes);
+r = P.run(app({ amiPct: 65 }), rules({ bands }), prio);                            // exactly on the line counts as in the band
+assert.strictEqual(find(r, "Housing ratio", 3).value, 33.3);
+r = P.run(app({ amiPct: 78, income: 84000 }), rules({ bands }), prio);             // upper band, and can afford it: $2,300 / $7,000 = 32.9%
+assert.strictEqual(r.result, "Eligible for selection"); assert.strictEqual(find(r, "Housing ratio", 3).value, 32.9);
+assert.ok(/above 65% of ami/.test(find(r, "Housing ratio", 3).notes));
+r = P.run(app({ amiPct: 78 }), rules({ bands }), prio);                            // upper band, can't afford it, nowhere near the line: 40.3%
+assert.strictEqual(find(r, "Housing ratio", 3).result, "Fail"); assert.strictEqual(r.result, "Not eligible");
+// Just over the line, inside the 10% income buffer (65% becomes 71.5%): fails at the higher cost, passes at the lower, so a person decides
+r = P.run(app({ amiPct: 68 }), rules({ bands }), prio);
+assert.strictEqual(find(r, "Housing ratio", 3).result, "Needs review"); assert.strictEqual(find(r, "Housing ratio", 3).value, 40.3);
+assert.strictEqual(r.result, "Needs review"); assert.deepStrictEqual(r.sizes, []);
+assert.ok(/inside the 10% buffer of the up to 65% of ami band, where the cost is \$1,900 a month and both ratios pass/.test(r.notes), r.notes);
+r = P.run(app({ amiPct: 72 }), rules({ bands }), prio);                            // 72% is outside the buffer: a plain fail
+assert.strictEqual(r.result, "Not eligible");
+r = P.run(app({ amiPct: 68 }), rules({ bands, incomeBuffer: 0 }), prio);           // no buffer, no benefit of the doubt
+assert.strictEqual(r.result, "Not eligible");
+r = P.run(app({ amiPct: 68, monthlyDebt: 900 }), rules({ bands }), prio);          // would fail in the lower band too (debt): a plain fail
+assert.strictEqual(find(r, "Total debt ratio", 3).result, "Fail"); assert.strictEqual(r.result, "Not eligible");
+r = P.run(app({ amiPct: 68, income: 84000 }), rules({ bands }), prio);             // passes at the higher cost: nothing to review
+assert.strictEqual(r.result, "Eligible for selection");
+r = P.run(app({ amiPct: null }), rules({ bands }), prio);                          // no % of AMI: tested at the highest band, and flagged
+assert.strictEqual(find(r, "Housing ratio", 3).value, 40.3); assert.strictEqual(r.result, "Needs review");
+// One band (every buyer gets the same rate): its cost is used and the band isn't mentioned
+r = P.run(app(), rules({ bands: [{ name: "All buyers", maxAmi: null, cost: { 3: 1900 } }], cost: {} }), prio);
+assert.strictEqual(r.result, "Eligible for selection"); assert.ok(!/band/i.test(r.notes + find(r, "Housing ratio", 3).notes));
+// A band with no cost for the size: someone has to look
+r = P.run(app({ amiPct: 78 }), rules({ bands: [bands[0], { name: "Above 65% of AMI", maxAmi: null, cost: {} }] }), prio);
+assert.strictEqual(r.result, "Needs review");
+// Three bands
+const three = [{ name: "Up to 50% of AMI", maxAmi: 50, cost: { 3: 1500 } }, { name: "Up to 65% of AMI", maxAmi: 65, cost: { 3: 1900 } }, { name: "Above 65% of AMI", maxAmi: null, cost: { 3: 2300 } }];
+assert.ok(/up to 50% of ami: \$1,500/.test(find(P.run(app({ amiPct: 45 }), rules({ bands: three }), prio), "Housing ratio", 3).notes));
+assert.ok(/up to 65% of ami: \$1,900/.test(find(P.run(app({ amiPct: 51 }), rules({ bands: three }), prio), "Housing ratio", 3).notes));
+
 assert.deepStrictEqual(P.sizesFromLabels("2 bedrooms; 3 bedrooms"), [2, 3]);
 assert.deepStrictEqual(P.sizesFromLabels("Studio; 4+ bedrooms"), [0, 4]);
 assert.deepStrictEqual(P.sizesFromLabels(""), []);
 const all = JSON.stringify([P.run(app({ amiPct: 85, sizesWanted: [2, 3] }), rules({ cost: { 2: 1600, 3: 2400 }, assetLimit: 1, minAmi: 90 }), prio)]);
-assert.ok(all.indexOf("—") < 0, "no em dashes in what staff read");
+assert.ok(all.indexOf("\u2014") < 0, "no em dashes in what staff read");
 console.log("ok");
 """
 
@@ -150,7 +189,7 @@ def page_checks(node):
     # every clt_ column the page names exists on one of the tables it uses
     cols = {"clt_name"}
     for t in TABLES:
-        if t["name"] in ("application", "project", "eligibility", "eligibilitycheck", "projectpriority"):
+        if t["name"] in ("application", "project", "eligibility", "eligibilitycheck", "projectpriority", "projectband"):
             cols |= {f"clt_{c['name']}" for c in t["columns"]} | {f"clt_{t['name']}id", f"clt_{t['name']}"}
     cols |= {"clt_application", "clt_project", "clt_projects", "clt_applications", "clt_checkstage", "clt_checktest",
              "clt_checkresult", "clt_prescreenresult", "clt_applicationstage", "clt_homesize"}

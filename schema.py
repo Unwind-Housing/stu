@@ -68,9 +68,21 @@ CHOICES = {
     "occupancystatus": ("Occupancy status", [
         "Pending", "Current", "Past"]),
     "verificationstatus": ("Verification status", [
-        "Due", "Sent", "Received", "Approved", "Issue found", "Waived"]),
+        "Due", "Sent", "Received", "Approved", "Issue found", "Waived", "Cancelled"]),
+    "verificationmethod": ("Verification method", [
+        "Online form", "Paper"]),
     "rentalstatus": ("Rental status", [
         "Not renting", "Renting ADU", "Renting rooms", "Renting whole home"]),
+    "loanstatus": ("Loan status", [
+        "Active", "Paid off"]),
+    "insurancereviewstatus": ("Insurance verification status", [
+        "To review", "Needs contact", "Approved", "Issue found", "Cancelled", "Requested"]),
+    "followupstatus": ("Follow-up status", [
+        "Open", "Done"]),
+    "walkbyresult": ("Walk-by result", [
+        "Looks good", "Needs follow-up", "Concern"]),
+    "contactmethod": ("Contact method", [
+        "Phone", "Email", "In person", "Text", "Mail", "Other"]),
     "requesttype": ("Request type", [
         "Capital improvement", "ERRR repair draw", "Refinance", "Rent or sublet",
         "Leave of absence", "Intent to sell", "Transfer to heir or family", "Other"]),
@@ -116,7 +128,7 @@ CHOICES = {
     "checkresult": ("Check result", ["Pass", "Fail", "Not applicable", "Needs review"]),
     "documentstatus": ("Document status", ["Missing", "Received", "Accepted", "Rejected", "Expired", "Waived"]),
     "noticetype": ("Notice type", [
-        "Screened out", "Not selected", "Invited to full application", "Reminder", "Offer", "Other"]),
+        "Screened out", "Not selected", "Invited to full application", "Reminder", "Offer", "Other", "Annual verification", "Insurance verification"]),
     "noticechannel": ("Sent by", ["Email", "Letter", "Phone", "Text message"]),
 }
 
@@ -226,6 +238,9 @@ _FLOORED = "If(clt_floorbaseprice, Max(clt_rawformulaprice, Decimal(clt_basepric
 _CAPPED = f"If(Decimal(clt_pricecap) = 0, {_FLOORED}, Min({_FLOORED}, Decimal(clt_pricecap)))"
 FORMULA_PRICE = (f"If(IsBlank(clt_rawformulaprice), Blank(), If(IsBlank(clt_roundto) || clt_roundto = 0, {_CAPPED}, "
                  f"Round({_CAPPED} / clt_roundto, 0) * clt_roundto))")
+# An improvement credit falls evenly from its original value to zero over its depreciation period (straight line, by the day).
+IMPROVEMENT_VALUE = ("If(IsBlank(clt_valuedate) || IsBlank(clt_depreciationyears) || clt_depreciationyears <= 0, Decimal(clt_originalvalue), "
+                     "Decimal(clt_originalvalue) * Max(0, Min(1, 1 - DateDiff(clt_valuedate, UTCToday(), TimeUnit.Days) / (clt_depreciationyears * 365.25))))")
 MAX_RESALE_PRICE = ("If(IsBlank(clt_formulaprice), Blank(), clt_formulaprice + "
                     "Decimal(clt_improvementcredits))")
 _DWELLING = "Decimal(clt_coveragea) * (1 + If(IsBlank(clt_extendeddwelling), 0, clt_extendeddwelling) / 100)"
@@ -326,6 +341,7 @@ TABLES = [
              text("screenerentryid", "Screener entry ID", "Forms platform entry ID. Set by the intake flows.", max=50),
              date("screenersubmitted", "Screener submitted"),
              url("screenerlink", "Screener entry link"),
+             url("invitelink", "Invite link", "This household's own link to the full application. Filled in when they are invited."),
              bool_("localtie", "Lived or worked locally 1+ year"),
              choice("localtiemethod", "How local tie is shown", "localtie"),
              text("housingstatusother", "Current housing status (other)"),
@@ -487,11 +503,18 @@ TABLES = [
              bool_("floorbaseprice", "Floor at purchase price"),
              money("pricecap", "Price cap"),
              int_("roundto", "Round to nearest ($)", "For example 100. Leave blank for no rounding."),
-             money("improvementcredits", "Improvement credits", "Sum of approved improvement credits. Set by a flow."),
+             money("improvementcredits", "Improvement credits", "The current value of this occupancy's improvement credits, added together. Kept in step with the "
+                   "Improvement credits list by the Verification hub and Resale pages; type it only when the list is empty."),
              fx("rawformulaprice", "Raw formula price", "dec", RAW_FORMULA_PRICE, "The resale formula before floor, cap and rounding"),
              fx("formulaprice", "Formula price", "dec", FORMULA_PRICE, "After the floor, price cap and rounding"),
              fx("maximumresaleprice", "Maximum resale price", "dec", MAX_RESALE_PRICE, "Formula price plus improvement credits"),
              url("documentsfolder", "Documents folder", "Opens this record's folder in SharePoint. Filled in by the folder flow."),
+             # Verification hub: when each recurring check was last done. Type them, or let the Verification hub
+             # page keep them in step with the records (verifications, policies, walk-bys, relationship notes).
+             date("lastoccupancyverified", "Last occupancy verification", "When this household was last confirmed to live in the home. Blank counts as overdue."),
+             date("lastinsuranceverified", "Last insurance verification", "When this home's insurance was last checked. Blank counts as overdue."),
+             date("lastwalkby", "Last staff walk-by", "When staff last walked or drove by the home. Blank counts as overdue."),
+             date("lastcontact", "Last contact", "The newest relationship note, or verification that came back."),
              memo("notes", "Notes"),
          ]),
 
@@ -503,16 +526,27 @@ TABLES = [
              int_("year", "Year"),
              date("duedate", "Due date"),
              choice("status", "Status", "verificationstatus", default="Due"),
+             choice("method", "How", "verificationmethod", "An online form the household fills in, or a paper copy staff close by hand"),
              date("sentdate", "Sent date"),
              date("receiveddate", "Received date"),
              bool_("primaryresidence", "Primary residence confirmed"),
              choice("rentalstatus", "Rental status", "rentalstatus", default="Not renting"),
              memo("tenantdetails", "Tenant details", "Tenant household size, income and rent, if renting"),
              bool_("insurancereceived", "Insurance declarations received"),
+             int_("peopleinhome", "People living in the home", "From the online form"),
+             bool_("noshorttermrental", "No short-term rental certified", "The household certified it does not use the home as a short-term rental"),
+             bool_("insurancecurrent", "Insurance certified current", "The household certified its homeowner's insurance is paid and current"),
+             bool_("insurancecontact", "Asked for help with insurance", "The household couldn't find its insurance document or has questions"),
+             bool_("mortgagecontact", "Asked for contact about the mortgage", "The household asked staff to get in touch about difficulty with its mortgage"),
+             date("signeddate", "Signed on"),
+             phone("phone", "Phone on the form"),
+             url("uploadslink", "Uploaded documents", "Where the forms platform saved what the household attached. Set by the intake flow."),
              text("verificationcode", "Verification code", "Unique code sent in the form link so the reply matches this record. Set by a flow.", max=20),
              email("sentto", "Sent to"),
              text("formentryid", "Form entry ID", "Forms platform entry ID. Set by the intake flow.", max=100),
              url("formlink", "Form entry link"),
+             memo("sentlink", "Link sent", "The household's own link to the online form, as it was sent. Set by the Occupancy verification page.", max=4000),
+             file("signedform", "Signed form", "The signed paper verification, as a PDF or a photo. Added on the Occupancy verification page."),
              memo("notes", "Notes"),
          ]),
 
@@ -544,6 +578,80 @@ TABLES = [
              memo("notes", "Notes"),
          ]),
 
+    dict(name="insuranceverification", label="Insurance verification", plural="Insurance verifications",
+         primary_required=False,  # name is filled by the form script (webresources/names.js), the Insurance verification page or the intake flow
+         desc="A check of a home's insurance coverage: proof the household sent in for staff to review, or a household that asked for help with it.",
+         primary=("Insurance verification", "For example: 2026-11-17, Rivera - 12 Pine St"),
+         columns=[
+             date("date", "Started"),
+             choice("status", "Status", "insurancereviewstatus", "Requested: the household has been asked for proof. To review: proof is waiting for staff. "
+                    "Needs contact: the household asked for help, or sent no proof.", default="To review"),
+             choice("method", "How", "verificationmethod", "An online form the household fills in, or a paper copy staff close by hand"),
+             date("duedate", "Due date"),
+             date("sentdate", "Sent date"),
+             email("sentto", "Sent to"),
+             memo("sentlink", "Link sent", "The household's own link to the online form, as it was sent. Set by the Insurance verification page.", max=4000),
+             text("verificationcode", "Verification code", "Unique code sent in the form link so the reply matches this record.", max=20),
+             bool_("contactrequested", "Asked to be contacted"),
+             url("documentslink", "Uploaded documents", "Where the forms platform saved the household's proof of insurance. Set by the intake flow."),
+             file("document", "Insurance document", "Proof of insurance added by staff on the Insurance verification page."),
+             date("verifieddate", "Reviewed on"),
+             money("replacementcoverage", "Replacement coverage limit", "The dwelling replacement coverage shown on the proof of insurance"),
+             memo("notes", "Notes"),
+         ]),
+    dict(name="followup", label="Follow-up", plural="Follow-ups",
+         desc="Something staff need to come back to for an occupancy, with the date it is due.",
+         primary=("Follow-up", "What to follow up on, for example: Call about the fence"),
+         columns=[
+             date("duedate", "Due date"),
+             choice("status", "Status", "followupstatus", default="Open"),
+             date("donedate", "Done on"),
+             memo("notes", "Notes"),
+         ]),
+    dict(name="improvementcredit", label="Improvement credit", plural="Improvement credits",
+         desc="A capital improvement that adds to a home's maximum resale price, with the value it was given, the date of that value and "
+              "how many years it loses value over.",
+         primary=("Improvement", "For example: New roof"),
+         columns=[
+             money("originalvalue", "Original value", "The credit approved for this improvement"),
+             date("valuedate", "Value as of", "The date the original value is from. The credit loses value from this date."),
+             dec("depreciationyears", "Depreciation period (years)", "Years over which the credit falls evenly to zero. Leave blank for a credit that keeps its value.", precision=1),
+             fx("currentvalue", "Current value", "dec", IMPROVEMENT_VALUE, "The original value less what it has lost so far"),
+             memo("notes", "Notes"),
+         ]),
+    dict(name="walkby", label="Staff walk-by", plural="Staff walk-bys",
+         primary_required=False,  # name is filled by the form script (webresources/names.js) or the Verification hub page
+         desc="A staff visit to look at a home from the outside, with what they saw.",
+         primary=("Walk-by", "For example: 2026-11-17, Rivera - 12 Pine St"),
+         columns=[
+             date("date", "Date"),
+             choice("result", "What you saw", "walkbyresult"),
+             memo("notes", "Notes", "What you saw from the street: the yard, the outside of the home, anything to follow up."),
+         ]),
+    dict(name="relationshipnote", label="Relationship note", plural="Relationship notes",
+         primary_required=False,  # name is filled by the form script (webresources/names.js) or the Verification hub page
+         desc="A note staff add each time they are in contact with a household about its home.",
+         primary=("Note", "For example: 2026-11-17, Rivera - 12 Pine St"),
+         columns=[
+             date("date", "Date"),
+             choice("method", "How", "contactmethod"),
+             memo("notes", "Notes", "Who you talked to and what about."),
+         ]),
+
+    dict(name="loan", label="Loan", plural="Loans",
+         desc="A loan the organization made to a homeowner, tied to their time in a home. What is still owed comes off the seller's side at a resale.",
+         primary=("Loan", "For example: Down payment loan"),
+         columns=[
+             choice("status", "Status", "loanstatus", default="Active"),
+             money("startingbalance", "Starting balance"),
+             dec("interestrate", "Interest rate (%)", "Yearly rate, for example 3. Leave blank or 0 for no interest.", precision=3),
+             date("startdate", "Start date"),
+             date("enddate", "End date", "When the last payment is due"),
+             money("payment", "Regular payment", "Monthly. Filled in from the balance, rate and dates; change it if the real payment differs. "
+                   "Leave it at 0 for a loan with no payments until the home is sold."),
+             memo("notes", "Notes"),
+         ]),
+
     # 11 ------------------------------------------------------------------
     dict(name="homeownerrequest", label="Homeowner request", plural="Homeowner requests", notes=True,
          desc="A request from a homeowner that needs CLT approval.",
@@ -570,13 +678,20 @@ TABLES = [
              autonum("recordnumber", "Record number", "S-{SEQNUM:5}", "Assigned when the record is created"),
              choice("saletype", "Sale type", "saletype", "Set automatically: Resale if the property has a current owner, otherwise Initial sale"),
              choice("status", "Status", "salestatus", default="Pending"),
+             date("noticedate", "Notice of intent to sell", "Resales: the date the homeowner said they want to sell"),
              date("contractdate", "Contract date"),
              date("closingdate", "Closing date"),
              money("appraisedvalue", "Appraised value"),
              money("formulapriceatsale", "Formula price at sale", "Snapshot from the seller's occupancy"),
-             money("creditsatsale", "Improvement credits at sale"),
+             money("creditsatsale", "Added value at sale", "Capital improvements that raise the price"),
              money("maxpriceatsale", "Maximum resale price at sale"),
              money("purchaseprice", "Purchase price"),
+             money("subsidyrecapture", "Subsidy recaptured", "The purchase price above the maximum resale price, which goes back to the organization"),
+             money("loanpayoff", "Loans owed to the organization", "What the seller still owes on loans from the organization, paid from the sale"),
+             money("othercredits", "Other credits to the seller"),
+             text("othercreditsnote", "Other credits: what for"),
+             money("otherdebits", "Other debits"),
+             text("otherdebitsnote", "Other debits: what for"),
              text("lender", "Lender"),
              text("titlecompany", "Title or escrow company"),
              memo("notes", "Notes"),
@@ -761,10 +876,18 @@ TABLES = [
              money("monthlycost2br", "Monthly housing cost: 2 bedrooms"),
              money("monthlycost3br", "Monthly housing cost: 3 bedrooms"),
              money("monthlycost4br", "Monthly housing cost: 4+ bedrooms"),
+             dec("downpaymentpct", "Down payment (%)", "Share of the sale price the buyer pays up front. The rest is the loan the mortgage payment is worked out on."),
+             int_("loantermyears", "Loan term (years)", "Blank is 30"),
              int_("invitesperlist", "Invites per list", "Default 10"),
              int_("invitesperhome", "Minimum invites per home", "Default 2"),
              int_("responsedays", "Response deadline (days)", "Default 15"),
              int_("waitlistmonths", "Lists stay in effect (months)", "Default 12"),
+             text("documentsfolderlink", "Application documents folder",
+                  "Only if this project's documents are somewhere other than your organization's usual folder: the web address "
+                  "of the folder the form saves this project's documents into.", max=500),
+             text("fullappformlink", "Full application link",
+                  "The web address of the full application form. Each invited household gets its own link made from this, "
+                  "with its application number added (Projects > Invite).", max=500),
              memo("notes", "Notes"),
          ]),
     dict(name="projectpriority", solution="intake", label="Project priority", plural="Project priorities",
@@ -778,6 +901,31 @@ TABLES = [
              text("preference", "Preference", "Optional, for preference tiers"),
              memo("notes", "Notes"),
          ]),
+    dict(name="projectband", solution="intake", label="Income band", plural="Income bands",
+         primary_required=False,
+         desc="A band of buyers by income in a project. Each band has its own interest rate, and can have its own sale "
+              "prices, so the monthly housing cost the pre-screen tests against depends on the household's income.",
+         primary=("Name", "For example: Up to 65% of AMI"),
+         columns=[
+             dec("maxami", "Up to (% of AMI)", "Blank on the last band: everyone above the band before it"),
+             dec("interestrate", "Interest rate (%)", "The mortgage rate buyers in this band can expect", precision=3),
+             int_("sortorder", "Order", "Lowest income band first"),
+             money("pricestudio", "Sale price: studio"),
+             money("price1br", "Sale price: 1 bedroom"),
+             money("price2br", "Sale price: 2 bedrooms"),
+             money("price3br", "Sale price: 3 bedrooms"),
+             money("price4br", "Sale price: 4+ bedrooms"),
+             money("pistudio", "Principal and interest: studio"),
+             money("pi1br", "Principal and interest: 1 bedroom"),
+             money("pi2br", "Principal and interest: 2 bedrooms"),
+             money("pi3br", "Principal and interest: 3 bedrooms"),
+             money("pi4br", "Principal and interest: 4+ bedrooms"),
+             money("monthlycoststudio", "Monthly housing cost: studio"),
+             money("monthlycost1br", "Monthly housing cost: 1 bedroom"),
+             money("monthlycost2br", "Monthly housing cost: 2 bedrooms"),
+             money("monthlycost3br", "Monthly housing cost: 3 bedrooms"),
+             money("monthlycost4br", "Monthly housing cost: 4+ bedrooms"),
+         ]),
     dict(name="projecthome", solution="intake", label="Project home", plural="Project homes",
          primary_required=False,
          desc="A home offered in a project.",
@@ -785,8 +933,15 @@ TABLES = [
          columns=[
              int_("bedrooms", "Bedrooms", "Decides which list the home belongs to"),
              dec("targetami", "Target AMI (%)"),
-             money("estimatedprice", "Estimated price"),
-             money("estimatedmonthlycost", "Estimated monthly housing cost", "Used by the minimum-affordability check"),
+             money("estimatedprice", "Sale price"),
+             money("principalinterest", "Principal and interest (monthly)", "The buyer's expected mortgage payment"),
+             money("propertytaxes", "Property taxes (monthly)"),
+             money("insurance", "Homeowner's insurance (monthly)"),
+             money("hoadues", "HOA dues (monthly)"),
+             money("leasefee", "Ground lease fee (monthly)"),
+             money("reservefee", "Reserve fee (monthly)", "The repair and replacement reserve contribution"),
+             money("estimatedmonthlycost", "Monthly housing cost",
+                   "The six monthly amounts above added together. The pre-screen uses the figure for this home size on the project."),
              choice("status", "Status", "projecthomestatus", default="Available"),
          ]),
     dict(name="lotteryfactor", solution="intake", label="Lottery factor", plural="Lottery factors",
@@ -855,6 +1010,12 @@ TABLES = [
              money("certifiedincome", "Certified annual income"),
              money("certifiedassets", "Certified assets"),
              money("certifiedmonthlydebt", "Certified monthly debt"),
+             dec("certifiedamipct", "Certified income (% of AMI)", "Certified annual income against 100% of AMI for the certified household size"),
+             multi("certifiedsizes", "Home sizes certified for", "homesize", "The home sizes the household passed both ratios for"),
+             bool_("confirmedfthb", "Confirmed: first-time buyer", "Ticked by staff in the review"),
+             bool_("confirmedlocal", "Confirmed: lives or works locally"),
+             bool_("confirmedresidence", "Confirmed: will be their primary residence"),
+             bool_("confirmededucation", "Confirmed: homebuyer education complete"),
              datetime_("certifiedon", "Certified on"),
              date("expireson", "Expires on"),
              memo("notcertifiedreason", "Not certified because"),
@@ -897,6 +1058,15 @@ TABLES = [
              date("reviewedon", "Reviewed on"),
              memo("note", "Note", "What's wrong, or why it's waived"),
          ]),
+    dict(name="messagetemplate", solution="intake", label="Message template", plural="Message templates",
+         desc="The wording of a message staff send to applicants. Staff can change it. Words in curly brackets are filled in for each household.",
+         primary=("Name", "For example: Invitation to the full application"),
+         columns=[
+             choice("noticetype", "Used for", "noticetype"),
+             text("subject", "Subject line", max=200),
+             memo("body", "Message", "Words in curly brackets are filled in for each household: {first name}, {household}, {project}, "
+                  "{application number}, {link}, {deadline}, {organization}.", max=10000),
+         ]),
     dict(name="notice", solution="intake", label="Notice", plural="Notices",
          desc="A message sent to an applicant: screened out, not selected, invited, reminders, offers.",
          primary=("Subject", "Subject line"),
@@ -930,6 +1100,14 @@ LOOKUPS = [
     ("occupancy",         "household",       "household",        "Household",            "Restrict",   True),
     ("annualverification","occupancy",       "occupancy",        "Occupancy",            "Cascade",    True),
     ("insurancepolicy",   "occupancy",       "occupancy",        "Occupancy",            "Cascade",    True),
+    ("walkby",            "occupancy",       "occupancy",        "Occupancy",            "Cascade",    True),
+    ("insuranceverification", "occupancy",   "occupancy",        "Occupancy",            "Cascade",    True),
+    ("followup",          "occupancy",       "occupancy",        "Occupancy",            "Cascade",    True),
+    ("improvementcredit", "occupancy",       "occupancy",        "Occupancy",            "Cascade",    True),
+    ("improvementcredit", "homeownerrequest", "homeownerrequest", "Homeowner request",   "RemoveLink", False),
+    ("insuranceverification", "annualverification", "annualverification", "From annual verification", "RemoveLink", False),
+    ("loan",              "occupancy",       "occupancy",        "Occupancy",            "Cascade",    True),
+    ("relationshipnote",  "occupancy",       "occupancy",        "Occupancy",            "Cascade",    True),
     ("homeownerrequest",  "occupancy",       "occupancy",        "Occupancy",            "Restrict",   True),
     ("homeownerrequest",  "property",        "property",         "Property",             "RemoveLink", False),
     ("sale",              "property",        "property",         "Property",             "Restrict",   True),
@@ -967,6 +1145,7 @@ LOOKUPS = [
     ("incomelimitset",    "county",          "listitem",         "County",               "Restrict",   True),
     ("projectpriority",   "project",         "project",          "Project",              "Cascade",    True),
     ("projecthome",       "project",         "project",          "Project",              "Cascade",    True),
+    ("projectband",       "project",         "project",          "Project",              "Cascade",    True),
     ("projecthome",       "property",        "property",         "Property",             "Restrict",   True),
     ("lotteryfactor",     "project",         "project",          "Project",              "Cascade",    True),
     ("project",           "reuseround",      "selectionround",   "Reuse list from round","RemoveLink", False),
@@ -1135,6 +1314,22 @@ SEED_ROWS = {
     # Starting point only: each CLT confirms its own figures (DESIGN.md, Eligibility).
     "eligibility": [dict(name="Organization eligibility", maxami=80, firsttimebuyer="Required",
                          housingratiomax=38, debtratiomax=45)],
+    # A starting point for each CLT to reword (Settings > Message templates). The Invite page falls back to the
+    # same words (webresources/invite.js) if this row is deleted.
+    "messagetemplate": [dict(
+        name="Invitation to the full application", noticetype="Invited to full application",
+        subject="You're invited to apply: {project}",
+        body="Hello {first name},\n\n"
+             "Good news. Your household's place in the {project} selection means you are invited to complete a full application.\n\n"
+             "Your personal link:\n{link}\n\n"
+             "Please use this link and not one passed on by someone else. It carries your application number ({application number}), "
+             "which is how we match your full application to you.\n\n"
+             "Please finish the application by {deadline}. If we haven't received it by then, we will offer your place to the next household on the list.\n\n"
+             "It will ask about everyone in your household, your income, debts and savings, and for copies of recent pay stubs, "
+             "bank statements and tax returns. You can save it and come back.\n\n"
+             "Being invited is not yet an offer of a home. We check each full application against the program's rules first.\n\n"
+             "If you have questions, or need help or an accommodation to complete the application, reply to this email.\n\n"
+             "{organization}")],
 }
 
 ENVIRONMENT_VARIABLES = [
@@ -1145,6 +1340,29 @@ ENVIRONMENT_VARIABLES = [
          desc="Text and icon color on the header, for example #FFFFFF."),
     dict(name="BrandAccentColor", label="Brand: accent color",
          desc="Header hover and selected color, for example #526B50."),
+    dict(name="ApplicationDocumentsFolder", label="Full application: where documents are saved",
+         desc="The web address of the folder your full application form saves documents into (the one holding a folder for "
+              "each household). Review and certify opens each household's own folder inside it. A project can name a different one."),
+    dict(name="ApplicationFolderName", label="Full application: name of each household's documents folder",
+         desc="How your form names the folder it saves a household's documents into. Blank uses "
+              "{last name} - Entry {entry number}. Also available: {application number}, {household}, {entry}."),
+    dict(name="FullAppNumberField", label="Full application: Application Number question",
+         desc="Cognito Forms only: the form's Application Number question as Section.Question. Blank uses "
+              "PrimaryApplicant.ApplicationNumber. The Invite page uses it to put each household's number on its link."),
+    dict(name="VerificationFormLink", label="Annual verification: form link",
+         desc="The web address of your annual occupancy verification form. Stu adds the year, the household ID and a code to each household's "
+              "link so the reply can be matched. To fill in your form's own questions, put {year}, {household id}, {code}, {first name}, "
+              "{last name}, {street}, {unit}, {city}, {state} and {zip} in the link the way your forms platform fills in a form from its "
+              "address; a plain link gets the year, household ID and code added the usual way for Cognito Forms or Jotform."),
+    dict(name="InsuranceFormLink", label="Insurance verification: form link",
+         desc="The web address of the form a household uses to send proof of insurance. It can be the same form as the annual "
+              "verification. The link is filled in for each household the same way: see Annual verification: form link."),
+    dict(name="OccupancyVerificationMonths", label="Verification hub: months between occupancy verifications",
+         desc="How often each home's occupancy is verified, in months. Blank means every 12."),
+    dict(name="InsuranceVerificationMonths", label="Verification hub: months between insurance verifications",
+         desc="How often each home's insurance is checked, in months. Blank means every 12."),
+    dict(name="WalkByMonths", label="Verification hub: months between staff walk-bys",
+         desc="How often staff walk or drive by each home, in months. Blank means every 12."),
     dict(name="BrandLogoUrl", label="Brand: logo URL",
          desc="Web address of the CLT's logo (PNG or SVG; square works best). Shown on the home page."),
 ]

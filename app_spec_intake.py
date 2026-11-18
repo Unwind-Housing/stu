@@ -20,19 +20,26 @@ APP = {
 # Pages (webresources/), sharing styles with the core app's pages. The first navigation item is where the app opens.
 PAGES = {"intake": ("Hub", "clt_/pages/intake.html"),                # figures and what needs attention
          "guide":  ("How it works", "clt_/pages/intake-guide.html"),  # the steps, from screener to handoff
+         "newproject": ("New project", "clt_/pages/newproject.html"),  # guided: basics, homes, costs, rules, priorities
          "assign": ("Add to a project", "clt_/pages/assign.html"),
-         "prescreen": ("Pre-screen", "clt_/pages/prescreen.html")}   # test a project's screeners against its rules
+         "prescreen": ("Pre-screen", "clt_/pages/prescreen.html"),   # test a project's screeners against its rules
+         # where a project is in the process, and the steps that run its lottery or first come, first served list
+         "selection": ("Buyer Selection", "clt_/pages/selection.html"),
+         # after the results are certified: the email to send, and each invited household's own link
+         "invite": ("Invite", "clt_/pages/invite.html"),
+         # review a full application's income, debts and assets, then certify the household (or not)
+         "certify": ("Review and certify", "clt_/pages/certify.html")}
 
 NAVIGATION = [
     ("Start here", ["page:intake", "page:guide"]),
-    ("Projects",   ["project", "page:assign", "page:prescreen", "selectionround"]),
+    ("Projects",   ["project", "page:newproject", "page:assign", "page:prescreen", "page:selection", "page:invite", "page:certify", "selectionround"]),
     ("Applicants", ["application", "household", "certification"]),
     ("Messages",   ["notice", "formsubmission"]),
-    ("Settings",   ["eligibility", "incomelimitset", "listitem", "sourceform"]),
+    ("Settings",   ["eligibility", "incomelimitset", "listitem", "sourceform", "messagetemplate"]),
 ]
 
 # Reached through related lists and lookups, not navigation.
-APP_TABLES = ["projectpriority", "projecthome", "lotteryfactor", "selectionentry", "entryfactor",
+APP_TABLES = ["projectpriority", "projecthome", "projectband", "lotteryfactor", "selectionentry", "entryfactor",
               "eligibilitycheck", "checklistitem", "incomesource", "debt", "asset", "householdmember",
               "property", "propertyfunding"]
 
@@ -45,6 +52,9 @@ VIEWS = [
       filters=[("status", "ne", "Closed")]),
     v("projectpriority", None, [("name", 160), ("bedrooms", 80), ("householdsize", 110), ("tier", 60),
                                 ("preference", 200)], sort=[("bedrooms", False), ("tier", False)], default=True),
+    v("projectband", None, [("name", 200), ("maxami", 110), ("interestrate", 110), ("monthlycost2br", 130),
+                            ("monthlycost3br", 130), ("project", 180)],
+      sort=[("project", False), ("sortorder", False)], default=True),
     v("projecthome", None, [("name", 200), ("property", 180), ("bedrooms", 80), ("estimatedprice", 120),
                             ("estimatedmonthlycost", 130), ("status", 100)], sort=("bedrooms", False), default=True),
     v("lotteryfactor", None, [("name", 220), ("extrachances", 100), ("active", 70), ("fairhousingreviewed", 130)],
@@ -121,6 +131,7 @@ VIEWS = [
                                                ("receivedon", 110)],
       sort=("receivedon", False), filters=[("status", "eq", "Received")]),
     # Messages
+    v("messagetemplate", None, [("name", 280), ("noticetype", 200), ("subject", 320)], default=True),
     v("notice", None, [("name", 240), ("noticetype", 170), ("channel", 100), ("senton", 140), ("sentto", 200)],
       sort=("senton", True), default=True),
     # Settings
@@ -143,12 +154,16 @@ FORMS = {
                    "debtratiomax", "education", "validdays"]),
                  ("Pre-screen", ["incomebuffer", "housingratiobuffer", "debtratiobuffer", "mincreditrange",
                                  "bankruptcyyears", "minaffordabilitycheck"]),
-                 ("Monthly housing cost by home size (mortgage, taxes, insurance, dues and lease fee)",
+                 ("Monthly housing cost by home size (the highest income band's; see the Income bands tab)",
                   ["monthlycoststudio", "monthlycost1br", "monthlycost2br", "monthlycost3br", "monthlycost4br"]),
-                 ("Invitations and lists", ["invitesperlist", "invitesperhome", "responsedays", "waitlistmonths"]),
+                 ("Financing (used to work out each band's mortgage payment)", ["downpaymentpct", "loantermyears"]),
+                 ("Invitations and lists", ["invitesperlist", "invitesperhome", "responsedays", "waitlistmonths", "fullappformlink", "documentsfolderlink"]),
                  ("Notes", ["notes"])]),
             tab("Homes",
                 [("Homes", [sub("Homes", "projecthome", "project", "project", rows=6)])]),
+            tab("Income bands",
+                [("Interest rate, sale price and monthly housing cost for each band of buyers by income",
+                  [sub("Income bands", "projectband", "project", "project", rows=6)])]),
             tab("Priorities",
                 [("Who can apply for each home size, and in which tier",
                   [sub("Priorities", "projectpriority", "project", "project", rows=10)])],
@@ -165,10 +180,19 @@ FORMS = {
         header=["bedrooms", "householdsize", "tier"],
         tabs=[tab("General", [("Priority", ["name", "project", "bedrooms", "householdsize", "tier", "preference"])],
                   [("Notes", ["notes"])])]),
+    "projectband": dict(
+        header=["maxami", "interestrate"],
+        tabs=[tab("General",
+                  [("Band", ["name", "project", "maxami", "interestrate", "sortorder"]),
+                   ("Sale price by home size", ["pricestudio", "price1br", "price2br", "price3br", "price4br"])],
+                  [("Principal and interest by home size (monthly)", ["pistudio", "pi1br", "pi2br", "pi3br", "pi4br"]),
+                   ("Monthly housing cost by home size (what the pre-screen tests against)", ["monthlycoststudio", "monthlycost1br", "monthlycost2br", "monthlycost3br", "monthlycost4br"])])]),
     "projecthome": dict(
         header=["bedrooms", "status", "estimatedprice"],
         tabs=[tab("General", [("Home", ["name", "project", "property", "bedrooms", "status"])],
-                  [("Price and cost", ["targetami", "estimatedprice", "estimatedmonthlycost"])])]),
+                  [("Price and monthly housing cost",
+                    ["estimatedprice", "principalinterest", "propertytaxes", "insurance", "hoadues", "leasefee",
+                     "reservefee", "estimatedmonthlycost", "targetami"])])]),
     "lotteryfactor": dict(
         header=["extrachances", "active", "fairhousingreviewed"],
         tabs=[tab("General",
@@ -208,7 +232,8 @@ FORMS = {
                 [("Checklist", [sub("Checklist", "checklistitem", "certification", "certification", rows=12)])],
                 [("Open at certification", ["!opendocuments"])]),
             tab("Certify",
-                [("Certified figures", ["certifiedsize", "certifiedincome", "certifiedassets", "certifiedmonthlydebt"]),
+                [("Certified figures", ["certifiedsize", "certifiedincome", "!certifiedamipct", "certifiedassets", "certifiedmonthlydebt", "!certifiedsizes"]),
+                 ("Confirmed by staff", ["confirmedfthb", "confirmedlocal", "confirmedresidence", "confirmededucation"]),
                  ("Affordability inputs", ["estprice", "estloan", "estrate", "estterm", "esttaxes", "estinsurance",
                                            "estmi", "estdues", "estlandlease", "estutilities"])],
                 [("Result", ["!certifiedon", "!certifiedby", "expireson", "limitset", "!limityear", "!ami100",
@@ -223,6 +248,9 @@ FORMS = {
         header=["status", "documentdate", "receivedon"],
         tabs=[tab("General", [("Document", ["name", "certification", "member", "status"])],
                   [("Dates", ["documentdate", "receivedon", "reviewedon", "reviewedby"]), ("Note", ["note"])])]),
+    "messagetemplate": dict(
+        header=["noticetype"],
+        tabs=[tab("General", [("Template", ["name", "noticetype", "subject"])], [("Message", ["body"])])]),
     "notice": dict(
         header=["noticetype", "channel", "senton"],
         tabs=[tab("General", [("Notice", ["name", "noticetype", "channel", "senton", "sentto"]),
@@ -283,7 +311,7 @@ FORMS = {
                  ("Notices", [sub("Notices", "notice", "application", "application", rows=4)])]),
             tab("Forms",
                 [("Screener", ["sourceform", "screenerentryid", "screenersubmitted", "screenerlink"]),
-                 ("Full application", ["fullappentryid", "fullappsubmitted", "fullapplink"])],
+                 ("Full application", ["invitelink", "fullappentryid", "fullappsubmitted", "fullapplink"])],
                 [("Applicant comments", ["!accommodation", "!applicantquestions"])]),
         ]),
     "incomesource": dict(
@@ -324,9 +352,18 @@ WEB_RESOURCES = {
     "clt_/pages/pages.js":    "webresources/pages.js",
     "clt_/pages/intake.html": "webresources/intake.html",
     "clt_/pages/intake-guide.html": "webresources/intake-guide.html",
+    "clt_/pages/newproject.html": "webresources/newproject.html",
+    "clt_/pages/newproject.js": "webresources/newproject.js",
     "clt_/pages/assign.html": "webresources/assign.html",
     "clt_/pages/prescreen.html": "webresources/prescreen.html",
     "clt_/pages/prescreen.js": "webresources/prescreen.js",
+    "clt_/pages/selection.html": "webresources/selection.html",
+    "clt_/pages/selection.js": "webresources/selection.js",
+    "clt_/pages/pdf.js": "webresources/pdf.js",
+    "clt_/pages/invite.html": "webresources/invite.html",
+    "clt_/pages/invite.js": "webresources/invite.js",
+    "clt_/pages/certify.html": "webresources/certify.html",
+    "clt_/pages/certify.js": "webresources/certify.js",
 }
 FORM_SCRIPTS = {}
 SCRIPT_LIBRARIES = {}

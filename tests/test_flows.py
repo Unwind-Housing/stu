@@ -266,17 +266,122 @@ def full_app_checks(flow):
         assert cond["else"] == {"actions": {}}
 
 
+def sample_file(path):
+    """The sample entry's first attached file has the link the flow fetches it from."""
+    return json.load(open(path))["ProofOfInsurance"][0]["File"].startswith("https://")
+
+
+def verification_checks(flow):
+    import schema
+    import flows_intake as fi
+    defn, text = flow["definition"], json.dumps(flow["definition"])
+    assert list(defn["triggers"]) == ["manual"] and defn["triggers"]["manual"]["inputs"]["triggerAuthenticationType"] == "All"
+    tables = {t["name"]: t for t in schema.TABLES}
+    sets = {fi.es(t): t for t in ("formsubmission", "sourceform", "occupancy", "annualverification", "insuranceverification", "homeownerrequest")}
+    # every column written is real, on the table it is written to
+    wrote = {}
+    for a in bf._actions(defn):
+        params = a.get("inputs", {}).get("parameters", {}) if a.get("type", "").startswith("OpenApi") else {}
+        if "entityName" not in params:
+            continue
+        t = sets[params["entityName"]]
+        cols = {c["name"] for c in tables[t]["columns"]} | {"name"} | {l[1] for l in schema.LOOKUPS if l[0] == t}
+        for k in params:
+            if k.startswith("item/"):
+                col = k[len("item/clt_"):].split("@")[0]
+                assert col in cols, (t, col)
+                wrote.setdefault(t, set()).add(col)
+    assert "occupancy" not in wrote, "the flow never changes an occupancy: its dates move when staff close and approve"
+    assert "lastoccupancyverified" not in text and "lastinsuranceverified" not in text
+    assert {"peopleinhome", "primaryresidence", "noshorttermrental", "rentalstatus", "tenantdetails", "insurancecurrent", "insurancereceived",
+            "insurancecontact", "mortgagecontact", "signeddate", "phone", "receiveddate", "formentryid", "uploadslink", "status"} <= wrote["annualverification"]
+    assert {"status", "contactrequested", "documentslink", "annualverification", "occupancy", "date", "name"} <= wrote["insuranceverification"]
+    # the entry is matched on the occupancy's record number; no match changes nothing but the submission
+    find = find_action(defn["actions"], "Find_occupancy")["inputs"]["parameters"]
+    assert "clt_recordnumber eq" in find["$filter"] and "OccupancyID" in find["$filter"]
+    miss = find_action(defn["actions"], "If_occupancy_found")["else"]["actions"]
+    assert list(miss) == ["No_occupancy"] and "No occupancy has the ID" in json.dumps(miss)
+    # the request: this entry's own, else the open one, else a new one; a closed one keeps its status
+    order = list(find_action(defn["actions"], "If_occupancy_found")["actions"])
+    assert order.index("Find_request_for_this_entry") < order.index("Find_open_request") < order.index("If_request_found") < order.index("Save_answers") < order.index("Find_insurance_verification")
+    received = fi.choice_value("verificationstatus", "Received")
+    status = find_action(defn["actions"], "Save_answers")["inputs"]["parameters"]["item/clt_status"]
+    assert status.startswith("@if(contains(createArray(") and f", {received}, coalesce(" in status
+    # insurance: To review only when proof is attached and no help was asked for; one already closed is left alone
+    review, contact = (fi.choice_value("insurancereviewstatus", s) for s in ("To review", "Needs contact"))
+    ins = find_action(defn["actions"], "Create_insurance_verification")["inputs"]["parameters"]
+    assert ins["item/clt_status"].startswith("@if(and(greater(length(") and ins["item/clt_status"].endswith(f", {review}, {contact})")
+    assert "ICantFindThisDocumentPleaseContactMe" in ins["item/clt_status"]
+    still_open = find_action(defn["actions"], "If_it_is_still_open")
+    assert len(still_open["expression"]["or"]) == 4 and str(fi.choice_value("verificationstatus", "Issue found")) in find_action(defn["actions"], "Find_open_request")["inputs"]["parameters"]["$filter"]
+    assert str(fi.choice_value("insurancereviewstatus", "Requested")) in find_action(defn["actions"], "Find_insurance_verification")["inputs"]["parameters"]["$filter"]
+    assert list(still_open["actions"]) == ["Update_insurance_verification", "Remember_insurance_verification"] and still_open["else"] == {"actions": {}}
+    # asked for mortgage help: one Homeowner request for the occupancy and its home, unless one is already open
+    mort = find_action(defn["actions"], "If_asked_for_mortgage_help")
+    assert "PleaseContactMeAboutMyMortgage" in json.dumps(mort["expression"]) and list(mort["actions"]) == ["Find_mortgage_request", "If_no_mortgage_request_is_open"]
+    req = find_action(defn["actions"], "Create_mortgage_request")["inputs"]["parameters"]
+    assert req["item/clt_name"] == "Mortgage help requested" and req["item/clt_requesttype"] == fi.choice_value("requesttype", "Other")
+    assert req["item/clt_status"] == fi.choice_value("requeststatus", "Submitted") and "clt_name eq 'Mortgage help requested'" in find_action(defn["actions"], "Find_mortgage_request")["inputs"]["parameters"]["$filter"]
+    assert {"occupancy", "property", "details", "requestdate"} <= wrote["homeownerrequest"]
+    # the proof of insurance is copied onto the Insurance verification, after everything else is saved; a failed copy leaves a note and nothing else
+    copy = defn["actions"]["Copy_insurance_document"]
+    assert copy["runAfter"] == {"Process_verification": ["Succeeded"]}
+    step = copy["actions"]["If_there_is_a_file_to_copy"]
+    assert list(step["actions"]) == ["Get_the_file", "Save_the_file", "If_more_than_one_file"] and step["actions"]["Get_the_file"]["inputs"]["method"] == "GET"
+    assert "ProofOfInsurance" in step["actions"]["Get_the_file"]["inputs"]["uri"] and "?['File']" in step["actions"]["Get_the_file"]["inputs"]["uri"]
+    save = step["actions"]["Save_the_file"]["inputs"]
+    assert save["host"]["operationId"] == "UpdateEntityFileImageFieldContent" and save["parameters"]["fileImageFieldName"] == "clt_document"
+    assert {c["name"]: c for c in tables["insuranceverification"]["columns"]}["document"]["kind"] == "file"
+    assert save["parameters"]["recordId"] == "@variables('InsuranceId')" and save["parameters"]["item"] == "@body('Get_the_file')"
+    more = step["actions"]["If_more_than_one_file"]
+    assert more["expression"]["greater"][1] == 1 and "all of them are in the uploaded documents" in json.dumps(more["actions"])
+    assert "forms platform" not in json.dumps([a["inputs"]["parameters"] for a in bf._actions(defn) if "item/clt_notes" in a.get("inputs", {}).get("parameters", {})]), "staff are sent to the uploaded documents, not the forms platform"
+    assert defn["actions"]["Note_the_copy_failed"]["runAfter"] == {"Copy_insurance_document": ["Failed", "TimedOut"]}
+    assert defn["actions"]["If_matched"]["runAfter"] == {"Process_verification": ["Succeeded"], "Copy_insurance_document": ["Succeeded", "Failed", "TimedOut"]}
+    assert sample_file(os.path.join(os.path.dirname(__file__), "fixtures", "cognito-annual-verification-entry.json"))
+    # where the uploads were saved: the organization's folder, the form's name and the entry's number
+    link = ins["item/clt_documentslink"]
+    assert "https://example.sharepoint.com/sites/Stewardship/Shared%20Documents/Verification%20Uploads/" in link and "'/Entry_'" in link and "['Number']" in link
+    # the sample entry has every path the flow reads
+    sample = json.load(open(os.path.join(os.path.dirname(__file__), "fixtures", "cognito-annual-verification-entry.json")))
+    for path in set(re.findall(r"triggerBody\(\)((?:\?\['\w+'\])+)", text)):
+        node = sample
+        for key in re.findall(r"'(\w+)'", path):
+            assert isinstance(node, dict) and key in node, f"sample entry has no {path}"
+            node = node[key]
+    # every variable and action the flow refers to exists
+    names = set()
+    for scope in bf._scopes(defn):
+        names |= set(scope)
+    variables = {a["inputs"]["variables"][0]["name"] for a in bf._actions(defn) if a.get("type") == "InitializeVariable"}
+    assert set(re.findall(r"variables\('(\w+)'\)", text)) <= variables
+    assert {a["inputs"]["name"] for a in bf._actions(defn) if a.get("type") == "SetVariable"} <= variables
+    assert set(re.findall(r"(?:outputs|body|result)\('(\w+)'\)", text)) <= names
+    # a form with no occupancy ID question can't be matched, so its mapping is refused
+    raw = json.load(open(os.path.join(bf.EXAMPLE, "forms", "annual-verification.json")))
+    try:
+        form_mapping.Mapping({**raw, "match": {}}, "x")
+        raise AssertionError("an annual verification with no occupancy ID question must be refused")
+    except form_mapping.MappingError as e:
+        assert "match.occupancyId" in str(e)
+    # a form that doesn't ask a question leaves that field alone; no uploads folder means no link
+    less = json.loads(json.dumps(raw))
+    del less["answers"]["peopleInHome"], less["uploadsFolder"]
+    small = json.dumps(bf.verification_flow(form_mapping.Mapping(less, "clients/x/forms/annual-verification.json"))["definition"])
+    assert "clt_peopleinhome" not in small and "sharepoint.com" not in small and "clt_peopleinhome" in text
+
+
 def mapping_checks():
     """Form mappings: nothing about a form's wording is in the flow code; each organization maps its own forms."""
     import flows_intake as fi
     # No organization's wording in core: the flow modules name no question of any form.
-    for mod in ("flows_intake.py", "flows_full_app.py"):
+    for mod in ("flows_intake.py", "flows_full_app.py", "flows_verification.py"):
         src = open(os.path.join(os.path.dirname(__file__), "..", mod)).read()
         assert not re.search(r"""\bq\(\s*['"]|\bq\(\*[A-Z]+\b(?!\.)|\bit\(\w+, ['"]""", src), f"{mod} still names a form question"
     example = form_mapping.mappings(bf.EXAMPLE)
-    assert [m.type for m in example] == ["screener", "full-application"] and all(m.slug == "" for m in example)
+    assert [m.type for m in example] == ["screener", "full-application", "annual-verification"] and all(m.slug == "" for m in example)
     fixtures = os.path.join(os.path.dirname(__file__), "fixtures")
-    for m, sample in zip(example, ("cognito-screener-entry.json", "cognito-full-application-entry.json")):
+    for m, sample in zip(example, ("cognito-screener-entry.json", "cognito-full-application-entry.json", "cognito-annual-verification-entry.json")):
         assert not m.check_sample(json.load(open(os.path.join(fixtures, sample)))), m.check_sample(
             json.load(open(os.path.join(fixtures, sample))))
     raw = json.load(open(example[0].source))
@@ -329,7 +434,8 @@ def main():
     mapping_checks()
     assert [f["name"] for f in bf.FLOWS] == ["CLT: Property document folder", "CLT: Household document folder",
                                              "CLT: Occupancy document folder",
-                                             "CLT: Screener intake", "CLT: Full application intake"]
+                                             "CLT: Screener intake", "CLT: Full application intake",
+                                             "CLT: Annual verification intake"]
     folders = bf.FLOWS[:3]
     prop, hh, occ = (f["definition"]["actions"]["If_no_folder_yet"]["actions"]["Folder_name"]["inputs"] for f in folders)
     assert "' - '" in occ and "clt_recordnumber" in occ and "split(" not in occ         # Rivera - 12 Pine St - O-00001
@@ -361,6 +467,7 @@ def main():
         assert list(acts) == order and all(list(acts[b_].get("runAfter", {})) == [a] for a, b_ in zip(order, order[1:]))
     screener_checks(bf.FLOWS[3])
     full_app_checks(bf.FLOWS[4])
+    verification_checks(bf.FLOWS[5])
     fake = Fake()
     dv = b.Dataverse("https://fake.crm.dynamics.com", lambda: "t", "CLTStewardship", session=fake)
     log = b.Log(os.devnull)
@@ -384,6 +491,9 @@ def main():
           "the form doesn't ask is left out; every organization folder's mappings match its sample entries.")
     print("OK: full application intake writes only real columns, never staff review fields, reads fields the "
           "sample entry has, and moves the stage only forward.")
+    print("OK: annual verification intake matches on the occupancy ID, writes only real columns, reads fields the sample "
+          "entry has, keeps a closed verification's status, starts the insurance verification with a copy of the proof, "
+          "opens one request for mortgage help, and never sets the occupancy's dates.")
 
 
 if __name__ == "__main__":

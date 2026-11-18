@@ -31,3 +31,11 @@ jobs:
           python tests/test_ami.py
           python tests/test_import.py
           python tests/test_prescreen.py
+          python tests/test_regular.py
+          python tests/test_resale.py
+          python tests/test_verify.py
+          python tests/test_insurance.py
+          python tests/test_newproject.py
+          python tests/test_selection.py
+          python tests/test_invite.py
+          python tests/test_certify.py

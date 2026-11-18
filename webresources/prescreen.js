@@ -8,7 +8,12 @@
 //                 fthbException, localTie, primaryResidence, sizesWanted: [bedrooms] }
 //   rules:      { maxAmi, minAmi, incomeBuffer (% over the limit), firstTimeBuyerRequired, localTieRequired, assetLimit,
 //                 housingRatioMax, housingRatioBuffer, debtRatioMax, debtRatioBuffer (points), minCredit, bankruptcyYears, checkAffordability,
-//                 cost: {bedrooms: monthly housing cost} }     (project value, else the organization's)
+//                 cost: {bedrooms: monthly housing cost},      (project value, else the organization's)
+//                 bands: [{ name, maxAmi, cost: {bedrooms: monthly housing cost} }] }
+//               bands are the project's income bands, lowest first; the last has no maxAmi (everyone above the
+//               band before it). When a project has them, the monthly housing cost comes from the band the
+//               household's stated income falls in, because the interest rate or the price depends on income.
+//               With no bands, cost is used for everyone.
 //   priorities: [{ bedrooms, householdSize }]   which household sizes may apply for a home size
 // Bedrooms: 0 = studio, 4 = 4 or more.
 var CLTPrescreen = (function () {
@@ -111,36 +116,81 @@ var CLTPrescreen = (function () {
           (misfits.length ? "Doesn't fit: " + misfits.map(sizeName).join(", ") + "." : ""));
     }
 
+    // ---- which income band the household is in (when the project's costs depend on income)
+    var bands = rules.bands || [], band = null, lower = null, lowerWhy = "";
+    var ibuf = blank(rules.incomeBuffer) ? 10 : rules.incomeBuffer;
+    if (bands.length) {
+      var at = bands.length - 1;
+      if (!blank(app.amiPct)) {
+        for (var i = 0; i < bands.length - 1; i++) {
+          if (!blank(bands[i].maxAmi) && app.amiPct <= bands[i].maxAmi) { at = i; break; }
+        }
+      }
+      band = bands[at];
+      // Screener income is rough. A household just over a band's top, inside the income buffer, may really
+      // belong in the band below, where the home costs less.
+      if (at > 0 && !blank(app.amiPct) && app.amiPct <= bands[at - 1].maxAmi * (100 + ibuf) / 100) {
+        lower = bands[at - 1];
+        lowerWhy = "Stated income is " + app.amiPct + "% of AMI, inside the " + ibuf + "% buffer of the " + lower.name.toLowerCase() + " band";
+      } else if (at > 0 && blank(app.amiPct)) {
+        // No % of AMI, so the band is unknown: tested at the highest band, with the lowest as the other possibility.
+        lower = bands[0];
+        lowerWhy = "Stated income as a % of AMI isn't worked out, so they could be in the " + lower.name.toLowerCase() + " band";
+      }
+    }
+    function costIn(which, b) { return which ? (which.cost || {})[b] : (rules.cost || {})[b]; }
+
     // ---- can they afford it: both ratios, once per home size that fits
     var sizeOk = {}, sizeReview = {};
     fits.forEach(function (b) { sizeOk[b] = true; });
     if (rules.checkAffordability !== false && fits.length &&
         (!blank(rules.housingRatioMax) || !blank(rules.debtRatioMax))) {
       var monthly = blank(app.income) ? 0 : app.income / 12;
-      fits.forEach(function (b) {
-        var cost = (rules.cost || {})[b], name = sizeName(b);
-        function test(label, result, value, limit, notes) {
-          add(label, result, value, limit, name + ": " + notes, b);
-          if (result === FAIL) sizeOk[b] = false;
-          if (result === REVIEW) { sizeOk[b] = false; sizeReview[b] = true; }
-        }
-        if (monthly <= 0) return test("Housing ratio", REVIEW, null, rules.housingRatioMax, "no stated income on the screener.");
-        if (blank(cost) || cost <= 0) return test("Housing ratio", REVIEW, null, rules.housingRatioMax, "the project has no monthly housing cost for this home size.");
+      // The ratio rows for one home size at one monthly cost: [{ label, result, value, limit, notes }]
+      var ratios = function (cost) {
+        var rows = [], row = function (label, result, value, limit, notes) {
+          rows.push({ label: label, result: result, value: value, limit: limit, notes: notes });
+          return rows;
+        };
+        if (monthly <= 0) return row("Housing ratio", REVIEW, null, rules.housingRatioMax, "no stated income on the screener.");
+        if (blank(cost) || cost <= 0) return row("Housing ratio", REVIEW, null, rules.housingRatioMax, "the project has no monthly housing cost for this home size.");
         if (!blank(rules.housingRatioMax)) {
           var front = cost / monthly * 100;
           var fcap = rules.housingRatioMax + (rules.housingRatioBuffer || 0);
-          test("Housing ratio", front <= fcap ? PASS : FAIL, Math.round(front * 10) / 10, fcap,
-               money(cost) + " / " + money(monthly) + " a month = " + pct(front) + "; the limit is " + rules.housingRatioMax + "%" +
-               (rules.housingRatioBuffer ? " plus a " + rules.housingRatioBuffer + " point buffer" : "") + ".");
+          row("Housing ratio", front <= fcap ? PASS : FAIL, Math.round(front * 10) / 10, fcap,
+              money(cost) + " / " + money(monthly) + " a month = " + pct(front) + "; the limit is " + rules.housingRatioMax + "%" +
+              (rules.housingRatioBuffer ? " plus a " + rules.housingRatioBuffer + " point buffer" : "") + ".");
         }
         if (!blank(rules.debtRatioMax)) {
           var cap = rules.debtRatioMax + (rules.debtRatioBuffer || 0);
-          if (blank(app.monthlyDebt)) return test("Total debt ratio", REVIEW, null, cap, "no stated monthly debt on the screener.");
+          if (blank(app.monthlyDebt)) return row("Total debt ratio", REVIEW, null, cap, "no stated monthly debt on the screener.");
           var back = (cost + app.monthlyDebt) / monthly * 100;
-          test("Total debt ratio", back <= cap ? PASS : FAIL, Math.round(back * 10) / 10, cap,
-               "(" + money(cost) + " + " + money(app.monthlyDebt) + " debt) / " + money(monthly) + " a month = " + pct(back) + "; the limit is " +
-               rules.debtRatioMax + "%" + (rules.debtRatioBuffer ? " plus a " + rules.debtRatioBuffer + " point buffer" : "") + ".");
+          row("Total debt ratio", back <= cap ? PASS : FAIL, Math.round(back * 10) / 10, cap,
+              "(" + money(cost) + " + " + money(app.monthlyDebt) + " debt) / " + money(monthly) + " a month = " + pct(back) + "; the limit is " +
+              rules.debtRatioMax + "%" + (rules.debtRatioBuffer ? " plus a " + rules.debtRatioBuffer + " point buffer" : "") + ".");
         }
+        return rows;
+      };
+      fits.forEach(function (b) {
+        var name = sizeName(b) + (band && bands.length > 1 ? ", " + band.name.toLowerCase() : "");
+        var rows = ratios(costIn(band, b));
+        // Fails at this band's cost, but would pass in the band just below, and stated income is close enough
+        // to the line that it could be either: a person decides.
+        if (lower && rows.some(function (r) { return r.result === FAIL; })) {
+          var low = costIn(lower, b), alt = ratios(low);
+          if (alt.length && alt.every(function (r) { return r.result === PASS; })) {
+            rows.forEach(function (r) {
+              if (r.result !== FAIL) return;
+              r.result = REVIEW;
+              r.notes += " " + lowerWhy + ", where the cost is " + money(low) + " a month and both ratios pass. Check which band they belong in.";
+            });
+          }
+        }
+        rows.forEach(function (r) {
+          add(r.label, r.result, r.value, r.limit, name + ": " + r.notes, b);
+          if (r.result === FAIL) sizeOk[b] = false;
+          if (r.result === REVIEW) { sizeOk[b] = false; sizeReview[b] = true; }
+        });
       });
     }
     var sizes = fits.filter(function (b) { return sizeOk[b]; });
@@ -166,6 +216,7 @@ var CLTPrescreen = (function () {
       var out = fits.filter(function (b) { return !sizeOk[b]; });
       if (out.length) why.push("Not for " + out.map(sizeName).join(", ") + " (see the ratio checks).");
       if (misfits.length) why.push("Household size doesn't fit: " + misfits.map(sizeName).join(", ") + ".");
+      if (band && bands.length > 1) why.push("Costs tested for the income band: " + band.name.toLowerCase() + ".");
       checks.forEach(function (c) { if (c.test === "Income limit" && /inside the /.test(c.notes)) why.push(c.notes); });
     }
     return { checks: checks, result: result, notes: why.join("\n"), sizes: result === "Eligible for selection" ? sizes : [] };

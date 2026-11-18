@@ -56,16 +56,18 @@
 
       <section class="guide" id="project">
         <h3><span class="step-n">2</span>Set up a project <span class="now">works now</span></h3>
-        <p class="where">Projects &rsaquo; Projects</p>
+        <p class="where">Projects &rsaquo; New project</p>
+        <p>The page walks through six steps. Nothing is saved until the last one, so you can go back and forth freely.</p>
         <ol>
-          <li>Select <span class="ui">+ New</span>. Give it a name (for example Maple Court Phase 2), the type (new construction or resale) and the selection method (lottery or first come, first served).</li>
-          <li>Fill in when applications open and close, then <span class="ui">Save</span>.</li>
-          <li>Under <span class="ui">Eligibility</span>, fill in only what differs from the organization's rules (Settings &rsaquo; Organization eligibility), for example a lower max % of AMI. Put any funder requirements in <span class="ui">Notes</span>.</li>
-          <li>Under <span class="ui">Monthly housing cost by home size</span>, type what a home of each size will cost a month in this project: mortgage, taxes, insurance, dues and lease fee together. Fill in only the sizes you're selling. The pre-screen uses these for the housing ratio and the total debt ratio.</li>
-          <li>Under <span class="ui">Pre-screen</span>, set the buffers if you want them. Screener answers are rough, so a buffer lets someone a little over a limit through to be checked properly at certification. <span class="ui">Income buffer</span> is a percent over the limit (10 turns an 80% limit into 88%). The two ratio buffers are points added to the limit (2 turns 35% into 37%).</li>
-          <li>On the <span class="ui">Homes</span> tab, add the homes. On the <span class="ui">Priorities</span> tab, add which household sizes fit each bedroom size, and their tier.</li>
+          <li><b>The basics:</b> a name (for example Maple Court Phase 2), new homes or a resale, lottery or first come, first served, and when applications open and close.</li>
+          <li><b>The homes:</b> tick the properties in this project. Bedrooms come from the property. A home that isn't listed needs adding under Stewardship &rsaquo; Portfolio &rsaquo; Properties first.</li>
+          <li><b>Price and monthly cost:</b> the down payment, the loan term and the interest rate; then, for each home size, the sale price and what every buyer pays each month (property taxes, insurance, HOA dues, ground lease fee, reserve fee). Stu works out the mortgage payment and adds the rest to get the monthly housing cost, which the pre-screen uses for the housing ratio and the total debt ratio. If lower-income buyers can get a lower interest rate, or homes are priced by the buyer's income, select <span class="ui">Add an income band</span>: each band gets its own rate (and its own prices if you tick that box), and the pre-screen tests each household at the cost for its band.</li>
+          <li><b>The rules:</b> your organization's rules are shown beside a box for this project. Fill in only what differs, for example a lower max % of AMI. The pre-screen buffers are here too: screener answers are rough, so a buffer lets someone a little over a limit through to be checked properly at certification. <span class="ui">Income buffer</span> is a percent over the limit (10 turns an 80% limit into 88%). The two ratio buffers are points added to the limit (2 turns 35% into 37%).</li>
+          <li><b>Who fits which home:</b> which household sizes can apply for each home size, and their tier. <span class="ui">Fill in a common starting point</span> gives you a grid to adjust.</li>
+          <li><b>Review and create:</b> check the summary, then <span class="ui">Create project</span>. Stu makes the project, its homes and its priorities together and opens it.</li>
         </ol>
-        <div class="actions"><button class="btn primary" data-new="clt_project">+ New project</button></div>
+        <p class="later">To change a project afterwards, open it under Projects &rsaquo; Projects: everything the page asked is on its form, with the homes and priorities on their own tabs.</p>
+        <div class="actions"><button class="btn primary" id="newproject" type="button">New project</button></div>
       </section>
 
       <section class="guide" id="assign">
@@ -82,8 +84,11 @@
       </section>
 
       <section class="guide" id="close">
-        <h3><span class="step-n">4</span>Close applications and assign Unique IDs <span class="soon">coming next</span></h3>
-        <p>A <span class="ui">Close applications</span> button on the project will number its applications ID-0001, ID-0002 and so on, in the order the screeners were first submitted, and freeze their answers. The lottery lists only ever show these IDs, never names.</p>
+        <h3><span class="step-n">4</span>Close applications and assign Unique IDs <span class="now">works now</span></h3>
+        <p class="where">Projects &rsaquo; Buyer Selection</p>
+        <p><b>Buyer Selection</b> is the page to keep open while a project is being selected. Pick the project and it shows the project at a glance across the top (applications, eligible, on a list, invited, full applications in, past their date), then every step from set-up to invitations, which ones are done, and the one to do next. Once households are invited, the last step lists each one with its due date and whether its full application is in, still to come or overdue. A step's button only appears when the steps before it are finished.</p>
+        <p>Once applications have closed, select <span class="ui">Close applications and assign Unique IDs</span>. Stu numbers the applications ID-0001, ID-0002 and so on, in the order the screeners were first submitted, and freezes their answers. The lists only ever show these IDs, never names.</p>
+        <div class="actions"><button class="btn primary" id="go-selection" type="button">Open Buyer Selection</button></div>
       </section>
 
       <section class="guide" id="prescreen">
@@ -104,18 +109,43 @@
       </section>
 
       <section class="guide" id="draw">
-        <h3><span class="step-n">6</span>Lock the lists and draw <span class="soon">coming later</span></h3>
-        <p>Buttons on the selection round will build one list per bedroom size, lock them with check numbers for the Board Observer, take the seed from ten dice rolls, and rank everyone. Nobody can re-order a list by hand.</p>
+        <h3><span class="step-n">6</span>Build the lists, lock, draw and certify <span class="now">works now</span></h3>
+        <p class="where">Projects &rsaquo; Buyer Selection</p>
+        <ol>
+          <li><b>Build the lists.</b> One list for each home size. Each eligible household goes on the list for every home size it is eligible for, in its tier. Anyone marked Needs review has to be decided first. Until the lists are locked you can build them again.</li>
+          <li><b>Lock the lists.</b> Type the Board Observer's name and select <span class="ui">Lock the lists</span>. Nothing on a list can change after this. Each list gets a check number worked out from its contents. Select <span class="ui">Download the lists (PDF)</span>, print it, and have the observer initial it.</li>
+          <li><b>Draw.</b> In front of the observer, roll a ten-sided die ten times and type the ten digits in the order rolled. Read them back, then select <span class="ui">Draw</span>. Each household gets one lottery number, used on every list it is on, and each list is ranked by tier, then lottery number. The same roll always gives the same order, so anyone can check it. A draw can't be redone. (A first come, first served project has no dice: locking ranks each list by when households first applied.)</li>
+          <li><b>Certify the results.</b> Select <span class="ui">Download the results (PDF)</span>, print it, have the observer and staff sign, file the signed copy in the project's documents, then select <span class="ui">Mark the results certified</span>.</li>
+        </ol>
+        <p class="tip">If the page says the lists no longer match their check numbers, something changed an entry after the lock. The draw won't run. Tell whoever looks after Stu.</p>
       </section>
 
       <section class="guide" id="invite">
-        <h3><span class="step-n">7</span>Invite to the full application <span class="soon">coming later</span></h3>
-        <p>An <span class="ui">Invite next</span> button will email the next households on each list a full application link, with a response deadline. For now, invite people the way you do today.</p>
+        <h3><span class="step-n">7</span>Invite to the full application <span class="now">works now</span></h3>
+        <p class="where">Projects &rsaquo; Invite</p>
+        <p>Once the results are certified, the Invite page walks you through three steps. Stu doesn't send the email: you send each one from your own mail.</p>
+        <ol>
+          <li><b>Who to invite.</b> Each list shows its households in rank order, with the next ones to invite already ticked: as many as the project's invites per list, less the ones already invited. Untick anyone you aren't inviting yet.</li>
+          <li><b>The email.</b> The first time, paste your full application form's web address. Stu adds each household's application number to the end of it, so their full application finds its way back to their record. Then read the message and change anything you like. Words in curly brackets, like <span class="ui">{first name}</span> and <span class="ui">{link}</span>, are filled in for each household. <span class="ui">Keep this wording for next time</span> saves your changes as the starting point for every later invitation (Settings &rsaquo; Message templates).</li>
+          <li><b>Send.</b> Stu shows one finished email at a time, with that household's own link in it. Copy the address, the subject and the message into your mail, or select <span class="ui">Open in my mail app</span>. Send it, then select <span class="ui">Sent: mark as invited and go to the next</span>. That changes the application's stage, starts its reply-by date, saves its link on it, and keeps a copy of the message under Messages &rsaquo; Notices. <span class="ui">Skip for now</span> leaves that household waiting.</li>
+        </ol>
+        <p class="tip">When a household drops out or misses its date, open its entry on the ranked list and change its <span class="ui">List status</span> (Declined, Unresponsive, Ineligible). Come back to Invite and the next household on that list is ticked for you.</p>
       </section>
 
       <section class="guide" id="certify">
-        <h3><span class="step-n">8</span>Review and certify <span class="soon">coming later</span></h3>
-        <p>Staff review income, debts and assets on the application, work through the document checklist, and run the checks. <span class="ui">Certify</span> locks the certification and copies the household's documents into SharePoint.</p>
+        <h3><span class="step-n">8</span>Review and certify <span class="now">works now</span></h3>
+        <p class="where">Projects &rsaquo; Review and certify, or the Review button beside a household on Buyer Selection</p>
+        <p>When a household's full application is in, check it against its documents. The page lists every line the household entered and works the figures out as you go. Certification asks the same questions as the pre-screen, but of verified figures and with no buffers.</p>
+        <ol>
+          <li><b>The household.</b> Check who will live in the home and set the certified household size.</li>
+          <li><b>Income, debts and assets.</b> For each line choose <span class="ui">Accepted</span> (what they entered is right), <span class="ui">Adjusted</span> (type what the documents show, and why) or <span class="ui">Excluded</span> (and why). Exclude any account your asset limit doesn't count, such as a retirement account.</li>
+          <li><b>Documents.</b> Under each line are the names of the files the household uploaded for it, or <span class="ui">No documents uploaded</span>. Files uploaded for the household as a whole, such as tax returns, are listed under Other documents. Files uploaded for the household as a whole are shown with the step they support: tax returns with income, credit reports with debts, proof of residence with the local tie. <span class="ui">Open this household's documents</span> opens their folder in your document share. Each line is labelled Income 1, Debt 1, Account 1 and so on, which is how that line's files start in the folder. Where the documents are is set once for your organization, so there is nothing to paste.</li>
+          <li><b>Confirmed by staff.</b> Tick each thing you have checked: first-time buyer, local tie, primary residence, homebuyer education. Only the ones your rules require are shown.</li>
+          <li><b>The result.</b> The certified income, its percent of AMI, and every test with how it was worked out. The monthly housing cost is the one for the income band the verified income falls in.</li>
+          <li><b>Decide.</b> <span class="ui">Certify this household</span> works once every line is reviewed and every test passes for at least one home size they are on a list for. <span class="ui">Not certified</span> needs a reason. <span class="ui">Save and come back later</span> keeps your work without deciding.</li>
+        </ol>
+        <p>Certifying locks the figures, sets the date the certification is good until, saves every test with the certification, marks the household Eligible, and marks its place Approved on the lists for the home sizes it passed. To change anything afterwards, select <span class="ui">Review again</span>.</p>
+        <p class="tip">Stu doesn't write to the household. If they aren't certified, the reason you typed is on the certification for when you write to them. Documents stay in the forms platform for now: copying a certified household's documents into SharePoint is still to come.</p>
       </section>
 
       <section class="guide" id="handoff">
@@ -132,8 +162,14 @@
 (function () {
   CLTPage.brand();
   CLTPage.wire();
+  document.getElementById("newproject").addEventListener("click", function () {
+    CLTPage.go({ pageType: "webresource", webresourceName: "clt_/pages/newproject.html" });
+  });
   document.getElementById("go-assign").addEventListener("click", function () {
     CLTPage.go({ pageType: "webresource", webresourceName: "clt_/pages/assign.html" });
+  });
+  document.getElementById("go-selection").addEventListener("click", function () {
+    CLTPage.go({ pageType: "webresource", webresourceName: "clt_/pages/selection.html" });
   });
   document.getElementById("go-prescreen").addEventListener("click", function () {
     CLTPage.go({ pageType: "webresource", webresourceName: "clt_/pages/prescreen.html" });

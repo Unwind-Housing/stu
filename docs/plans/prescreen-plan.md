@@ -45,6 +45,15 @@ A household can pass for one size and fail for another. So the pre-screen also r
 
 The ratio tests are skipped when **Check minimum affordability** is off on the project.
 
+### Income bands (added 2026-11-15)
+
+A project can have income bands: bands of buyers by income, each with its own interest rate and, optionally, its own sale prices. Each band holds a monthly housing cost per home size. A project with one band ("All buyers") behaves as before.
+
+- The band is picked from the household's stated % of AMI: the first band whose top it doesn't exceed, or the last band (everyone above).
+- The two ratio tests use that band's monthly cost. The check's notes name the band.
+- **Near the line:** a household that fails at its band's cost, whose stated income is within the income buffer of the band below (65% with a 10% buffer is 71.5%), and that would pass both ratios at the lower band's cost, is **Needs review**, not Not eligible. Screener income is rough, and certification decides which loan they qualify for.
+- No % of AMI worked out: tested at the highest band; if that fails and the lowest band would pass, Needs review.
+
 ## The result
 
 - Any test fails for every size asked for, or a non-ratio test fails: **Not eligible**, with the reasons in Pre-screen notes.

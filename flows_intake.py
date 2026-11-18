@@ -86,7 +86,9 @@ def es(table):
             "application": "clt_applications", "formsubmission": "clt_formsubmissions",
             "listitem": "clt_listitems", "sourceform": "clt_sourceforms", "project": "clt_projects",
             "incomelimitset": "clt_incomelimitsets", "eligibility": "clt_eligibilities",
-            "incomesource": "clt_incomesources", "debt": "clt_debts", "asset": "clt_assets"}[table]
+            "incomesource": "clt_incomesources", "debt": "clt_debts", "asset": "clt_assets",
+            "occupancy": "clt_occupancies", "annualverification": "clt_annualverifications",
+            "insuranceverification": "clt_insuranceverifications", "homeownerrequest": "clt_homeownerrequests"}[table]
 
 
 # ---------------------------------------------------------------------------

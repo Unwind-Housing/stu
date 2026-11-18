@@ -223,7 +223,7 @@ def main():
     dv2 = b.Dataverse("https://fake.crm.dynamics.com", lambda: "t", "CLTStewardship", session=fake2)
     c = ir.run(dv2, TEMPLATES, log=out.append, add_list_values=True)
     assert c["created"] >= 5 and c["already there"] == 0, c
-    assert not any("—" in line for line in out)
+    assert not any("\u2014" in line for line in out)
     print("OK: import creates properties, households, members, occupancies and fees; re-runs change nothing; "
           "record numbers update; problems stop the run before any write.")
 

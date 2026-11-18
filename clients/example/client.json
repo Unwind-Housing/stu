@@ -14,7 +14,8 @@
     "BrandHeaderColor": "#344734",
     "BrandHeaderTextColor": "#FFFFFF",
     "BrandAccentColor": "#526B50",
-    "BrandLogoUrl": "https://example.org/logo.png"
+    "BrandLogoUrl": "https://example.org/logo.png",
+    "ApplicationDocumentsFolder": "https://yourorg.sharepoint.com/sites/Stewardship/Application Documents"
   },
   "notes": "Copy this file to clients/<yourname>/client.json and fill it in. Files in clients/ other than this one are not committed."
 }

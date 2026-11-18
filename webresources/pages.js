@@ -37,6 +37,60 @@ var CLTPage = (function () {
                            function () { throw new Error(r.status); });
     });
   }
+  // A file column: upload("clt_x(<id>)/clt_signedform", file) puts a file in it; download(...) gives its contents (a Blob).
+  function upload(path, file) {
+    var name = String(file.name || "file").replace(/[^A-Za-z0-9._ ()-]/g, "_");   // header values must be plain characters
+    return fetch(API + path, { method: "PATCH", credentials: "same-origin", body: file,
+      headers: { "Content-Type": "application/octet-stream", "x-ms-file-name": name } }).then(function (r) {
+      if (r.ok) return true;
+      return r.json().then(function (e) { throw new Error((e.error && e.error.message) || r.status); }, function () { throw new Error(r.status); });
+    });
+  }
+  function download(path) {
+    return fetch(API + path + "/$value", { credentials: "same-origin" }).then(function (r) { return r.ok ? r.blob() : Promise.reject(new Error(r.status)); });
+  }
+  // Create a record and get it back: create("clt_projects", {...}).then(function (rec) { rec.clt_projectid ... }).
+  // Related records can ride along inside the body (a "deep insert"): Dataverse creates all of them or none.
+  function create(path, body) {
+    return fetch(API + path, { method: "POST", credentials: "same-origin", body: JSON.stringify(body),
+      headers: { "Accept": "application/json", "OData-MaxVersion": "4.0", "OData-Version": "4.0",
+                 "Content-Type": "application/json; charset=utf-8", "Prefer": "return=representation" } })
+      .then(function (r) {
+        return r.json().then(function (j) {
+          if (r.ok) return j;
+          throw new Error((j.error && j.error.message) || r.status);
+        }, function () { if (r.ok) return {}; throw new Error(r.status); });
+      });
+  }
+  // Several changes that must all happen or none: batch([{ method: "PATCH", path: "clt_x(<id>)", body: {...} }, ...]).
+  // They go to Dataverse as one change set, so a failure part way leaves nothing changed.
+  function batchBody(ops, batchId, changeId) {
+    var nl = "\r\n", out = "--" + batchId + nl + "Content-Type: multipart/mixed; boundary=" + changeId + nl + nl;
+    ops.forEach(function (op, i) {
+      out += "--" + changeId + nl + "Content-Type: application/http" + nl + "Content-Transfer-Encoding: binary" + nl +
+             "Content-ID: " + (i + 1) + nl + nl +
+             op.method + " " + API + op.path + " HTTP/1.1" + nl +
+             (op.method === "PATCH" ? "If-Match: *" + nl : "") +   // update only, never create
+             (op.body ? "Content-Type: application/json; type=entry" + nl + nl + JSON.stringify(op.body) + nl : nl);
+    });
+    return out + "--" + changeId + "--" + nl + nl + "--" + batchId + "--" + nl;
+  }
+  function batch(ops) {
+    if (!ops.length) return Promise.resolve(true);
+    if (ops.length > 1000) return Promise.reject(new Error("Too many changes for one request (" + ops.length + "; the most is 1,000)."));
+    var id = String(Date.now()) + Math.floor(Math.random() * 1e6);
+    return fetch(API + "$batch", { method: "POST", credentials: "same-origin", body: batchBody(ops, "batch_" + id, "changeset_" + id),
+      headers: { "Accept": "application/json", "OData-MaxVersion": "4.0", "OData-Version": "4.0",
+                 "Content-Type": "multipart/mixed; boundary=batch_" + id } })
+      .then(function (r) {
+        return r.text().then(function (text) {
+          // A failed change set comes back either as an error status, or as 200 with the error inside.
+          var inner = /HTTP\/1\.1 ([45]\d\d)/.exec(text), msg = /"message"\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(text);
+          if (r.ok && !inner) return true;
+          throw new Error(msg ? msg[1].replace(/\\"/g, '"') : inner ? inner[1] : r.status);
+        });
+      });
+  }
   function patch(path, body) { return send("PATCH", path, body); }
   function post(path, body) { return send("POST", path, body); }
   function del(path) { return send("DELETE", path); }
@@ -51,6 +105,17 @@ var CLTPage = (function () {
       });
       return out;
     });
+  }
+
+  // "yyyy-mm-dd" for showing a date. A value with a time in it (a timestamp, which Dataverse keeps in UTC) is shown
+  // as the day it was here, not the day it was in UTC: 9 pm on the 15th in Seattle is already the 16th in UTC.
+  function day(d) {
+    if (!d) return "";
+    var s = String(d);
+    if (s.indexOf("T") < 0) return s.slice(0, 10);
+    var x = new Date(s);
+    if (isNaN(x.getTime())) return s.slice(0, 10);
+    return x.getFullYear() + "-" + ("0" + (x.getMonth() + 1)).slice(-2) + "-" + ("0" + x.getDate()).slice(-2);
   }
 
   // The label Dataverse shows for a column (choice label, lookup name), or "".
@@ -84,6 +149,22 @@ var CLTPage = (function () {
       });
       return out;
     }).catch(function () { return {}; });
+  }
+
+  // Keep one client setting for next time: saveSetting("VerificationFormLink", "https://..."). Needs the right to
+  // change environment variable values; rejects when the person signed in doesn't have it.
+  function saveSetting(name, value) {
+    return get("environmentvariabledefinitions?$select=environmentvariabledefinitionid,schemaname&$filter=schemaname eq 'clt_" + name + "'").then(function (d) {
+      if (!d.value.length) throw new Error("There is no setting called " + name + ".");
+      var def = d.value[0];
+      return get("environmentvariablevalues?$select=environmentvariablevalueid&$filter=_environmentvariabledefinitionid_value eq " + def.environmentvariabledefinitionid)
+        .then(function (v) {
+          if (v.value.length) return patch("environmentvariablevalues(" + v.value[0].environmentvariablevalueid + ")", { value: value });
+          var body = { schemaname: def.schemaname + "_value", value: value };
+          body["EnvironmentVariableDefinitionId@odata.bind"] = "/environmentvariabledefinitions(" + def.environmentvariabledefinitionid + ")";
+          return post("environmentvariablevalues", body);
+        });
+    });
   }
 
   // Apply the brand: colors, organization name ([data-org]) and the logo ([data-logo]).
@@ -155,8 +236,8 @@ var CLTPage = (function () {
     });
   }
 
-  return { get: get, getAll: getAll, patch: patch, post: post, del: del, choice: choice, entitySet: entitySet,
-           fv: fv, confirm: confirmBox, brand: brand, settings: settings,
+  return { get: get, getAll: getAll, create: create, batch: batch, batchBody: batchBody, patch: patch, post: post, del: del, upload: upload, download: download, choice: choice, entitySet: entitySet,
+           fv: fv, day: day, confirm: confirmBox, brand: brand, settings: settings, saveSetting: saveSetting,
            viewCount: viewCount, go: go, openList: openList, newRecord: newRecord, openRecord: openRecord,
            openGuide: openGuide, wire: wire };
 })();

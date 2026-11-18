@@ -44,6 +44,7 @@ import uuid
 import form_mapping
 from flows_intake import screener_flow
 from flows_full_app import full_application_flow
+from flows_verification import verification_flow
 from build_schema import (Dataverse, DataverseError, Log, make_token_provider, DEFAULT_CLIENT_ID,
                           SOLUTION, PREFIX)
 
@@ -198,8 +199,8 @@ def folder_flow(table, entity_set, label, folder_style="name-number"):
 
 def intake_flows(folder):
     """One intake flow per form mapping in an organization's folder (clients/<organization>/forms/*.json):
-    screeners first, then full applications. Forms that are copies of each other share a mapping and a flow."""
-    build = {"screener": screener_flow, "full-application": full_application_flow}
+    screeners first, then full applications, then annual verifications. Forms that are copies of each other share a mapping and a flow."""
+    build = {"screener": screener_flow, "full-application": full_application_flow, "annual-verification": verification_flow}
     return [build[m.type](m) for m in form_mapping.mappings(folder)]
 
 
