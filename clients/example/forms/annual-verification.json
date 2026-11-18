@@ -1,0 +1,45 @@
+{
+  "type": "annual-verification",
+  "provider": "Cognito Forms",
+  "notes": "Example annual verification. Copy this file, then change each path to the question name on your own form. The form needs one hidden question for the occupancy ID, which the link from the Occupancy verification page fills in. uploadsFolder is the web address of the folder your forms platform saves uploads in; leave it out if it doesn't save them anywhere.",
+  "uploadsFolder": "https://example.sharepoint.com/sites/Stewardship/Shared Documents/Verification Uploads",
+  "uploadsPath": "{formName}/Entry_{number}",
+  "choices": {
+    "rentalstatus": {
+      "Room(s)": "Renting rooms",
+      "An accessory dwelling unit": "Renting ADU",
+      "The whole home": "Renting whole home"
+    }
+  },
+  "entry": {
+    "id": "Id",
+    "number": "Entry.Number",
+    "submitted": "Entry.DateSubmitted",
+    "adminLink": "Entry.AdminLink",
+    "formId": "Form.Id",
+    "formName": "Form.Name"
+  },
+  "match": {
+    "occupancyId": "OccupancyID"
+  },
+  "applicant": {
+    "firstName": "OwnerName.First",
+    "lastName": "OwnerName.Last"
+  },
+  "answers": {
+    "peopleInHome": "HowManyPeopleLiveInTheHome",
+    "primaryResidence": "ILiveInTheHomeAsMyPrimaryResidence",
+    "noShortTermRental": "IDoNotUseTheHomeAsAShortTermRental",
+    "renting": "AreYouRentingAnyPartOfTheHome",
+    "rentingWhat": "WhatAreYouRenting",
+    "rentingDescription": "DescribeWhatYouAreRenting",
+    "roomsRented": "HowManyRooms",
+    "monthlyRent": "MonthlyRent",
+    "insuranceCurrent": "MyInsuranceIsPaidAndCurrent",
+    "insuranceFiles": "ProofOfInsurance",
+    "insuranceContact": "ICantFindThisDocumentPleaseContactMe",
+    "mortgageContact": "PleaseContactMeAboutMyMortgage",
+    "signedDate": "Date",
+    "phone": "Phone"
+  }
+}

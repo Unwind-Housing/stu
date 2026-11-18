@@ -206,10 +206,14 @@ def main():
     assert county.find("parameters/DependentAttributeName").text == "clt_state"
     assert county.find("parameters/DependentAttributeType").text == "clt_listitem"
     assert "Development" not in str(fake.sitemaps) and not re.search(r"clt_document(?!sfolder)", str(fake.sitemaps))
-    # Start here: the Overview page is the first item in the navigation (where the app opens), then the guides
+    # Start here comes first: the Dashboard (where the app opens), the Verification hub and the guides; then Activities: Occupancy verification, Insurance verification, Resale
     smx = ET.fromstring(next(iter(fake.sitemaps.values()))["sitemapxml"])
     urls = [sa.get("Url") or sa.get("Entity") for sa in smx.iter("SubArea")]
-    assert urls[:2] == ["$webresource:clt_/pages/overview.html", "$webresource:clt_/pages/guides.html"], urls[:3]
+    assert urls[:6] == ["$webresource:clt_/pages/overview.html", "$webresource:clt_/pages/stewardship.html", "$webresource:clt_/pages/guides.html",
+                        "$webresource:clt_/pages/verify.html", "$webresource:clt_/pages/insurance.html", "$webresource:clt_/pages/resale.html"], urls[:7]
+    assert [g.get("Title") or g.find("Titles/Title").get("Title") for g in smx.iter("Group")][:2] == ["Start here", "Activities"]
+    import app_spec
+    assert app_spec.PAGES["overview"][0] == "Stewardship Dashboard"
     for page in ("overview.html", "guides.html", "pages.css", "pages.js"):
         assert f"clt_/pages/{page}" in fake.webresources, page
     # Overview figures: every tile runs a view the build makes; properties by status (Left program has a view
@@ -217,7 +221,7 @@ def main():
     names = {(v["returnedtypecode"], v.get("name")) for v in fake.views.values()}
     page = open(os.path.join(os.path.dirname(__file__), "..", "webresources", "overview.html")).read()
     tiles = re.findall(r'e: "(clt_\w+)", v: "([^"]+)"', page)
-    assert len(tiles) >= 17 and not [t for t in tiles if t not in names], [t for t in tiles if t not in names]
+    assert len(tiles) >= 13 and not [t for t in tiles if t not in names], [t for t in tiles if t not in names]
     assert ("clt_property", "Properties that left the program") in names and "left the program\"" not in page
     seen = set()
     for status, view in spec.PROPERTY_STATUS_VIEWS.items():

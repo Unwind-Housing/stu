@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Invite</title>
+<link rel="stylesheet" href="pages.css">
+<script src="pages.js"></script>
+<script src="invite.js"></script>
+</head>
+<body>
+<div class="page">
+
+  <div class="banner">
+    <img data-logo alt="">
+    <div>
+      <h1>Invite to the full application</h1>
+      <p>Choose who to invite, check the email, then send them one at a time from your own mail.</p>
+    </div>
+  </div>
+
+  <div class="toolbar" style="margin-top: 18px">
+    <label>Project
+      <select id="project"><option value="">Loading projects...</option></select>
+    </label>
+    <span id="projectinfo" class="d" style="color: var(--muted); align-self: center"></span>
+  </div>
+
+  <div id="main" hidden>
+    <ol class="steps" id="steps"></ol>
+
+    <!-- 1 -->
+    <section class="panel" data-step="1">
+      <h2>Who to invite <small id="count"></small></h2>
+      <p class="lead">Each list is in rank order. The next households to invite are ticked for you: enough to fill each list's places,
+        less the ones already invited. Untick anyone you aren't inviting yet.</p>
+      <div id="lists"></div>
+    </section>
+
+    <!-- 2 -->
+    <section class="panel" data-step="2" hidden>
+      <h2>The email</h2>
+      <p class="lead">This is the message each household will get. Change anything you like. Words in curly brackets are filled in
+        for each household on the next step.</p>
+      <div class="emailform">
+        <label for="link">Link to your full application form <small>paste the form's address; Stu adds each household's application number to the end</small></label>
+        <input id="link" type="text" maxlength="500" placeholder="Paste the address here">
+        <small id="linkhint"></small>
+        <label for="due">Full application due <small>the date in the email, and the date each household is held to</small></label>
+        <input id="due" type="date" style="max-width: 200px">
+        <small id="duehint"></small>
+        <label for="subject">Subject</label>
+        <input id="subject" type="text" maxlength="200">
+        <label for="body">Message</label>
+        <textarea id="body" rows="20"></textarea>
+        <small>You can use: <span id="fields"></span></small>
+      </div>
+      <div class="actions" style="margin-top: 10px">
+        <button class="btn" id="savewording" type="button">Keep this wording for next time</button>
+        <button class="btn" id="resetwording" type="button">Go back to the saved wording</button>
+        <span class="mutedtext" id="wordinghint"></span>
+      </div>
+    </section>
+
+    <!-- 3 -->
+    <section class="panel" data-step="3" hidden>
+      <h2>Send the emails <small id="progress"></small></h2>
+      <div id="send"></div>
+    </section>
+
+    <div id="problems"></div>
+    <div class="bottombar" id="nav">
+      <button class="btn" id="back" type="button">Back</button>
+      <button class="btn primary" id="next" type="button">Next</button>
+      <span class="msg" id="msg"></span>
+    </div>
+  </div>
+  <div id="gate"></div>
+</div>
+
+<script>
+(function () {
+  var P = CLTPage, I = CLTInvite, fv = P.fv;
+  var $ = function (id) { return document.getElementById(id); };
+  var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); };
+  var day = P.day;   // timestamps are shown as the local day
+  var SIZES = ["Studio", "1 bedroom", "2 bedrooms", "3 bedrooms", "4+ bedrooms"];
+  var STEPS = ["Who to invite", "The email", "Send"];
+  var sets = {}, choices = {}, projects = [], org = "", numberField = "", D = null, ticked = {}, busy = false;
+  var step = 1, queue = [], at = 0, sent = 0, skipped = 0, tried = false;
+
+  function show(kind, text) { $("problems").innerHTML = text ? '<div class="msgbox ' + kind + '">' + esc(text) + "</div>" : ""; }
+  function fail(what) { return function (e) { busy = false; show("bad", what + ". Nothing was changed. Dataverse said: " + e.message); render(); }; }
+  function today() { var d = new Date(); return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2); }
+
+  function copy(text, button) {
+    var done = function () { var was = button.dataset.label || button.textContent; button.dataset.label = was; button.textContent = "Copied"; setTimeout(function () { button.textContent = was; }, 1500); };
+    var fallback = function () {
+      var t = document.createElement("textarea"); t.value = text; t.style.position = "fixed"; t.style.opacity = "0";
+      document.body.appendChild(t); t.select();
+      try { document.execCommand("copy"); done(); } catch (e) { show("bad", "This browser wouldn't copy. Select the text and copy it yourself."); }
+      t.remove();
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, fallback); else fallback();
+  }
+
+  // ---------------------------------------------------------------- loading
+  function start() {
+    var tables = ["clt_selectionround", "clt_selectionentry", "clt_projecthome", "clt_householdmember", "clt_household", "clt_messagetemplate", "clt_notice"];
+    var names = ["entrystatus", "applicationstage", "householdstatus", "noticetype", "noticechannel", "applicantrole"];
+    $("fields").textContent = I.FIELDS.map(function (f) { return "{" + f[0] + "}"; }).join("  ");
+    return Promise.all([
+      Promise.all(tables.map(function (t) { return P.entitySet(t).then(function (es) { sets[t] = es; }); })),
+      Promise.all(names.map(function (n) { return P.choice("clt_" + n).then(function (c) { choices[n] = c; }); })),
+      P.getAll("clt_projects?$select=clt_projectid,clt_name,clt_status&$filter=statecode eq 0&$orderby=clt_name"),
+      P.settings()
+    ]).then(function (r) {
+      projects = r[2].filter(function (p) { return fv(p, "clt_status") !== "Closed"; });
+      org = r[3].OrgName || ""; numberField = r[3].FullAppNumberField || "";
+      var sel = $("project"); sel.innerHTML = "";
+      var o = document.createElement("option"); o.value = "";
+      o.textContent = projects.length ? "Pick a project" : "No open projects"; sel.appendChild(o);
+      projects.forEach(function (p) { var x = document.createElement("option"); x.value = p.clt_projectid; x.textContent = p.clt_name; sel.appendChild(x); });
+      var want = new URLSearchParams(location.search).get("data");
+      if (want && projects.some(function (p) { return p.clt_projectid === want; })) sel.value = want;
+      else if (projects.length === 1) sel.value = projects[0].clt_projectid;
+      return load(true);
+    }).catch(fail("Couldn't load the projects"));
+  }
+
+  // fresh = start again at step 1 with the suggested households ticked and the saved wording.
+  function load(fresh) {
+    var id = $("project").value;
+    if (!id) { D = null; render(); return Promise.resolve(); }
+    var mine = "&$filter=statecode eq 0 and _clt_project_value eq " + id;
+    return Promise.all([
+      P.get("clt_projects(" + id + ")?$select=clt_projectid,clt_name,clt_invitesperlist,clt_invitesperhome,clt_responsedays,clt_fullappformlink"),
+      P.getAll(sets.clt_projecthome + "?$select=clt_bedrooms" + mine),
+      P.get(sets.clt_selectionround + "?$select=clt_selectionroundid,clt_status,clt_certifiedon" + mine + "&$orderby=createdon desc&$top=1"),
+      P.getAll("clt_applications?$select=clt_applicationid,clt_recordnumber,clt_stage,clt_invitelink,_clt_household_value" + mine),
+      P.getAll(sets.clt_messagetemplate + "?$select=clt_messagetemplateid,clt_subject,clt_body&$filter=statecode eq 0 and clt_noticetype eq " +
+               choices.noticetype["Invited to full application"] + "&$orderby=modifiedon desc&$top=1")
+    ]).then(function (r) {
+      var round = r[2].value[0] || null, homes = {}, keep = D && !fresh ? { subject: D.subject, body: D.body } : null;
+      r[1].forEach(function (h) { var s = Math.max(0, Math.min(4, h.clt_bedrooms || 0)); homes[s] = (homes[s] || 0) + 1; });
+      D = { project: r[0], homes: homes, round: round, entries: [], apps: {}, households: {}, first: {},
+            template: r[4][0] ? { id: r[4][0].clt_messagetemplateid, subject: r[4][0].clt_subject || "", body: r[4][0].clt_body || "" } : null };
+      var saved = D.template || I.DEFAULT;
+      D.subject = keep ? keep.subject : saved.subject; D.body = keep ? keep.body : saved.body;
+      r[3].forEach(function (a) { D.apps[a.clt_applicationid] = a; });
+      if (fresh) { $("link").value = D.project.clt_fullappformlink || ""; $("subject").value = D.subject; $("body").value = D.body;
+                   $("due").value = I.deadline(today(), D.project.clt_responsedays); step = 1; queue = []; at = 0; sent = 0; skipped = 0; }
+      if (!round || fv(round, "clt_status") !== "Certified") return;
+      var hh = {}; r[3].forEach(function (a) { if (a._clt_household_value) hh[a._clt_household_value] = 1; });
+      return Promise.all([
+        P.getAll(sets.clt_selectionentry + "?$select=clt_selectionentryid,clt_uniqueid,clt_bedrooms,clt_rank,clt_status,clt_invitedon,clt_responsedue," +
+                 "_clt_application_value&$filter=statecode eq 0 and _clt_round_value eq " + round.clt_selectionroundid),
+        P.getAll(sets.clt_household + "?$select=clt_householdid,clt_name,clt_primaryemail,clt_status&$filter=statecode eq 0"),
+        P.getAll(sets.clt_householdmember + "?$select=clt_firstname,_clt_household_value&$filter=statecode eq 0 and clt_applicantrole eq " +
+                 choices.applicantrole["Primary applicant"])
+      ]).then(function (x) {
+        D.entries = x[0].map(function (e) {
+          return { id: e.clt_selectionentryid, applicationId: e._clt_application_value, uniqueId: e.clt_uniqueid, bedrooms: e.clt_bedrooms, rank: e.clt_rank,
+                   status: fv(e, "clt_status") || "Waitlist", invitedOn: e.clt_invitedon, responseDue: e.clt_responsedue };
+        });
+        x[1].forEach(function (h) { if (hh[h.clt_householdid]) D.households[h.clt_householdid] = h; });
+        x[2].forEach(function (m) { if (hh[m._clt_household_value] && !D.first[m._clt_household_value]) D.first[m._clt_household_value] = m.clt_firstname || ""; });
+        D.suggested = I.suggest(D.entries, D.homes, { perList: D.project.clt_invitesperlist, perHome: D.project.clt_invitesperhome });
+        if (fresh) { ticked = {}; Object.keys(D.suggested.applications).forEach(function (a) { ticked[a] = true; }); }
+      });
+    }).then(render);
+  }
+
+  // ---------------------------------------------------------------- one household's words
+  // The date staff chose on step 2. It starts at today plus the project's response days.
+  function due() { return $("due").value || I.deadline(today(), D.project.clt_responsedays); }
+  function household(appId) { return D.households[(D.apps[appId] || {})._clt_household_value] || {}; }
+  function who(appId) { var a = D.apps[appId] || {}; return ((D.first[a._clt_household_value] || "") + " " + (household(appId).clt_name || "")).trim(); }
+  function valuesFor(appId) {
+    var a = D.apps[appId] || {};
+    return { "first name": D.first[a._clt_household_value] || "", household: household(appId).clt_name || "", project: D.project.clt_name,
+             "application number": a.clt_recordnumber || "", link: I.linkFor($("link").value, a.clt_recordnumber, numberField), deadline: I.longDate(due()),
+             organization: org };
+  }
+  function emailFor(appId) {
+    var v = valuesFor(appId);
+    return { subject: I.fill(D.subject, v), body: I.fill(D.body, v), to: household(appId).clt_primaryemail || "" };
+  }
+  // Ticked applications that still have a waiting entry, in rank order of the first list they are on.
+  function chosen() {
+    var seen = {}, out = [];
+    D.entries.slice().sort(function (x, y) { return x.bedrooms - y.bedrooms || x.rank - y.rank; }).forEach(function (e) {
+      if (ticked[e.applicationId] && e.status === "Waitlist" && !seen[e.applicationId]) { seen[e.applicationId] = 1; out.push(e.applicationId); }
+    });
+    return out;
+  }
+
+  // ---------------------------------------------------------------- the three steps
+  function renderLists() {
+    $("lists").innerHTML = D.suggested.lists.map(function (list) {
+      var rows = D.entries.filter(function (e) { return e.bedrooms === list.size; }).sort(function (x, y) { return x.rank - y.rank; });
+      return '<h3 class="sub">' + esc(SIZES[list.size]) + " <small>" + list.quota + " places, " + list.active + " used</small></h3>" +
+        '<div class="tablewrap"><table class="data"><thead><tr><th></th><th>Rank</th><th>Unique ID</th><th>Household</th><th>Email</th><th>Application</th><th>List status</th></tr></thead><tbody>' +
+        rows.map(function (e) {
+          var a = D.apps[e.applicationId] || {}, waiting = e.status === "Waitlist";
+          return "<tr" + (waiting ? "" : ' class="locked"') + '><td><input type="checkbox" data-app="' + e.applicationId + '"' + (ticked[e.applicationId] && waiting ? " checked" : "") +
+            (waiting ? "" : " disabled") + ' aria-label="Invite ' + esc(e.uniqueId) + '"></td><td class="num">' + esc(e.rank) + "</td><td>" + esc(e.uniqueId) + "</td><td>" +
+            esc(who(e.applicationId)) + "</td><td>" + esc(household(e.applicationId).clt_primaryemail || "") + "</td><td>" + esc(a.clt_recordnumber || "") + "</td><td>" +
+            esc(e.status + (e.status === "Invited" && e.invitedOn ? " " + day(e.invitedOn) + ", reply by " + day(e.responseDue) : "")) + "</td></tr>";
+        }).join("") + "</tbody></table></div>";
+    }).join("") || '<p class="mutedtext">There is nobody on a list.</p>';
+    $("lists").querySelectorAll("input[data-app]").forEach(function (cb) {
+      cb.addEventListener("change", function () { if (cb.checked) ticked[cb.dataset.app] = true; else delete ticked[cb.dataset.app]; render(); });
+    });
+    var n = chosen().length;
+    $("count").textContent = n + (n === 1 ? " household ticked" : " households ticked");
+  }
+
+  function renderEmail() {
+    var problem = I.linkProblem($("link").value), saved = D.template || I.DEFAULT;
+    var empty = !$("link").value.trim();
+    var sample = (D.apps[chosen()[0]] || {}).clt_recordnumber || "A-00012";
+    $("linkhint").textContent = empty ? "This box is empty. Paste your form's address, for example: https://www.cognitoforms.com/YourOrg/FullApplication"
+      : problem || "Kept on the project. For " + sample + " the link will be: " + I.linkFor($("link").value, sample, numberField);
+    $("linkhint").className = problem && !empty ? "errtext" : "";
+    $("link").classList.toggle("needs", !!problem && tried);
+    var dp = I.dueProblem($("due").value, today()), days = Math.round((new Date($("due").value + "T00:00:00Z") - new Date(today() + "T00:00:00Z")) / 86400000);
+    $("duehint").textContent = dp || I.longDate(due()) + ", " + days + (days === 1 ? " day" : " days") + " from today. It starts at " +
+      (D.project.clt_responsedays == null ? 15 : D.project.clt_responsedays) + " days (Response deadline on the project).";
+    $("duehint").className = dp ? "errtext" : "";
+    var same = D.subject === saved.subject && D.body === saved.body;
+    $("savewording").disabled = busy || same; $("resetwording").disabled = busy || same;
+    $("wordinghint").textContent = same ? (D.template ? "This is your saved wording (Settings, Message templates)." : "These are Stu's starting words.")
+                                        : "Changed for this batch. Keep it for next time, or it is used only now.";
+  }
+
+  function renderSend() {
+    var box = $("send");
+    if (at >= queue.length) {
+      $("progress").textContent = "";
+      box.innerHTML = '<div class="msgbox ok"><b>All done.</b> ' + sent + (sent === 1 ? " household is" : " households are") + " marked as invited, to reply by " +
+        esc(I.longDate(due())) + "." + (skipped ? " " + skipped + " skipped: they are still waiting on their list." : "") + '</div><div class="actions" style="margin-top: 12px">' +
+        '<button class="btn primary" type="button" id="again">Invite more households</button><button class="btn" type="button" id="toselection">Back to Buyer Selection</button></div>';
+      $("again").addEventListener("click", function () { show("", ""); load(true).catch(fail("Couldn't load the project")); });
+      $("toselection").addEventListener("click", function () { P.go({ pageType: "webresource", webresourceName: "clt_/pages/selection.html", data: D.project.clt_projectid }); });
+      return;
+    }
+    var id = queue[at], m = emailFor(id), a = D.apps[id] || {};
+    $("progress").textContent = "email " + (at + 1) + " of " + queue.length;
+    var mail = "mailto:" + encodeURIComponent(m.to) + "?subject=" + encodeURIComponent(m.subject) + "&body=" + encodeURIComponent(m.body);
+    box.innerHTML = '<div class="emailcard"><div class="emailhead"><b>' + esc(who(id)) + "</b> <span class=\"mutedtext\">" + esc(a.clt_recordnumber || "") + "</span></div>" +
+      '<div class="emailrow"><span class="mutedtext">To</span><span class="emailvalue" id="e-to">' + (esc(m.to) || '<span class="errtext">No email address on this household</span>') +
+        '</span><button class="btn small" type="button" id="c-to">Copy</button></div>' +
+      '<div class="emailrow"><span class="mutedtext">Subject</span><span class="emailvalue" id="e-subject">' + esc(m.subject) + '</span><button class="btn small" type="button" id="c-subject">Copy</button></div>' +
+      '<pre id="e-body">' + esc(m.body) + "</pre>" +
+      '<div class="actions emailactions"><button class="btn" type="button" id="c-body">Copy the message</button>' +
+        '<a class="btn" id="mailapp" href="' + esc(mail) + '">Open in my mail app</a></div></div>' +
+      '<div class="actions" style="margin-top: 12px"><button class="btn primary" type="button" id="sentit">Sent: mark as invited and go to the next</button>' +
+        '<button class="btn" type="button" id="skipit">Skip for now</button></div>';
+    $("c-to").addEventListener("click", function () { copy(m.to, $("c-to")); });
+    $("c-subject").addEventListener("click", function () { copy(m.subject, $("c-subject")); });
+    $("c-body").addEventListener("click", function () { copy(m.body, $("c-body")); });
+    $("sentit").disabled = busy; $("skipit").disabled = busy;
+    $("sentit").addEventListener("click", function () { markSent(id); });
+    $("skipit").addEventListener("click", function () { skipped++; at++; show("", ""); render(); });
+  }
+
+  function render() {
+    var certified = D && D.round && fv(D.round, "clt_status") === "Certified";
+    $("main").hidden = !certified;
+    $("projectinfo").textContent = !D ? "" : !D.round ? "no selection yet" : "results " + fv(D.round, "clt_status").toLowerCase();
+    $("gate").innerHTML = D && !certified ? '<div class="msgbox warn">Invitations come after the results are certified. Finish the steps under Projects, Buyer Selection, then come back.</div>' : "";
+    if (!certified) return;
+    document.querySelectorAll(".panel").forEach(function (p) { p.hidden = +p.dataset.step !== step; });
+    $("steps").innerHTML = STEPS.map(function (label, i) {
+      var k = i + 1, cls = k === step ? "on" : k < step ? "seen" : "";
+      return '<li class="' + cls + '"><button type="button" disabled><span>' + k + "</span>" + esc(label) + "</button></li>";
+    }).join("");
+    if (step === 1) renderLists();
+    if (step === 2) renderEmail();
+    if (step === 3) renderSend();
+    var n = chosen().length;
+    $("nav").hidden = step === 3 && at >= queue.length;
+    $("back").hidden = step === 1; $("back").disabled = busy;
+    $("next").hidden = step === 3; $("next").disabled = busy || (step === 1 && !n);
+    $("next").textContent = step === 1 ? "Next: the email" : "Prepare " + n + (n === 1 ? " email" : " emails");
+    $("msg").textContent = step === 1 && !n ? "Tick at least one household." : ""; $("msg").className = "msg";
+  }
+
+  // ---------------------------------------------------------------- actions
+  function readEmail() { D.subject = $("subject").value; D.body = $("body").value; }
+  ["link", "due", "subject", "body"].forEach(function (id) { $(id).addEventListener("input", function () { readEmail(); renderEmail(); }); });
+
+  $("back").addEventListener("click", function () { if (busy) return; show("", ""); step = Math.max(1, step - 1); render(); });
+  $("next").addEventListener("click", function () {
+    if (busy) return;
+    show("", "");
+    if (step === 1) { step = 2; return render(); }
+    readEmail();
+    var link = $("link").value.trim(), problem = I.linkProblem(link);
+    if (problem) {
+      tried = true; renderEmail(); $("link").focus();
+      return show("bad", link ? problem : "Paste the link to your full application form in the first box, then try again. It only has to be done once for a project.");
+    }
+    if (I.dueProblem($("due").value, today())) return show("bad", I.dueProblem($("due").value, today()));
+    if (!D.subject.trim() || !D.body.trim()) return show("bad", "The email needs a subject and a message.");
+    if (D.body.indexOf("{link}") < 0) return show("bad", "The message has no {link} in it, so nobody would get their link. Put {link} where the link should go.");
+    var go = function () { queue = chosen(); at = 0; sent = 0; skipped = 0; step = 3; busy = false; render(); };
+    if (link === (D.project.clt_fullappformlink || "").trim()) return go();
+    busy = true; render();   // keep the link on the project, so it is there next time
+    P.patch("clt_projects(" + D.project.clt_projectid + ")", { clt_fullappformlink: link })
+      .then(function () { D.project.clt_fullappformlink = link; go(); }).catch(fail("Couldn't save the link on the project"));
+  });
+
+  $("resetwording").addEventListener("click", function () {
+    var saved = D.template || I.DEFAULT;
+    $("subject").value = saved.subject; $("body").value = saved.body; readEmail(); renderEmail();
+  });
+  $("savewording").addEventListener("click", function () {
+    readEmail(); busy = true; renderEmail();
+    var words = { clt_subject: D.subject, clt_body: D.body };
+    var work = D.template ? P.patch(sets.clt_messagetemplate + "(" + D.template.id + ")", words).then(function () { return D.template.id; })
+      : P.create(sets.clt_messagetemplate, { clt_name: "Invitation to the full application", clt_noticetype: choices.noticetype["Invited to full application"],
+                                             clt_subject: D.subject, clt_body: D.body }).then(function (rec) { return rec.clt_messagetemplateid; });
+    work.then(function (id) {
+      busy = false; D.template = { id: id, subject: D.subject, body: D.body };
+      show("ok", "Saved. This is now the wording every invitation starts from (Settings, Message templates)."); render();
+    }).catch(fail("Couldn't save the wording"));
+  });
+
+  // One household: its application, every list entry it has, its household status, and a kept copy of the message. All or nothing.
+  function markSent(id) {
+    if (busy) return;
+    busy = true; render();
+    var now = new Date().toISOString(), when = today(), by = due(), ops = [], C = choices;
+    var a = D.apps[id], h = household(id), m = emailFor(id), stage = fv(a, "clt_stage");
+    var change = { clt_invitelink: valuesFor(id).link };
+    if (stage === "In selection" || stage === "Pre-screened" || stage === "Screener submitted") change.clt_stage = C.applicationstage["Invited to full application"];
+    ops.push({ method: "PATCH", path: "clt_applications(" + id + ")", body: change });
+    D.entries.forEach(function (e) {
+      if (e.applicationId === id && e.status === "Waitlist")
+        ops.push({ method: "PATCH", path: sets.clt_selectionentry + "(" + e.id + ")",
+                   body: { clt_status: C.entrystatus.Invited, clt_invitedon: when, clt_responsedue: by, clt_statusdate: when } });
+    });
+    if (h.clt_householdid && (fv(h, "clt_status") === "Applicant" || !fv(h, "clt_status")))
+      ops.push({ method: "PATCH", path: sets.clt_household + "(" + h.clt_householdid + ")", body: { clt_status: C.householdstatus["Invited to full application"] } });
+    var notice = { clt_name: m.subject.slice(0, 200), clt_noticetype: C.noticetype["Invited to full application"], clt_channel: C.noticechannel.Email,
+                   clt_senton: now, clt_sentto: m.to, clt_body: m.body, "clt_application@odata.bind": "/clt_applications(" + id + ")",
+                   "clt_project@odata.bind": "/clt_projects(" + D.project.clt_projectid + ")" };
+    if (h.clt_householdid) notice["clt_household@odata.bind"] = "/" + sets.clt_household + "(" + h.clt_householdid + ")";
+    ops.push({ method: "POST", path: sets.clt_notice, body: notice });
+    P.batch(ops).then(function () {
+      D.entries.forEach(function (e) { if (e.applicationId === id && e.status === "Waitlist") { e.status = "Invited"; e.invitedOn = when; e.responseDue = by; } });
+      busy = false; sent++; at++; show("ok", who(id) + " is marked as invited."); render();
+    }).catch(fail("Couldn't mark " + who(id) + " as invited"));
+  }
+
+  $("project").addEventListener("change", function () { show("", ""); load(true).catch(fail("Couldn't load the project")); });
+  P.brand();
+  start();
+})();
+</script>
+</body>
+</html>

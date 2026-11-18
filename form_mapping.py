@@ -7,6 +7,7 @@ has one mapping file:
     clients/<organization>/forms/screener.json            the screener (type "screener")
     clients/<organization>/forms/screener-<name>.json     another screener with different questions
     clients/<organization>/forms/full-application.json    the full application (type "full-application")
+    clients/<organization>/forms/annual-verification.json the yearly occupancy verification (type "annual-verification")
 
 Forms that are copies of each other (same question names) share one mapping and one flow. A form with
 different questions gets its own mapping file, and the build makes it its own flow.
@@ -27,13 +28,14 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CLIENTS = os.path.join(HERE, "clients")
-TYPES = ("screener", "full-application")
+TYPES = ("screener", "full-application", "annual-verification")
 NOT_ASKED = ("NotOnThisForm",)   # a path no entry has: the flow reads it as blank
 # Keys that aren't paths
-META = ("type", "label", "provider", "choices", "firstLetterChoices", "notes")
+META = ("type", "label", "provider", "choices", "firstLetterChoices", "notes", "uploadsFolder", "uploadsPath")
 REQUIRED = {
     "screener": ["entry.id", "entry.formId", "applicant.firstName", "applicant.lastName", "applicant.email"],
     "full-application": ["entry.id", "entry.formId", "applicant.firstName", "applicant.lastName"],
+    "annual-verification": ["entry.id", "entry.formId", "match.occupancyId"],
 }
 LISTS = ("otherMembers", "income", "debts", "assets")
 
@@ -52,6 +54,12 @@ class Mapping:
         self.label = data.get("label") or ""
         self._choices = data.get("choices") or {}
         self._first_letter = set(data.get("firstLetterChoices") or [])
+        # Annual verification: the folder the forms platform saves uploads in (a web address), and the folder it makes
+        # inside it for each entry, with {formName} and {number} where the form's name and the entry's number go.
+        self.uploads_folder = (data.get("uploadsFolder") or "").strip()
+        self.uploads_path = (data.get("uploadsPath") or "{formName}/Entry_{number}").strip()
+        if re.sub(r"\{(formName|number)\}", "", self.uploads_path).count("{"):
+            raise MappingError(f"{source}: uploadsPath can only use {{formName}} and {{number}}")
         self.paths = {}
         self._flatten("", {k: v for k, v in data.items() if k not in META})
         missing = [k for k in REQUIRED[self.type] if k not in self.paths]

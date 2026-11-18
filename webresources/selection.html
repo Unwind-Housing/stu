@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Buyer Selection</title>
+<link rel="stylesheet" href="pages.css">
+<script src="pages.js"></script>
+<script src="selection.js"></script>
+<script src="pdf.js"></script>
+</head>
+<body>
+<div class="page">
+
+  <div class="banner">
+    <img data-logo alt="">
+    <div>
+      <h1>Buyer Selection</h1>
+      <p>Where a project stands, from set-up to full applications coming in, and the next thing to do. The lists show Unique IDs only, never names.</p>
+    </div>
+  </div>
+
+  <div class="toolbar" style="margin-top: 18px">
+    <label>Project
+      <select id="project"><option value="">Loading projects...</option></select>
+    </label>
+    <span id="projectinfo" class="d" style="color: var(--muted); align-self: center"></span>
+    <button class="btn" id="reload" type="button" style="margin-left: auto">Refresh</button>
+  </div>
+
+  <div class="stats" id="figures" style="margin-top: 14px" hidden></div>
+  <div id="problems"></div>
+  <ol class="track" id="track"></ol>
+  <p class="note" id="foot">Each step can only be done once the one before it is finished. Locking, drawing and certifying can't be undone.</p>
+</div>
+
+<script>
+(function () {
+  var P = CLTPage, S = CLTSelection, fv = P.fv;
+  var $ = function (id) { return document.getElementById(id); };
+  var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); };
+  var day = P.day;   // timestamps are shown as the local day
+  var sets = {}, choices = {}, projects = [], D = null, busy = false, note = "", rollText = "", observerText = "";
+  var STATE = { done: "Done", next: "Do this next", waiting: "Waiting", byhand: "Do this next" };
+
+  function fail(what) {
+    return function (e) {
+      busy = false;
+      $("problems").innerHTML = '<div class="msgbox bad"><b>' + esc(what) + ".</b> Nothing was changed. Dataverse said: " + esc(e.message) + "</div>";
+      render();
+    };
+  }
+
+  // ---------------------------------------------------------------- loading
+  function start() {
+    var tables = ["clt_selectionround", "clt_selectionentry", "clt_projecthome", "clt_projectpriority", "clt_projectband"];
+    var names = ["roundstatus", "entrystatus", "applicationstage", "projectstatus"];
+    return Promise.all([
+      Promise.all(tables.map(function (t) { return P.entitySet(t).then(function (es) { sets[t] = es; }); })),
+      Promise.all(names.map(function (n) { return P.choice("clt_" + n).then(function (c) { choices[n] = c; }); })),
+      P.getAll("clt_projects?$select=clt_projectid,clt_name,clt_status,clt_selectionmethod,clt_waitlistmonths,clt_applicationcloses," +
+               "clt_monthlycoststudio,clt_monthlycost1br,clt_monthlycost2br,clt_monthlycost3br,clt_monthlycost4br&$filter=statecode eq 0&$orderby=clt_name")
+    ]).then(function (r) {
+      projects = r[2].filter(function (p) { return fv(p, "clt_status") !== "Closed"; });
+      var sel = $("project"); sel.innerHTML = "";
+      var o = document.createElement("option"); o.value = "";
+      o.textContent = projects.length ? "Pick a project" : "No open projects: create one first"; sel.appendChild(o);
+      projects.forEach(function (p) { var x = document.createElement("option"); x.value = p.clt_projectid; x.textContent = p.clt_name; sel.appendChild(x); });
+      var want = new URLSearchParams(location.search).get("data");
+      if (want && projects.some(function (p) { return p.clt_projectid === want; })) sel.value = want;
+      else if (projects.length === 1) sel.value = projects[0].clt_projectid;
+      return load();
+    }).catch(fail("Couldn't load the projects"));
+  }
+
+  // Everything about the picked project, read fresh. Every action reads again before it changes anything.
+  function load() {
+    var p = projects.filter(function (x) { return x.clt_projectid === $("project").value; })[0];
+    if (!p) { D = null; render(); return Promise.resolve(null); }
+    var id = p.clt_projectid, mine = "&$filter=statecode eq 0 and _clt_project_value eq " + id;
+    return Promise.all([
+      P.get("clt_projects(" + id + ")?$select=clt_projectid,clt_name,clt_status,clt_selectionmethod,clt_waitlistmonths,clt_applicationcloses," +
+            "clt_monthlycoststudio,clt_monthlycost1br,clt_monthlycost2br,clt_monthlycost3br,clt_monthlycost4br"),
+      P.getAll(sets.clt_projecthome + "?$select=clt_bedrooms" + mine),
+      P.getAll(sets.clt_projectpriority + "?$select=clt_bedrooms,clt_householdsize,clt_tier" + mine),
+      P.getAll(sets.clt_projectband + "?$select=clt_monthlycoststudio,clt_monthlycost1br,clt_monthlycost2br,clt_monthlycost3br,clt_monthlycost4br" + mine),
+      P.getAll("clt_applications?$select=clt_applicationid,clt_uniqueid,clt_firstsubmittedon,clt_prescreenresult,clt_prescreensizes,clt_stage," +
+               "clt_adults,clt_children,clt_householdsize,clt_fullappsubmitted" + mine + "&$orderby=clt_firstsubmittedon asc"),
+      P.get(sets.clt_selectionround + "?$select=clt_selectionroundid,clt_name,clt_status,clt_poolslockedon,clt_checknumbers,clt_observer,clt_diceroll," +
+            "clt_seed,clt_drawnon,clt_certifiedon,clt_listsendon" + mine + "&$orderby=createdon desc&$top=1")
+    ]).then(function (r) {
+      var round = r[5].value[0] || null;
+      var cost = function (x) { return [x.clt_monthlycoststudio, x.clt_monthlycost1br, x.clt_monthlycost2br, x.clt_monthlycost3br, x.clt_monthlycost4br].some(function (v) { return v > 0; }); };
+      D = { project: r[0], homes: r[1].length, costs: cost(r[0]) || r[3].some(cost), round: round, entries: [], names: {},
+            priorities: r[2].map(function (x) { return { bedrooms: x.clt_bedrooms, householdSize: x.clt_householdsize, tier: x.clt_tier }; }),
+            apps: r[4].map(function (a) {
+              return { id: a.clt_applicationid, uniqueId: a.clt_uniqueid || "", firstSubmittedOn: a.clt_firstsubmittedon || "",
+                       result: fv(a, "clt_prescreenresult"), sizes: S.sizesFromLabels(fv(a, "clt_prescreensizes")), stage: fv(a, "clt_stage"),
+                       out: fv(a, "clt_stage") === "Withdrawn", fullAppSubmitted: a.clt_fullappsubmitted || "",
+                       householdSize: a.clt_householdsize != null ? a.clt_householdsize
+                                    : a.clt_adults == null && a.clt_children == null ? null : (a.clt_adults || 0) + (a.clt_children || 0) };
+            }) };
+      D.method = fv(D.project, "clt_selectionmethod") || S.LOTTERY;
+      D.lottery = D.method !== S.FCFS;
+      if (!round) return;
+      return P.getAll(sets.clt_selectionentry + "?$select=clt_selectionentryid,clt_uniqueid,clt_bedrooms,clt_householdsize,clt_tier,clt_chances," +
+                      "clt_submittedon,clt_lotteryseq,clt_lotterynumber,clt_rank,clt_status,clt_invitedon,clt_responsedue,_clt_application_value" +
+                      "&$filter=statecode eq 0 and _clt_round_value eq " +
+                      round.clt_selectionroundid).then(function (rows) {
+        D.entries = rows.map(function (e) {
+          return { id: e.clt_selectionentryid, applicationId: e._clt_application_value, uniqueId: e.clt_uniqueid, bedrooms: e.clt_bedrooms,
+                   householdSize: e.clt_householdsize, tier: e.clt_tier, chances: e.clt_chances == null ? 1 : e.clt_chances,
+                   submittedOn: e.clt_submittedon || null, lotterySeq: e.clt_lotteryseq, lotteryNumber: e.clt_lotterynumber, rank: e.clt_rank,
+                   status: fv(e, "clt_status"), invitedOn: e.clt_invitedon || "", responseDue: e.clt_responsedue || "" };
+        });
+        // Names are only ever loaded once the results are certified and someone has been invited.
+        if (fv(round, "clt_status") === "Certified" && D.entries.some(function (e) { return e.invitedOn; })) return loadNames(id);
+      });
+    }).then(function () { render(); return D; });
+  }
+
+  // Who the invited households are: { <application id>: { who, number } }. Called only after certification.
+  function loadNames(projectId) {
+    return Promise.all([
+      P.getAll("clt_applications?$select=clt_applicationid,clt_recordnumber,_clt_household_value&$filter=statecode eq 0 and _clt_project_value eq " + projectId),
+      P.entitySet("clt_household").then(function (es) { return P.getAll(es + "?$select=clt_householdid,clt_name&$filter=statecode eq 0"); })
+    ]).then(function (r) {
+      var hh = {}; r[1].forEach(function (h) { hh[h.clt_householdid] = h.clt_name || ""; });
+      r[0].forEach(function (a) { D.names[a.clt_applicationid] = { who: hh[a._clt_household_value] || "", number: a.clt_recordnumber || "" }; });
+    });
+  }
+  function today() { var d = new Date(); return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2); }
+  function board() { return S.dashboard(D.apps, D.entries, today()); }
+
+  // The figures across the top: the project at a glance.
+  function figures() {
+    var f = board().figures, built = D.entries.length > 0, invited = f.invited > 0;
+    var tile = function (n, title, detail, cls) {
+      return '<div class="stat' + (cls ? " " + cls : "") + '"><div class="n">' + n + '</div><div class="t">' + esc(title) + '</div><div class="d">' + esc(detail) + "</div></div>"; };
+    return tile(f.applications, "Applications", "in this project") +
+           tile(f.eligible, "Eligible", "passed the pre-screen") +
+           tile(built ? f.listed : "-", "On a list", built ? "households in the selection" : "lists not built yet") +
+           tile(invited ? f.invited : "-", "Invited", invited ? "to the full application" : "nobody invited yet") +
+           tile(invited ? f.submitted : "-", "Full applications in", invited ? "of " + f.invited + " invited" : "") +
+           tile(invited ? f.late : "-", "Past their date", invited ? (f.waiting ? f.waiting + " more still to come" : "nobody else outstanding") : "", invited && f.late ? "hot" : "") +
+           tile(f.submitted ? f.certified : "-", "Certified", f.submitted ? (f.toReview ? f.toReview + " still to review" : "every full application reviewed") : "");
+  }
+  // Under the Invite step: each invited household, and whether its full application is in.
+  function invitedTable() {
+    var rows = board().invited;
+    if (!rows.length) return "";
+    return '<div class="tablewrap" style="margin-top: 12px"><table class="data"><thead><tr><th>Household</th><th>Application</th><th>List</th><th>Invited</th><th>Due</th><th>Full application</th><th>Certification</th></tr></thead><tbody>' +
+      rows.map(function (r) {
+        var n = D.names[r.applicationId] || {};
+        return "<tr><td>" + esc(n.who) + "</td><td>" + esc(n.number) + "</td><td>" +
+          esc(r.lists.map(function (l) { return S.sizeName(l.bedrooms) + " #" + l.rank; }).join(", ")) + "</td><td>" + esc(r.invitedOn) + "</td><td>" + esc(r.due) +
+          '</td><td><span class="pill ' + (r.state === "in" ? "ok" : r.state === "late" ? "bad" : "warn") + '">' + esc(r.text) + "</span></td><td>" +
+          (!r.review ? "" : '<span class="pill ' + (r.review === "Certified" ? "ok" : r.review === "Not certified" ? "bad" : "warn") + '">' + esc(r.review) + "</span> " +
+            '<button class="btn small" type="button" data-act="review" data-app="' + r.applicationId + '">' + (r.review === "To review" ? "Review" : "Open") + "</button>") + "</td></tr>";
+      }).join("") + "</tbody></table></div>";
+  }
+
+  function status() { return D && D.round ? fv(D.round, "clt_status") : ""; }
+  function steps() {
+    return S.progress({ method: D.method, homes: D.homes, priorities: D.priorities.length, costs: D.costs, apps: D.apps,
+                        round: D.round ? { status: status() } : null, entries: D.entries.length, invited: board().figures.invited ? board().figures : null });
+  }
+
+  // ---------------------------------------------------------------- the lists, by Unique ID or by rank
+  function listTables(ranked) {
+    return S.listSizes(D.entries).map(function (size) {
+      var list = S.listOf(D.entries, size).slice().sort(function (x, y) {
+        return ranked ? x.rank - y.rank : S.idNumber(x.uniqueId) - S.idNumber(y.uniqueId);
+      });
+      var check = S.checkNumber(list);
+      return '<div class="listbox"><h4>' + esc(S.sizeName(size)) + " <small>" + list.length + (list.length === 1 ? " household" : " households") +
+        ", check number " + check + '</small></h4><table class="data plain"><thead><tr>' + (ranked ? "<th>Rank</th>" : "") +
+        "<th>Unique ID</th><th>Household size</th><th>Tier</th>" + (ranked && D.lottery ? "<th>Lottery number</th>" : "") +
+        (ranked && !D.lottery ? "<th>First submitted</th>" : "") + "</tr></thead><tbody>" +
+        list.map(function (e) {
+          return "<tr>" + (ranked ? '<td class="num"><b>' + e.rank + "</b></td>" : "") + "<td>" + esc(e.uniqueId) + '</td><td class="num">' + esc(e.householdSize) +
+            '</td><td class="num">' + esc(e.tier) + "</td>" +
+            (ranked && D.lottery ? '<td class="num">' + (e.lotteryNumber == null ? "" : Number(e.lotteryNumber).toFixed(10)) + "</td>" : "") +
+            (ranked && !D.lottery ? "<td>" + esc(String(e.submittedOn || "").replace("T", " ").slice(0, 16)) + "</td>" : "") + "</tr>";
+        }).join("") + "</tbody></table></div>";
+    }).join("");
+  }
+  function docInfo() {
+    var r = D.round;
+    return { project: D.project.clt_name, method: D.lottery ? "Lottery" : "First come, first served", lockedOn: day(r.clt_poolslockedon), observer: r.clt_observer,
+             roll: r.clt_diceroll, seed: r.clt_seed, drawnOn: day(r.clt_drawnon), entries: D.entries };
+  }
+  function savePdf(doc, name) {
+    var file = (D.project.clt_name + " " + name).replace(/[^A-Za-z0-9 _-]+/g, "").replace(/\s+/g, " ").trim() + ".pdf";
+    if (CLTPdf.save(file, CLTPdf.make(doc))) ok("Saved " + file + " to your downloads. Print it for signing, then file the signed copy in the project's documents.");
+    else stop("This browser wouldn't save the file. Try another browser.");
+  }
+
+  // ---------------------------------------------------------------- what each step shows
+  function body(step) {
+    var id = step.id, st = status(), next = step.state === "next", done = step.state === "done";
+    var btn = function (action, label, primary) { return '<button class="btn' + (primary ? " primary" : "") + '" type="button" data-act="' + action + '">' + esc(label) + "</button>"; };
+    if (id === "setup") return '<div class="actions">' + btn("open", "Open the project") + "</div>";
+    if (id === "applications") return '<div class="actions">' + btn("assign", "Add applications") + "</div>";
+    if (id === "close") {
+      if (done) { var ids = D.apps.filter(function (a) { return a.uniqueId; }).map(function (a) { return S.idNumber(a.uniqueId); }).sort(function (a, b) { return a - b; });
+                  return "<p>" + esc(S.idText(ids[0]) + " to " + S.idText(ids[ids.length - 1])) + ", in the order the screeners were first submitted.</p>"; }
+      if (!next) return "";
+      return "<p>Gives every application a Unique ID in the order its screener was first submitted, and freezes the screener answers. " +
+             "Do this once applications have closed" + (D.project.clt_applicationcloses ? " (" + esc(day(D.project.clt_applicationcloses)) + ")" : "") +
+             ". Applications added later get the next numbers.</p>" + '<div class="actions">' + btn("close", "Close applications and assign Unique IDs", true) + "</div>";
+    }
+    if (id === "prescreen") return (next || done) ? '<div class="actions">' + btn("prescreen", done ? "Open the pre-screen" : "Run the pre-screen", next) + "</div>" : "";
+    if (id === "lists") {
+      var open = st === "Open";
+      if (!next && !done) return "";
+      var out = "";
+      if (next || open) out += "<p>Makes one list for each home size. Each eligible household goes on the list for every home size it is eligible for, in its tier." +
+        (open ? " The lists aren't locked yet, so you can build them again after changing a pre-screen result." : "") + "</p>" +
+        '<div class="actions">' + btn("build", open ? "Build the lists again" : "Build the lists", next) + "</div>";
+      if (D.entries.length && (st === "Open" || st === "Pools locked")) out += '<div class="lists">' + listTables(false) + "</div>";
+      return out;
+    }
+    if (id === "lock") {
+      if (done) return "<p>Locked " + esc(day(D.round.clt_poolslockedon)) + ". Board Observer: " + esc(D.round.clt_observer || "not recorded") + ".</p>" +
+        '<pre class="checks">' + esc(D.round.clt_checknumbers || "") + "</pre>" +
+        '<div class="actions">' + btn("pdflists", "Download the lists (PDF)") + "</div>";
+      if (!next) return "";
+      return "<p>After the lock nobody can add, remove or change an entry, and pre-screen overrides are closed. Each list gets a check number " +
+        "worked out from its contents. You can then download the lists as a PDF for the Board Observer to initial." +
+        (D.lottery ? "" : " For first come, first served, locking also ranks each list by when households first applied.") + "</p>" +
+        '<div class="actions"><label class="inline">Board Observer <input id="observer" type="text" maxlength="100" placeholder="Name" value="' + esc(observerText) + '"></label>' +
+        btn("lock", "Lock the lists", true) + "</div>";
+    }
+    if (id === "draw") {
+      if (!D.lottery) return done ? "<p>No dice for first come, first served.</p>" : "";
+      if (done) return "<p>Dice roll <b>" + esc(D.round.clt_diceroll) + "</b>, seed " + esc(D.round.clt_seed) + ", drawn " + esc(day(D.round.clt_drawnon)) +
+        ". The same roll always gives the same order.</p>";
+      if (!next) return "";
+      var roll = S.parseRoll(rollText);
+      return "<p>In front of the Board Observer, roll a ten-sided die ten times and type the digits in the order rolled. " +
+        "Each household gets one lottery number from the roll, used on every list it is on. Each list is then ranked by tier, then lottery number.</p>" +
+        '<div class="actions"><label class="inline">The ten digits <input id="roll" class="roll" type="text" inputmode="numeric" maxlength="14" placeholder="0000000000" value="' + esc(rollText) + '"></label>' +
+        btn("draw", "Draw", true) + '<span class="mutedtext" id="rollhint">' + (roll ? "Seed " + S.seedOf(roll) : "Ten digits, 0 to 9") + "</span></div>";
+    }
+    if (id === "certify") {
+      if (!next && !done) return "";
+      return (next ? "<p>Download the results as a PDF for the Board Observer and staff to sign, file the signed copy in the project's documents, then mark the results certified.</p>" : "") +
+        '<div class="lists">' + listTables(true) + "</div>" +
+        '<div class="actions">' + btn("pdfresults", "Download the results (PDF)") + (next ? btn("certify", "Mark the results certified", true) : "") + "</div>" +
+        (done ? "<p>Certified " + esc(day(D.round.clt_certifiedon)) + ". The lists stay in effect until " + esc(day(D.round.clt_listsendon)) + ".</p>" : "");
+    }
+    if (id === "invite") {
+      if (step.state !== "byhand") return "";
+      return "<p>The Invite page has the email to send and each household's own link to the full application. Send the emails, then mark the households as invited. " +
+        "Come back to it whenever a household drops out: the next one on that list is ticked for you.</p>" +
+        '<div class="actions">' + btn("invite", "Open Invite", true) + btn("round", "Open the ranked lists") + "</div>";
+    }
+    if (id === "review") {
+      if (step.state === "waiting" && !board().invited.length) return "";
+      return "<p>Each invited household, and where its full application stands. Once one is in, review it against the household's documents and certify the household, or record why not.</p>" +
+        invitedTable();
+    }
+    return "";
+  }
+
+  function render() {
+    var track = $("track");
+    $("reload").disabled = busy;
+    if (!D) { track.innerHTML = ""; $("projectinfo").textContent = ""; $("foot").hidden = true; $("figures").hidden = true; return; }
+    $("foot").hidden = false; $("figures").hidden = false; $("figures").innerHTML = figures();
+    $("projectinfo").textContent = [D.method === S.FCFS ? "First come, first served" : "Lottery", fv(D.project, "clt_status"),
+      D.round ? "round: " + status().toLowerCase() : ""].filter(Boolean).join(" · ");
+    track.innerHTML = steps().map(function (s, i) {
+      return '<li class="step ' + s.state + '" data-step="' + s.id + '"><div class="stepnum">' + (s.state === "done" ? "&#10003;" : i + 1) + '</div><div class="stepbody">' +
+        '<div class="stephead"><h3>' + esc(s.title) + '</h3><span class="pill ' + (s.state === "done" ? "ok" : s.state === "next" || s.state === "byhand" ? "warn" : "idle") + '">' + STATE[s.state] + "</span></div>" +
+        (s.summary ? '<p class="summaryline">' + esc(s.summary) + "</p>" : "") + '<div class="stepmore">' + body(s) + "</div></div></li>";
+    }).join("") + (note ? "" : "");
+    track.querySelectorAll("[data-act]").forEach(function (b) {
+      b.disabled = busy;
+      b.addEventListener("click", function () { act(b.dataset.act, b.closest(".step"), b.dataset.app); });
+    });
+    var roll = $("roll");
+    if (roll) roll.addEventListener("input", function () {
+      rollText = roll.value; var r = S.parseRoll(rollText);
+      $("rollhint").textContent = r ? "Seed " + S.seedOf(r) : "Ten digits, 0 to 9";
+    });
+    var obs = $("observer");
+    if (obs) obs.addEventListener("input", function () { observerText = obs.value; });
+  }
+
+  // ---------------------------------------------------------------- doing a step
+  function ok(text) { $("problems").innerHTML = text ? '<div class="msgbox ok">' + esc(text) + "</div>" : ""; }
+  function stop(text) { $("problems").innerHTML = '<div class="msgbox bad">' + esc(text) + "</div>"; busy = false; render(); return null; }
+  function now() { return new Date().toISOString(); }
+  function me() {
+    try { var id = (window.parent.Xrm || window.Xrm).Utility.getGlobalContext().userSettings.userId; return String(id).replace(/[{}]/g, "").toLowerCase(); }
+    catch (e) { return ""; }
+  }
+  // Read everything again, check the step is still the next one, then do it. Two people can't both lock or draw.
+  function guarded(stepId, what, work) {
+    if (busy) return;
+    busy = true; render();
+    return load().then(function () {
+      busy = true;
+      var step = steps().filter(function (s) { return s.id === stepId; })[0];
+      if (!step || (step.state !== "next" && !(stepId === "lists" && status() === "Open")))
+        return stop("This step has already been done, or isn't ready. The page now shows where the project is.");
+      return work();
+    }).then(function (text) {
+      if (text === null || text === undefined) return;
+      busy = false;
+      return load().then(function () { ok(text); });
+    }).catch(fail(what));
+  }
+  function checksMatch() { return S.checkText(D.entries) === (D.round.clt_checknumbers || ""); }
+
+  function act(action, card, appId) {
+    var pid = D.project.clt_projectid, rid = D.round && D.round.clt_selectionroundid;
+    if (action === "open") return P.openRecord("clt_project", pid);
+    if (action === "round") return P.openRecord("clt_selectionround", rid);
+    if (action === "invite") return P.go({ pageType: "webresource", webresourceName: "clt_/pages/invite.html", data: pid });
+    if (action === "review") return P.go({ pageType: "webresource", webresourceName: "clt_/pages/certify.html", data: appId });
+    if (action === "assign") return P.go({ pageType: "webresource", webresourceName: "clt_/pages/assign.html", data: pid });
+    if (action === "prescreen") return P.go({ pageType: "webresource", webresourceName: "clt_/pages/prescreen.html", data: pid });
+    if (action === "pdflists") return savePdf(S.listsDocument(docInfo()), "lists at the lock");
+    if (action === "pdfresults") return savePdf(S.resultsDocument(docInfo()), "ranked results");
+    if (action === "close") return P.confirm("Close applications", "Give every application in " + D.project.clt_name +
+        " a Unique ID and freeze its screener answers? This can't be undone.").then(function (yes) {
+      if (!yes) return;
+      return guarded("close", "Couldn't close applications", function () {
+        var ids = S.assignIds(D.apps), when = now(), status = fv(D.project, "clt_status");
+        var ops = ids.map(function (x) { return { method: "PATCH", path: "clt_applications(" + x.id + ")", body: { clt_uniqueid: x.uniqueId, clt_answersfrozenon: when } }; });
+        if (status === "Planning" || status === "Accepting applications")
+          ops.push({ method: "PATCH", path: "clt_projects(" + pid + ")", body: { clt_status: choices.projectstatus.Selection } });
+        return P.batch(ops).then(function () { return ids.length + " applications now have a Unique ID."; });
+      });
+    });
+    if (action === "build") return guarded("lists", "Couldn't build the lists", function () {
+      var built = S.buildEntries(D.apps, D.priorities);
+      if (built.problems.length) return stop("The lists can't be built yet. " + built.problems.join(" "));
+      if (!built.entries.length) return stop("No household is eligible for selection yet, so there is nothing to put on a list.");
+      var today = now().slice(0, 10);
+      var round = { clt_name: D.project.clt_name + (D.lottery ? " lottery " : " list ") + today, clt_method: D.project.clt_selectionmethod,
+                    clt_status: choices.roundstatus.Open, "clt_project@odata.bind": "/clt_projects(" + pid + ")",
+                    clt_selectionround_selectionentry_round: built.entries.map(function (e) {
+                      var row = { clt_name: e.uniqueId + ", " + S.sizeName(e.bedrooms).toLowerCase(), clt_uniqueid: e.uniqueId, clt_bedrooms: e.bedrooms,
+                                  clt_householdsize: e.householdSize, clt_tier: e.tier, clt_chances: e.chances, clt_status: choices.entrystatus.Waitlist,
+                                  "clt_application@odata.bind": "/clt_applications(" + e.applicationId + ")" };
+                      if (e.submittedOn) row.clt_submittedon = e.submittedOn;
+                      return row; }) };
+      var old = rid && status() === "Open" ? P.del(sets.clt_selectionround + "(" + rid + ")") : Promise.resolve();
+      return old.then(function () { return P.create(sets.clt_selectionround, round); })
+        .then(function () { return "The lists are built: " + built.entries.length + " entries. Look them over, then lock them."; });
+    });
+    if (action === "lock") {
+      var observer = ($("observer").value || "").trim();
+      if (!observer) return stop("Type the Board Observer's name before locking.");
+      return P.confirm("Lock the lists", "Lock the lists for " + D.project.clt_name + "? After this nobody can add, remove or change an entry.").then(function (yes) {
+        if (!yes) return;
+        return guarded("lock", "Couldn't lock the lists", function () {
+          var when = now(), body = { clt_status: choices.roundstatus["Pools locked"], clt_poolslockedon: when, clt_checknumbers: S.checkText(D.entries), clt_observer: observer };
+          var ops = [], seen = {}, stage = choices.applicationstage["In selection"];
+          D.entries.forEach(function (e) {
+            if (seen[e.applicationId]) return; seen[e.applicationId] = 1;
+            var a = D.apps.filter(function (x) { return x.id === e.applicationId; })[0];
+            if (a && (a.stage === "Pre-screened" || a.stage === "Screener submitted"))
+              ops.push({ method: "PATCH", path: "clt_applications(" + a.id + ")", body: { clt_stage: stage } });
+          });
+          if (!D.lottery) {   // first come, first served: the order is already decided, so rank now
+            S.rankBySubmission(D.entries).forEach(function (e) {
+              ops.push({ method: "PATCH", path: sets.clt_selectionentry + "(" + e.id + ")", body: { clt_rank: e.rank } }); });
+            body.clt_status = choices.roundstatus.Drawn; body.clt_drawnon = when;
+            body.clt_listsendon = S.listsEndOn(when, D.project.clt_waitlistmonths);
+          }
+          ops.unshift({ method: "PATCH", path: sets.clt_selectionround + "(" + rid + ")", body: body });
+          return P.batch(ops).then(function () { observerText = ""; return "The lists are locked. Download them as a PDF for the Board Observer to initial."; });
+        });
+      });
+    }
+    if (action === "draw") {
+      var roll = S.parseRoll($("roll").value);
+      if (!roll) return stop("Type the ten digits rolled, 0 to 9, in the order they were rolled.");
+      return P.confirm("Draw", "Draw with the roll " + roll.split("").join(" ") + "? Read it back to the Board Observer first. A draw can't be redone.").then(function (yes) {
+        if (!yes) return;
+        return guarded("draw", "Couldn't run the draw", function () {
+          if (!checksMatch()) return stop("The lists no longer match the check numbers recorded at the lock, so the draw was not run. Tell whoever looks after Stu.");
+          var res = S.draw(roll, D.entries), when = now(), user = me();
+          var ops = res.entries.map(function (e) {
+            return { method: "PATCH", path: sets.clt_selectionentry + "(" + e.id + ")",
+                     body: { clt_lotteryseq: e.lotterySeq, clt_lotterynumber: e.lotteryNumber, clt_rankingkey: e.rankingKey, clt_rank: e.rank } }; });
+          var body = { clt_diceroll: res.roll, clt_seed: res.seed, clt_drawnon: when, clt_listsendon: S.listsEndOn(when, D.project.clt_waitlistmonths),
+                       clt_status: choices.roundstatus.Drawn };
+          if (user) body["clt_drawnby@odata.bind"] = "/systemusers(" + user + ")";
+          ops.push({ method: "PATCH", path: sets.clt_selectionround + "(" + rid + ")", body: body });
+          return P.batch(ops).then(function () { rollText = ""; return "Drawn. Every list is ranked. Download the results for signing, then certify."; });
+        });
+      });
+    }
+    if (action === "certify") return P.confirm("Certify the results", "Mark the results for " + D.project.clt_name +
+        " certified? Do this once the Board Observer and staff have signed the printed results.").then(function (yes) {
+      if (!yes) return;
+      return guarded("certify", "Couldn't certify the results", function () {
+        if (!checksMatch()) return stop("The lists no longer match the check numbers recorded at the lock, so the results were not certified. Tell whoever looks after Stu.");
+        return P.patch(sets.clt_selectionround + "(" + rid + ")", { clt_status: choices.roundstatus.Certified, clt_certifiedon: now() })
+          .then(function () { return "The results are certified."; });
+      });
+    });
+  }
+
+  $("project").addEventListener("change", function () { $("problems").innerHTML = ""; rollText = ""; observerText = ""; load().catch(fail("Couldn't load the project")); });
+  $("reload").addEventListener("click", function () { $("problems").innerHTML = ""; load().catch(fail("Couldn't load the project")); });
+  P.brand();
+  start();
+})();
+</script>
+</body>
+</html>

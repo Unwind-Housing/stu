@@ -59,5 +59,15 @@ CLT.Tips = (function () {
     }
   }
 
-  return { documents: documents };
+  // Occupancy form, on load and when the resale formula changes: the Appraisal share terms section only shows for an
+  // appraisal based formula. Its fields keep whatever they hold; they are just out of the way.
+  function resaleTerms(ctx) {
+    var fc = ctx.getFormContext(), formula = fc.getAttribute("clt_resaleformula");
+    var show = /apprais/i.test((formula && formula.getText && formula.getText()) || "");
+    fc.ui.tabs.forEach(function (tab) {
+      tab.sections.forEach(function (section) { if (section.getLabel() === "Appraisal share terms") section.setVisible(show); });
+    });
+  }
+
+  return { documents: documents, resaleTerms: resaleTerms };
 })();

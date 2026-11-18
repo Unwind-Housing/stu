@@ -239,3 +239,16 @@ The browser is holding on to the old copy. Press **Cmd+Shift+R** (Windows: Ctrl+
 ### The app header isn't in the CLT's colors
 
 Same cause and fix as above: a hard refresh or a private window. If it's still the default purple, ask Claude to re-run the branding step (`tools/apply_branding.py`).
+
+## Annual verification form: connect it to Stu
+
+The yearly form's answers arrive by themselves once the form posts each entry to the **CLT: Annual verification intake** flow.
+
+1. The form needs a hidden question for the occupancy ID. The link from Activities > Occupancy verification fills it in (put `{occupancy id}` in the form link where that question goes).
+2. Map the form's questions in `clients/<organization>/forms/annual-verification.json` (copy the example), then deploy the flow: `python3 build_flows.py --url <environment> --only "Annual verification"`.
+3. In Power Automate: Solutions > CLT Stewardship > CLT: Annual verification intake > Edit > pick the Dataverse connection > Save > Turn on.
+4. Copy the web address from the flow's trigger and paste it into the form's post-on-submit setting (in Cognito Forms: Build > Form settings > Post JSON data to a website > Submit Entry Endpoint, and the Update one too). Treat the address like a password: never write it in a file or a message.
+5. Test: start one online request, fill in the form from its link, and check that the request turns to Received with the answers, and that an Insurance verification appears with the document on it.
+
+If an entry doesn't show up, look in Settings > Form submissions: an entry that couldn't be matched is there as Needs attention, with the reason.
+

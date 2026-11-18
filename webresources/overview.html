@@ -3,9 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Overview</title>
+<title>Stewardship Dashboard</title>
 <link rel="stylesheet" href="pages.css">
 <script src="pages.js"></script>
+<script src="stewardship.js"></script>
 </head>
 <body>
 <div class="page">
@@ -13,8 +14,8 @@
   <div class="banner">
     <img data-logo alt="">
     <div>
-      <h1><span id="hello">Welcome</span></h1>
-      <p><span data-org>Your land trust</span> stewardship: homes, households and the work that keeps them affordable.</p>
+      <h1>Stewardship Dashboard</h1>
+      <p><span id="hello">Welcome</span>. <span data-org>Your land trust</span>: homes, households and the work that keeps them affordable.</p>
     </div>
   </div>
 
@@ -27,28 +28,14 @@
   <h2>Households</h2>
   <div class="tiles" id="households"></div>
 
-  <h2>Add something</h2>
-  <div class="actions">
-    <button class="btn primary" data-new="clt_property">+ Property</button>
-    <button class="btn primary" data-new="clt_household">+ Household</button>
-    <button class="btn" data-new="clt_occupancy">+ Occupancy</button>
-    <button class="btn" data-new="clt_homeownerrequest">+ Homeowner request</button>
-    <button class="btn" data-new="clt_sale">+ Sale</button>
-  </div>
-
-  <h2>How do I...? <small>step-by-step guides</small></h2>
+  <h2>Activities</h2>
   <div class="cards">
-    <div class="card" data-guide="property"><b>Add a property</b><span>Address, details, and its document folder</span></div>
-    <div class="card" data-guide="household"><b>Set up a household</b><span>Members, and how the household gets its name</span></div>
-    <div class="card" data-guide="occupancy"><b>Move a household into a home</b><span>Occupancy, resale formula, insurance</span></div>
-    <div class="card" data-guide="verification"><b>Run annual verifications</b><span>From due to approved</span></div>
-    <div class="card" data-guide="request"><b>Handle a homeowner request</b><span>Improvements, repairs, refinances, sales</span></div>
-    <div class="card" data-guide="sale"><b>Record a sale or resale</b><span>Contract to closing</span></div>
-    <div class="card" data-guide="documents"><b>Find and add documents</b><span>Where files live in SharePoint</span></div>
-    <div class="card" data-guide="lists"><b>Add a dropdown choice</b><span>Property types, counties and other lists</span></div>
+    <div class="card" data-page="clt_/pages/stewardship.html"><b>Verification hub</b><span>What's due on each home: occupancy and insurance verifications, walk-bys</span></div>
+    <div class="card" data-page="clt_/pages/resale.html"><b>Resale</b><span>Notice, price, buyer, contract, closing</span></div>
+    <div class="card" data-page="clt_/pages/guides.html"><b>How To</b><span>Step-by-step guides for everyday tasks</span></div>
   </div>
 
-  <p class="note">Counts come from the same lists you see when you click through, and include only records you have access to.</p>
+  <p class="note">Counts come from the same lists you see when you click through, and include only records you have access to. The verification figures count each occupancy verification and each insurance verification once; the Verification hub shows which homes they are.</p>
 </div>
 
 <script>
@@ -56,11 +43,8 @@
   // Tiles run saved views by name (see app_spec.py VIEWS). A view that doesn't exist yet is skipped.
   var ATTENTION = [
     { e: "clt_homeownerrequest", v: "Open requests", t: "Open homeowner requests", d: "Submitted or under review", hot: true },
-    { e: "clt_annualverification", v: "Verifications to do", t: "Verifications to do", d: "Due, sent, received or with an issue", hot: true },
     { e: "clt_insurancepolicy", v: "Renewing in the next 60 days", t: "Insurance renewing soon", d: "Renewal in the next 60 days" },
-    { e: "clt_insurancepolicy", v: "Underinsured policies", t: "Underinsured homes", d: "Coverage below replacement cost", hot: true },
-    { e: "clt_sale", v: "Pending sales", t: "Pending sales", d: "Under contract, not closed" },
-    { e: "clt_formsubmission", v: "Submissions needing attention", t: "Form problems", d: "Entries that couldn't be processed", hot: true }
+    { e: "clt_sale", v: "Pending sales", t: "Pending sales", d: "Under contract, not closed" }
   ];
   // Homes by status. Left program isn't shown, and a property with no status (a common area) isn't counted.
   // zero: "hide" drops the tile when there are none.
@@ -75,6 +59,7 @@
   ];
   var HOUSEHOLDS = [
     { e: "clt_household", v: "Homeowners", t: "Homeowners", d: "Households that own a home now" },
+    { e: "clt_household", v: "Certified households", t: "Verified applicants", d: "Certified and waiting for a home" },
     { e: "clt_household", v: "Potential purchasers", t: "Potential purchasers", d: "Invited to the full application, or certified" },
     { e: "clt_household", v: "Applicants", t: "Applicants", d: "Sent a screener, not invited yet" },
     { e: "clt_household", v: "Former homeowners", t: "Former homeowners", d: "Sold or left" }
@@ -98,14 +83,58 @@
     });
   }
 
+  // The two verification figures come from the same rules as the Verification hub, and open it.
+  function verificationTiles(box) {
+    var P = CLTPage, hub = function () { P.go({ pageType: "webresource", webresourceName: "clt_/pages/stewardship.html" }); };
+    var made = [["thisMonth", "Verifications due this month", "Occupancy and insurance verifications coming due by the end of the month"],
+                ["overdue", "Verifications overdue", "Occupancy and insurance verifications past due or never done"]].map(function (c) {
+      var el = document.createElement("button");
+      el.className = "tile"; el.title = "Open the Verification hub";
+      el.innerHTML = '<div class="n">&middot;</div><div class="t"></div><div class="d"></div>';
+      el.querySelector(".t").textContent = c[1]; el.querySelector(".d").textContent = c[2];
+      el.addEventListener("click", hub); box.appendChild(el);
+      return { key: c[0], el: el };
+    });
+    Promise.all([P.settings(), P.choice("clt_occupancystatus"), P.entitySet("clt_occupancy")]).then(function (r) {
+      return P.getAll(r[2] + "?$select=clt_lastoccupancyverified,clt_lastinsuranceverified&$filter=statecode eq 0 and clt_status eq " + r[1].Current).then(function (rows) {
+        var d = new Date(), today = d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2);
+        var n = CLTRegular.dashboard(rows.map(function (o) { return { dates: { occupancy: o.clt_lastoccupancyverified, insurance: o.clt_lastinsuranceverified } }; }), r[0] || {}, today);
+        made.forEach(function (m) { m.el.querySelector(".n").textContent = n[m.key]; m.el.classList.add(n[m.key] ? "hot" : "zero"); });
+      });
+    }).catch(function () { made.forEach(function (m) { m.el.remove(); }); });
+  }
+
+  // Follow-ups that are due: open, with a due date of today or earlier. Opens the Open follow-ups list.
+  function followUpTile(box) {
+    var P = CLTPage, el = document.createElement("button");
+    el.className = "tile";
+    el.innerHTML = '<div class="n">&middot;</div><div class="t">Follow-ups due</div><div class="d"></div>';
+    box.appendChild(el);
+    Promise.all([P.choice("clt_followupstatus"), P.entitySet("clt_followup"), P.viewCount("clt_followup", "Open follow-ups")]).then(function (r) {
+      return P.getAll(r[1] + "?$select=clt_duedate&$filter=statecode eq 0 and clt_status eq " + r[0].Open).then(function (rows) {
+        var d = new Date(), today = d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2);
+        var due = rows.filter(function (x) { return x.clt_duedate && String(x.clt_duedate).slice(0, 10) <= today; }).length;
+        el.querySelector(".n").textContent = due; el.classList.add(due ? "hot" : "zero");
+        el.querySelector(".d").textContent = "Due today or earlier. " + rows.length + " open in all";
+        el.title = "Open the follow-ups that aren't done yet";
+        if (r[2]) el.addEventListener("click", function () { P.openList("clt_followup", r[2].id); });
+      });
+    }).catch(function () { el.remove(); });
+  }
+
   var hour = new Date().getHours();
   document.getElementById("hello").textContent =
     hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
   CLTPage.brand();
+  verificationTiles(document.getElementById("attention"));
+  followUpTile(document.getElementById("attention"));
   ATTENTION.forEach(function (c) { tile(document.getElementById("attention"), c); });
   PROPERTIES.forEach(function (c) { tile(document.getElementById("properties"), c); });
   HOUSEHOLDS.forEach(function (c) { tile(document.getElementById("households"), c); });
   CLTPage.wire();
+  document.querySelectorAll("[data-page]").forEach(function (el) {
+    el.addEventListener("click", function () { CLTPage.go({ pageType: "webresource", webresourceName: el.dataset.page }); });
+  });
 })();
 </script>
 </body>

@@ -61,7 +61,7 @@
   var OPEN = { "": 1, "Screener submitted": 1, "Pre-screened": 1 };   // stages the pre-screen may still change
 
   function load() {
-    return Promise.all(["clt_eligibility", "clt_eligibilitycheck", "clt_projectpriority"].map(function (t) {
+    return Promise.all(["clt_eligibility", "clt_eligibilitycheck", "clt_projectpriority", "clt_projectband"].map(function (t) {
       return P.entitySet(t).then(function (es) { sets[t] = es; });
     })).then(function () {
       return Promise.all([
@@ -126,11 +126,21 @@
                "clt_prescreenoverridden,clt_prescreenedon";
     return Promise.all([
       P.getAll(sets.clt_projectpriority + "?$select=clt_bedrooms,clt_householdsize&$filter=statecode eq 0 and _clt_project_value eq " + p.clt_projectid),
+      // Income bands: the monthly housing cost for each home size depends on which band the household is in.
+      P.getAll(sets.clt_projectband + "?$select=clt_name,clt_maxami,clt_sortorder,clt_monthlycoststudio,clt_monthlycost1br,clt_monthlycost2br," +
+               "clt_monthlycost3br,clt_monthlycost4br&$filter=statecode eq 0 and _clt_project_value eq " + p.clt_projectid),
       P.getAll("clt_applications?$select=" + cols + "&$filter=statecode eq 0 and _clt_project_value eq " + p.clt_projectid +
                "&$orderby=clt_firstsubmittedon asc")
     ]).then(function (r) {
       var prio = r[0].map(function (x) { return { bedrooms: x.clt_bedrooms, householdSize: x.clt_householdsize }; });
-      apps = r[1];
+      apps = r[2];
+      // lowest band first; the band with no top is last
+      rules.bands = r[1].sort(function (x, y) {
+        return (x.clt_maxami == null ? 1e9 : x.clt_maxami) - (y.clt_maxami == null ? 1e9 : y.clt_maxami);
+      }).map(function (x) {
+        return { name: x.clt_name || "Income band", maxAmi: x.clt_maxami,
+                 cost: { 0: x.clt_monthlycoststudio, 1: x.clt_monthlycost1br, 2: x.clt_monthlycost2br, 3: x.clt_monthlycost3br, 4: x.clt_monthlycost4br } };
+      });
       apps.forEach(function (a) {
         a.out = PS.run(facts(a), rules, prio);
         // Left alone: overridden by staff, or past the pre-screen with a result already saved. One that went
@@ -142,12 +152,17 @@
         rules.maxAmi == null ? "no income limit" : "up to " + rules.maxAmi + "% of AMI",
         rules.housingRatioMax == null ? "" : "housing ratio " + rules.housingRatioMax + "%",
         rules.debtRatioMax == null ? "" : "debt ratio " + rules.debtRatioMax + "%",
-        prio.length + " priorit" + (prio.length === 1 ? "y" : "ies")].filter(Boolean).join(" · ");
+        prio.length + " priorit" + (prio.length === 1 ? "y" : "ies"),
+        rules.bands.length > 1 ? rules.bands.length + " income bands" : ""].filter(Boolean).join(" · ");
       // What the project still needs before the results mean much.
       var gaps = [], wanted = {};
-      apps.forEach(function (a) { facts(a).sizesWanted.forEach(function (b) { wanted[b] = 1; }); });
+      // only home sizes this project has (a size with no priorities isn't in the project, whatever a screener asked for)
+      var has = {}; prio.forEach(function (x) { has[x.bedrooms] = 1; });
+      apps.forEach(function (a) { facts(a).sizesWanted.forEach(function (b) { if (has[b]) wanted[b] = 1; }); });
       if (!prio.length) gaps.push("it has no priorities (which household sizes fit each home size)");
-      var nocost = Object.keys(wanted).filter(function (b) { return !(rules.cost[b] > 0); }).map(function (b) { return PS.sizeName(+b); });
+      var nocost = Object.keys(wanted).filter(function (b) {
+        return rules.bands.length ? rules.bands.some(function (band) { return !(band.cost[b] > 0); }) : !(rules.cost[b] > 0);
+      }).map(function (b) { return PS.sizeName(+b); });
       if (rules.checkAffordability && nocost.length) gaps.push("it has no monthly housing cost for: " + nocost.join(", "));
       $("gaps").hidden = !gaps.length;
       $("gaps").textContent = gaps.length ? "Before you save, open the project and fix this: " + gaps.join("; ") + "." : "";

@@ -23,6 +23,14 @@ CLT.Names = (function () {
     if (last && home) setName(fc, last + " - " + home);
   }
 
+  // Staff walk-by and relationship note: "2026-11-17, Rivera - 123 Main St" (the date, then the occupancy's name)
+  function dated(ctx) {
+    var fc = ctx.getFormContext(), d = val(fc, "clt_date"), home = lookupName(fc, "clt_occupancy");
+    if (!d || !home) return;
+    var day = d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2);
+    setName(fc, (day + ", " + home).slice(0, 100));
+  }
+
   // Household: the primary applicant's last name; "Rivera, Maria" (then "Rivera, Maria 2") if another household has it.
   function nameHousehold(id, last, first) {
     // Rivera, then Rivera, Maria, then Rivera, Maria 2 ... (no first name: Rivera 2, Rivera 3 ...)
@@ -60,5 +68,5 @@ CLT.Names = (function () {
     });
   }
 
-  return { property: property, occupancy: occupancy, member: member, household: household };
+  return { property: property, occupancy: occupancy, member: member, household: household, dated: dated };
 })();
