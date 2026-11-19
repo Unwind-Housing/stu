@@ -22,9 +22,19 @@ APP = {
 }
 
 # (area title, its navigation groups). The first item of the first area is where the app opens.
+# A sale is run from one side: in Stu, Resale leaves Stewardship's Activities and sits in a Sales group with
+# Applications and Sales, next to the projects that find its buyer. (A Stewardship-only app keeps it under Activities.)
+SALES = ("Sales", ["page:resale"])
+_stewardship = [(group, [t for t in items if t not in SALES[1]]) for group, items in core.NAVIGATION]
+_sales_after = "Projects"
+_applications = []
+for _group in intake.NAVIGATION:
+    _applications.append(_group)
+    if _group[0] == _sales_after:
+        _applications.append(SALES)
 AREAS = [
-    ("Stewardship", core.NAVIGATION),
-    ("Applications and Sales", intake.NAVIGATION),
+    ("Stewardship", _stewardship),
+    ("Applications and Sales", _applications),
 ]
 NAVIGATION = [group for _, groups in AREAS for group in groups]
 

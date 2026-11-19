@@ -52,6 +52,32 @@ var CLTJourney = (function () {
     });
   }
 
+  // A project that is finding the buyer for a resale: one track for the whole sale. The resale's first steps come
+  // before the project's, and its last ones after, so the sale is walked from the notice to the closing in one place.
+  //   facts: as for track(); sale: { done: { start, price, offer, buyer, contract, closing }, closed, cancelled, lines: { step: words } }, or null
+  // -> the steps of track(), with the resale's around them: { key: "resale:price", resale: "price", page: the Resale page, ... }
+  //    Only one step is "next": the first of the resale's opening steps not done; then the project's own next step, or
+  //    Offer the home once a household is certified; then their answer, the purchase and sale agreement and the closing.
+  var RESALE_PAGE = "clt_/pages/resale.html";
+  var RESALE_BEFORE = [["start", "Start the resale"], ["price", "Price and what the seller owes"]];
+  var RESALE_AFTER = [["offer", "Offer the home"], ["buyer", "The household's answer"], ["contract", "Purchase and sale agreement"], ["closing", "Closing"]];
+  function whole(facts, sale) {
+    var steps = track(facts);
+    if (!sale) return steps;
+    var d = sale.done || {}, lines = sale.lines || {}, f = facts || {};
+    var make = function (x) { return { key: "resale:" + x[0], resale: x[0], label: x[1], page: RESALE_PAGE, state: d[x[0]] ? "done" : "waiting", line: lines[x[0]] || "" }; };
+    var before = RESALE_BEFORE.map(make), after = RESALE_AFTER.map(make);
+    if (d.buyer) steps.forEach(function (s) { s.state = "done"; });   // the buyer is chosen: the project has done its job
+    var undone = function (list) { return list.filter(function (s) { return s.state !== "done"; })[0] || null; };
+    var mine = steps.filter(function (s) { return s.state === "next"; })[0] || null;
+    var next = sale.closed || sale.cancelled ? null : undone(before) || (d.buyer || d.offer || f.certified > 0 ? undone(after) : mine);
+    if (next === after[0] && !next.line) next.line = plural(f.certified, "household", "households") + " certified: offer the home";
+    var all = before.concat(steps, after);
+    all.forEach(function (s) { if (s.state === "next" && s !== next) s.state = "waiting"; });
+    if (next) next.state = "next";
+    return all;
+  }
+
   // Every project with where it stands, by name; the ones that aren't closed first.
   //   projects: [{ id, name, status }]; apps: [{ project, tested, eligible }]; rounds: [{ project, status, created }];
   //   invited: [{ project }]; certified: [{ project }]
@@ -98,7 +124,7 @@ var CLTJourney = (function () {
     });
   }
 
-  var api = { STEPS: STEPS, OVERVIEW: OVERVIEW, step: step, next: next, track: track, standing: standing, inProgress: inProgress, bar: bar };
+  var api = { STEPS: STEPS, OVERVIEW: OVERVIEW, step: step, next: next, track: track, whole: whole, RESALE_PAGE: RESALE_PAGE, standing: standing, inProgress: inProgress, bar: bar };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   return api;
 })();

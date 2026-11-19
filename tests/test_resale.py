@@ -104,12 +104,56 @@ assert.ok(R.check("closing", { closingDate: "2026-12-01", contractDate: "2026-10
 // ---- where a resale stands
 assert.deepStrictEqual(R.progress(null).next, "start");
 assert.strictEqual(R.progress({ noticeDate: today, status: "Pending" }).next, "price");
-assert.strictEqual(R.progress({ maxPrice: 220900, status: "Pending" }).next, "buyer"); assert.strictEqual(R.progress({ maxPrice: 0, status: "Pending" }).next, "buyer", "a price of 0 is still a price");
+assert.strictEqual(R.progress({ maxPrice: 220900, status: "Pending" }).next, "offer"); assert.strictEqual(R.progress({ maxPrice: 0, status: "Pending" }).next, "offer", "a price of 0 is still a price");
+assert.strictEqual(R.progress({ maxPrice: 220900, offered: true, status: "Pending" }).next, "buyer", "an offer is out: the next thing is the household's answer");
+assert.deepStrictEqual([R.progress({ maxPrice: 1, buyer: "h2", status: "Pending" }).done.offer, R.progress({ maxPrice: 1, buyer: "h2", status: "Pending" }).done.buyer], [true, true],
+                       "a sale with a buyer has been through both steps, including one from before offers were kept");
 assert.strictEqual(R.progress({ maxPrice: 220900, buyer: "h2", status: "Pending" }).next, "contract");
 assert.strictEqual(R.progress({ maxPrice: 220900, buyer: "h2", contractDate: today, price: 218000, status: "Pending" }).next, "closing");
 const end = R.progress({ maxPrice: 220900, buyer: "h2", contractDate: today, price: 218000, status: "Closed" });
 assert.ok(end.closed && end.next === "" && !end.cancelled); assert.ok(R.progress({ status: "Cancelled" }).cancelled);
-assert.deepStrictEqual(R.STEPS.map(s => s.key), ["start", "price", "buyer", "contract", "closing"]);
+assert.deepStrictEqual(R.STEPS.map(s => s.key), ["start", "price", "offer", "buyer", "contract", "closing"]);
+assert.deepStrictEqual(R.STEPS.map(s => s.title).slice(2, 5), ["Offer the home", "The household's answer", "Purchase and sale agreement"]);
+
+// ---- offering the home: one household at a time, 7 days to answer unless the project says otherwise
+assert.strictEqual(R.offerDue("2026-11-19"), "2026-11-26"); assert.strictEqual(R.offerDue("2026-11-19", 10), "2026-11-29"); assert.strictEqual(R.offerDue("2026-12-28", ""), "2027-01-04");
+assert.strictEqual(R.offerDue("2026-11-19", 0), "2026-11-26", "0 or nonsense falls back to 7"); assert.strictEqual(R.OFFER_DAYS, 7);
+assert.deepStrictEqual(R.check("offer", { household: "h2", due: "2026-11-26" }, today), []);
+assert.ok(R.check("offer", { household: "", due: "2026-11-26" }, today)[0].includes("Choose the household")); assert.ok(R.check("offer", { household: "h1", sameAsSeller: true, due: "2026-11-26" }, today)[0].includes("selling"));
+assert.ok(R.check("offer", { household: "h2", due: "" }, today)[0].includes("answer by")); assert.ok(R.check("offer", { household: "h2", due: "2026-01-01" }, today)[0].includes("past"));
+assert.ok(R.warnings("offer", { household: "h4", ahead: "Rivera (rank 1, tier 1)" }, today)[0].startsWith("Rivera"), "the list order warning applies to an offer");
+assert.deepStrictEqual(R.check("answer", { answer: "Accepted", date: today }, today), []); assert.deepStrictEqual(R.check("answer", { answer: "No response", date: today }, today), []);
+assert.ok(R.check("answer", { answer: "", date: today }, today)[0].includes("what the household said")); assert.ok(R.check("answer", { answer: "Declined", date: "" }, today)[0].includes("date"));
+assert.ok(R.check("answer", { answer: "Declined", date: "2099-01-01" }, today)[0].includes("future"));
+assert.deepStrictEqual(R.ANSWERS, ["Accepted", "Declined", "No response"]);
+// where a sale's offers stand: one open at most; the ones who said no, or nothing, are out
+const os = R.offers([{ id: "o1", household: "h2", status: "Declined", offeredOn: "2026-11-01", respondedOn: "2026-11-05", reason: "Bought elsewhere" },
+                     { id: "o2", household: "h1", status: "No response", offeredOn: "2026-11-06" }, { id: "o3", household: "h4", status: "Offered", offeredOn: "2026-11-14", due: "2026-11-21" },
+                     { id: "o4", household: "h9", status: "Withdrawn", offeredOn: "2026-11-13" }]);
+assert.deepStrictEqual([os.open.id, os.accepted, os.past.map(o => o.id), Object.keys(os.out).sort()], ["o3", null, ["o2", "o1"], ["h1", "h2"]], "a withdrawn offer isn't a no");
+assert.deepStrictEqual(R.offers([]), { open: null, accepted: null, past: [], out: {} });
+assert.strictEqual(R.offers([{ id: "o5", household: "h4", status: "Accepted", offeredOn: "2026-11-14" }]).accepted.id, "o5");
+assert.strictEqual(R.nextToOffer([{ id: "h2" }, { id: "h1" }, { id: "h4" }], os.out).id, "h4", "the first in list order that hasn't said no");
+assert.strictEqual(R.nextToOffer([{ id: "h2" }], os.out), null); assert.strictEqual(R.nextToOffer([], {}), null);
+assert.strictEqual(R.offerName("Rivera, Maria", "12 Pine St"), "Rivera, 12 Pine St");
+// a household's place on the project's lists follows its offer; it declines once for the whole project
+assert.deepStrictEqual(["Offered", "Accepted", "Declined", "No response", "Withdrawn"].map(R.entryStatus), ["Offered", "Accepted", "Declined", "Unresponsive", "Approved"]);
+// the email and the flyer
+const om = R.offerEmail({ email: "maria@example.com", firstName: "Maria", household: "Rivera", home: "12 Pine St", price: 227160.94, due: "2026-11-26", organization: "Pine Valley CLT" });
+assert.deepStrictEqual([om.to, om.subject], ["maria@example.com", "A home for you: 12 Pine St"]);
+assert.ok(om.body.startsWith("Hello Maria,") && om.body.includes("The sale price is $227,160.94.") && om.body.includes("by November 26, 2026") && om.body.endsWith("Thank you,\nPine Valley CLT"));
+assert.ok(!/[{}]/.test(om.body), "every field is filled in");
+assert.ok(R.offerEmail({ household: "Rivera", home: "12 Pine St", price: 250000, due: "2026-11-26", organization: "X" }).body.includes("Hello Rivera,") , "no first name on file: the household's name");
+assert.ok(R.offerEmail({ household: "Rivera", home: "12 Pine St", price: 250000, due: "2026-11-26", organization: "X" }).body.includes("$250,000."), "a whole-dollar price has no cents");
+assert.strictEqual(R.offerEmail({ household: "Rivera", home: "12 Pine St", due: "2026-11-26" }, { subject: "", body: "Dear {Household}, by {respond  by}." }).body, "Dear Rivera, by November 26, 2026.");
+const fl = R.flyer({ home: "12 Pine St", address: "12 Pine St, Port Townsend, 98368", bedrooms: 2, bathrooms: 1.5, squareFeet: 1040, yearBuilt: 2019, price: 227000, due: "2026-11-26",
+                     organization: "Pine Valley CLT", monthly: { principalInterest: 1100, taxes: 150, hoa: 0, leaseFee: 50 } });
+assert.strictEqual(fl.title, "12 Pine St"); const text = JSON.stringify(fl.blocks);
+for (const piece of ["12 Pine St, Port Townsend, 98368", "2 bedrooms, 1.5 bathrooms, 1,040 square feet, built 2019.", "Sale price: $227,000", "Principal and interest", "$1,100", "Ground lease fee",
+                     "Estimated monthly housing cost", "$1,300", "Let us know by November 26, 2026", "Pine Valley CLT"]) assert.ok(text.includes(piece), piece);
+assert.ok(!text.includes("HOA dues"), "a cost of 0 is left off");
+assert.ok(!JSON.stringify(R.flyer({ home: "4 Oak Ave", price: 200000 }).blocks).includes("each month"), "no monthly costs known: no table");
+assert.strictEqual(JSON.stringify(R.flyer({ home: "1 Elm", bedrooms: 0 }).blocks).includes("Studio"), true);
 
 // ---- names, the buyer's terms, and the closing
 assert.strictEqual(R.saleName("12 Pine St", "2026-11-17"), "12 Pine St resale 2026"); assert.strictEqual(R.occupancyName("Okafor, Ada", "12 Pine St"), "Okafor - 12 Pine St");
@@ -150,12 +194,32 @@ assert.deepStrictEqual(R.check("closing", { closingDate: today, contractDate: "2
 assert.ok(R.check("closing", { closingDate: today, closingCosts: "some" }, today)[0].includes("closing costs"));
 assert.strictEqual(R.statementProblem(null), ""); assert.strictEqual(R.statementProblem({ name: "Final ALTA.pdf", size: 400000 }), "");
 assert.ok(R.statementProblem({ name: "statement.docx", size: 10 }).includes("PDF")); assert.ok(R.statementProblem({ name: "scan.PNG", size: 30 * 1024 * 1024 }).includes("25 MB"));
+// ---- the buyer step shows each of the project's certified households with its priority on the project's list
+const list = [{ household: "h1", bedrooms: 2, tier: 1, rank: 3, status: "Approved" }, { household: "h2", bedrooms: 2, tier: 1, rank: 1, status: "Approved" },
+              { household: "h2", bedrooms: 3, tier: 2, rank: 1 }, { household: "h3", bedrooms: 3, tier: 1, rank: 2 }, { household: "h4", bedrooms: 2, tier: 2, rank: 1 },
+              { household: "h5", bedrooms: 2, tier: 1, rank: null }, { household: "", bedrooms: 2, tier: 1, rank: 9 }];
+const prio = R.priorities(list, 2);
+assert.deepStrictEqual(Object.keys(prio).sort(), ["h1", "h2", "h3", "h4"], "an entry with no rank (not drawn yet) gives no priority");
+assert.deepStrictEqual([prio.h2.rank, prio.h2.tier, prio.h2.thisSize], [1, 1, true], "its place on this home's list, not its place on another size's");
+assert.strictEqual(R.priorityText(prio.h2), "rank 1, tier 1"); assert.strictEqual(R.priorityText(prio.h3), "rank 2, tier 1 on the 3 bedroom list"); assert.strictEqual(R.priorityText(undefined), "not on the list");
+const cert = [{ id: "h1", clt_name: "Chen" }, { id: "h9", clt_name: "Nobody" }, { id: "h4", clt_name: "Lee" }, { id: "h3", clt_name: "Okafor" }, { id: "h2", clt_name: "Rivera" }];
+assert.deepStrictEqual(R.byPriority(cert, prio).map(b => b.id), ["h2", "h1", "h4", "h3", "h9"], "this home's list by tier then rank, then other lists, then anyone not on a list");
+assert.strictEqual(R.ahead("h2", R.byPriority(cert, prio), prio), null, "the first on the list has nobody ahead");
+assert.strictEqual(R.ahead("h4", R.byPriority(cert, prio), prio).clt_name, "Rivera");
+assert.strictEqual(R.ahead("h2", R.byPriority(cert, {}), {}), null, "no lists: nobody is ahead of anybody"); assert.strictEqual(R.ahead("zz", R.byPriority(cert, prio), prio), null);
+const prio2 = R.priorities(list.map(e => e.household === "h2" ? { ...e, status: "Declined" } : e), 2);
+assert.strictEqual(R.ahead("h4", R.byPriority(cert, prio2), prio2).clt_name, "Chen", "a household that declined isn't ahead of anyone: the next one is named");
+assert.strictEqual(R.ahead("h1", R.byPriority(cert, prio2), prio2), null);
+assert.deepStrictEqual(R.priorities([], 2), {}); assert.strictEqual(R.priorities([{ household: "h1", bedrooms: 2, rank: 1 }], null).h1.thisSize, false);
+assert.ok(R.warnings("buyer", { household: "h4", ahead: "Rivera (rank 1, tier 1)" }, today)[0].startsWith("Rivera (rank 1, tier 1) comes before this household"));
+assert.deepStrictEqual(R.warnings("buyer", { household: "h2", ahead: "" }, today), []);
+
 // ---- the page's opening list: every sale in progress with the step it waits on; another kind of sale opens as its own record
 assert.deepStrictEqual(R.pending([{ id: "a", resale: true, noticeDate: "2026-10-01", status: "Pending" }, { id: "b", resale: true, noticeDate: "2026-10-01", maxPrice: 250000, buyer: "h1", status: "Pending" },
                                   { id: "c", resale: false }]).map(r => [r.id, r.resale, r.next]),
-                       [["a", true, "Price and what the seller owes"], ["b", true, "Contract"], ["c", false, "Open the sale to carry on"]]);
+                       [["a", true, "Price and what the seller owes"], ["b", true, "Purchase and sale agreement"], ["c", false, "Open the sale to carry on"]]);
 assert.deepStrictEqual(R.pending([]), []);
-process.stdout.write(JSON.stringify({ copied: R.COPIED, funding: R.FUNDING_TYPES }));
+process.stdout.write(JSON.stringify({ offer: R.OFFER_DEFAULT, copied: R.COPIED, funding: R.FUNDING_TYPES }));
 """
 
 
@@ -209,8 +273,8 @@ def main():
         p = subprocess.run([node, "-e", "new Function('require', require('fs').readFileSync(0, 'utf8'))"], input=src, capture_output=True, text=True)
         assert p.returncode == 0, p.stderr[-600:]
     # every clt_ name is real
-    used_tables = ("sale", "occupancy", "property", "household", "loan", "homeownerrequest", "project", "projecthome", "certification", "improvementcredit", "salefunding")
-    known = {f"{PREFIX}_name"} | {f"{PREFIX}_{c}" for c in ("saletype", "salestatus", "occupancystatus", "occupancyrole", "householdstatus", "propertystatus", "purchasefundingtype", "settlementstatement_name")}
+    used_tables = ("sale", "occupancy", "property", "household", "loan", "homeownerrequest", "project", "projecthome", "certification", "improvementcredit", "salefunding", "selectionround", "selectionentry", "application", "saleoffer", "householdmember", "messagetemplate")
+    known = {f"{PREFIX}_name"} | {f"{PREFIX}_{c}" for c in ("saletype", "salestatus", "occupancystatus", "occupancyrole", "householdstatus", "propertystatus", "purchasefundingtype", "settlementstatement_name", "offerstatus", "entrystatus", "applicantrole", "noticetype")}
     for t in used_tables:
         known |= {f"{PREFIX}_{c}" for c in cols[t]} | {f"{PREFIX}_{t}", f"{PREFIX}_{t}id"}
     known |= {f"{PREFIX}_{col}" for child, col, *_ in LOOKUPS if child in used_tables}
@@ -224,8 +288,25 @@ def main():
             assert label in CHOICES[name][1] and label in script + rules, (name, label)
     # opens on the sales in progress; the Dashboard's Pending sales tile comes here; What for sits beside its amount;
     # a project started from a resale gets the home and its maximum resale price
-    for piece in ('id="landing"', 'id="pending"', "R.pending(", "data-pick=", "data-record=", 'class="whatfor"', '"&price=" + D.sale.clt_maxpriceatsale'):
+    for piece in ("R.priorities(", "R.byPriority(", "R.priorityText(", "R.ahead(", "clt_rank", 'id="landing"', 'id="pending"', "R.pending(", "data-pick=", "data-record=", 'class="whatfor"', '"&price=" + D.sale.clt_maxpriceatsale'):
         assert piece in page, piece
+    # the home is offered to one household at a time: an offer record, an email to copy, a flyer to attach, then their answer
+    from schema import CHOICES as CH, SEED_ROWS, TABLES as TB
+    assert CH["offerstatus"][1] == ["Offered", "Accepted", "Declined", "No response", "Withdrawn"] and "Offer" in CH["noticetype"][1]
+    assert {"Offered", "Accepted", "Declined", "Unresponsive", "Approved"} <= set(CH["entrystatus"][1])
+    assert ("saleoffer", "sale", "sale", "Sale", "Cascade", True) in LOOKUPS and ("saleoffer", "household", "household", "Household", "Restrict", True) in LOOKUPS
+    assert "saleoffer" in core.FORMS and "saleoffer" in str(core.FORMS["sale"]) and "offerdays" in {c["name"] for c in {t["name"]: t for t in TB}["project"]["columns"]}
+    start = [t for t in SEED_ROWS["messagetemplate"] if t["noticetype"] == "Offer"]
+    mail = json.loads(r.stdout.strip().splitlines()[-1])["offer"]
+    assert len(start) == 1 and start[0]["subject"] == mail["subject"] and start[0]["body"] == mail["body"], "the seeded offer email and the page's fallback say the same thing"
+    for piece in ('R.check("offer"', 'R.check("answer"', "R.offers(", "R.nextToOffer(", "R.offerEmail(", "R.flyer(", "CLTPdf.make(", "entryOps(", 'id="o-mail"', 'id="o-flyer"', 'id="m-sent"',
+                  'id="a-answer"', 'id="b-due"', "clt_buyerhousehold/$ref", "R.offerDue(today(), D.offerDays)"):
+        assert piece in page, piece
+    assert page.index('src="resale.js"') < page.index('src="pdf.js"') and "sendEmail" not in page
+    # opened from a project's workflow page on its sale; starts a project in the same window, which remembers the sale; leads back
+    for piece in ("sale=([0-9a-f-]+)", "project=([0-9a-f-]+)", "loadSales(wantSale)", '"&sale=" + D.sale.clt_saleid', 'id="overview"', 'id="b-workflow"', 'webresourceName: "clt_/pages/project.html"'):
+        assert piece in page, piece
+    assert "window.open(url" not in page and 'body["clt_sale@odata.bind"]' in open(os.path.join(web, "newproject.html")).read()
     assert "pending.length === 1" not in page and 'line("What for"' not in page
     dash = open(os.path.join(web, "overview.html")).read()
     assert 'page: "clt_/pages/resale.html"' in dash and "if (cfg.page) CLTPage.go(" in dash

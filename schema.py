@@ -88,6 +88,7 @@ CHOICES = {
         "To do", "Done", "Not needed"]),
     "purchasefundingtype": ("Purchase funding type", [
         "Buyer cash", "Loan", "Subsidy", "Other"]),
+    "offerstatus": ("Offer status", ["Offered", "Accepted", "Declined", "No response", "Withdrawn"]),
     "walkbystatus": ("Walk-by status", [
         "Draft", "Submitted"]),
     "contactmethod": ("Contact method", [
@@ -747,6 +748,19 @@ TABLES = [
              dec("interestrate", "Interest rate (%)", "For a loan. 0 for a loan with no interest.", precision=3),
              text("notes", "Notes", "Who it is from, or what it is: the lender, the program, the gift giver", max=500),
          ]),
+    dict(name="saleoffer", label="Offer", plural="Offers",
+         primary_required=False,  # name is filled by the Resale page
+         desc="A home offered to one certified household: when, the date to answer by, and what they said. "
+              "A home is offered to one household at a time; if they decline, the next is offered.",
+         primary=("Offer", "For example: Rivera, 12 Pine St"),
+         columns=[
+             date("offeredon", "Offered on"),
+             date("responsedue", "Answer by"),
+             choice("status", "Status", "offerstatus", default="Offered"),
+             date("respondedon", "Answered on"),
+             text("reason", "Reason or note", "Why they declined, or anything worth keeping about the answer", max=200),
+             text("sentto", "Sent to", "The email address the offer was sent to", max=200),
+         ]),
 
     # 13 ------------------------------------------------------------------
     dict(name="fee", label="Fee", plural="Fee schedule",
@@ -932,6 +946,7 @@ TABLES = [
              int_("invitesperlist", "Invites per list", "Default 10"),
              int_("invitesperhome", "Minimum invites per home", "Default 2"),
              int_("responsedays", "Response deadline (days)", "Default 15"),
+             int_("offerdays", "Days to answer an offer", "How long a household has to answer when it is offered a home. Blank means 7."),
              int_("waitlistmonths", "Lists stay in effect (months)", "Default 12"),
              text("documentsfolderlink", "Application documents folder",
                   "Only if this project's documents are somewhere other than your organization's usual folder: the web address "
@@ -1117,7 +1132,7 @@ TABLES = [
              choice("noticetype", "Used for", "noticetype"),
              text("subject", "Subject line", max=200),
              memo("body", "Message", "Words in curly brackets are filled in for each household: {first name}, {household}, {project}, "
-                  "{application number}, {link}, {deadline}, {organization}. The insurance request also takes {home} and {due date}.", max=10000),
+                  "{application number}, {link}, {deadline}, {organization}. The insurance request also takes {home} and {due date}; the offer of a home takes {home}, {price} and {respond by}.", max=10000),
          ]),
     dict(name="notice", solution="intake", label="Notice", plural="Notices",
          desc="A message sent to an applicant: screened out, not selected, invited, reminders, offers.",
@@ -1171,6 +1186,8 @@ LOOKUPS = [
     ("homeownerrequest",  "property",        "property",         "Property",             "RemoveLink", False),
     ("sale",              "property",        "property",         "Property",             "Restrict",   True),
     ("salefunding",       "sale",            "sale",             "Sale",                 "Cascade",    True),
+    ("saleoffer",         "sale",            "sale",             "Sale",                 "Cascade",    True),
+    ("saleoffer",         "household",       "household",        "Household",            "Restrict",   True),
     ("saletask",          "sale",            "sale",             "Sale",                 "Cascade",    True),
     ("sale",              "selleroccupancy", "occupancy",        "Seller's occupancy",   "RemoveLink", False),
     ("sale",              "buyerhousehold",  "household",        "Buyer household",      "RemoveLink", False),
@@ -1210,6 +1227,8 @@ LOOKUPS = [
     ("projecthome",       "property",        "property",         "Property",             "Restrict",   True),
     ("lotteryfactor",     "project",         "project",          "Project",              "Cascade",    True),
     ("project",           "reuseround",      "selectionround",   "Reuse list from round","RemoveLink", False),
+    # the resale this project is finding the buyer for (set when the project is started from the Resale page)
+    ("project",           "sale",            "sale",             "Resale",               "RemoveLink", False),
     ("selectionround",    "project",         "project",          "Project",              "Restrict",   True),
     ("selectionround",    "drawnby",         "systemuser",       "Drawn by",             "RemoveLink", False),
     ("selectionentry",    "round",           "selectionround",   "Selection round",      "Cascade",    True),
@@ -1419,6 +1438,18 @@ SEED_ROWS = {
                   "The declarations page is what we need: it shows the insurer, the policy dates and the coverage amounts. "
                   "You can reply to this email with a PDF or a photo of it.\n\n"
                   "If you have any questions, or can't find the document, just reply to this email.\n\n"
+                  "Thank you,\n{organization}"),
+        # The email that offers a certified household a home (the Resale page). Falls back to the same words
+        # (webresources/resale.js) if this row is deleted.
+        dict(name="Offer of a home", noticetype="Offer",
+             subject="A home for you: {home}",
+             body="Hello {first name},\n\n"
+                  "Good news. We would like to offer your household the home at {home}.\n\n"
+                  "The sale price is {price}. The attached flyer has the details of the home and what it costs each month.\n\n"
+                  "Please let us know by {respond by} whether you would like to go ahead. If we haven't heard from you by then, "
+                  "we will offer the home to the next household.\n\n"
+                  "If you say yes, the next step is the purchase and sale agreement. If you have questions, or would like to see "
+                  "the home, just reply to this email.\n\n"
                   "Thank you,\n{organization}")],
 }
 

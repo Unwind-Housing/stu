@@ -60,6 +60,29 @@ const all = J.standing([{ id: "p3", name: "Old project", status: "Closed" }, { i
 assert.deepStrictEqual(all.map(p => [p.id, p.next && p.next.key]), [["p1", "selection"], ["p3", null]]);
 assert.deepStrictEqual(all[0].facts, { status: "Planning", applications: 2, untested: 0, eligible: 1, round: "", invited: 0, certified: 1 });
 assert.strictEqual(J.OVERVIEW, "clt_/pages/project.html");
+
+// ---- a project that is finding a resale's buyer: one track, the resale's steps around the project's, one step next
+const w = (f, sale) => J.whole(f, sale).map(s => s.key + ":" + s.state[0]).join(" ");
+const none = { start: true }, priced = { start: true, price: true };
+assert.strictEqual(J.whole({ applications: 0 }, null).length, 5, "no resale: the project's own steps");
+assert.strictEqual(w({ status: "Planning", applications: 0 }, { done: none }),
+  "resale:start:d resale:price:n assign:w prescreen:w selection:w invite:w certify:w resale:offer:w resale:buyer:w resale:contract:w resale:closing:w", "the price comes first");
+assert.strictEqual(w({ status: "Planning", applications: 12, untested: 3 }, { done: priced }),
+  "resale:start:d resale:price:d assign:d prescreen:n selection:w invite:w certify:w resale:offer:w resale:buyer:w resale:contract:w resale:closing:w", "then the project's own next step");
+const certified1 = { status: "Certifying", applications: 12, untested: 0, round: "Certified", invited: 4, certified: 1 };
+assert.strictEqual(w(certified1, { done: priced }),
+  "resale:start:d resale:price:d assign:d prescreen:d selection:d invite:d certify:w resale:offer:n resale:buyer:w resale:contract:w resale:closing:w", "a household is certified: offer the home");
+assert.strictEqual(J.whole(certified1, { done: priced }).find(s => s.resale === "offer").line, "1 household certified: offer the home");
+assert.strictEqual(w(certified1, { done: { ...priced, offer: true } }).slice(-64), "resale:offer:d resale:buyer:n resale:contract:w resale:closing:w", "an offer is out: their answer is next");
+assert.strictEqual(w({ status: "Planning", applications: 0 }, { done: { ...priced, offer: true } }).slice(-64), "resale:offer:d resale:buyer:n resale:contract:w resale:closing:w",
+                   "offered to an already certified household, with no one in the project yet: the answer is still next");
+assert.strictEqual(w(certified1, { done: { ...priced, offer: true, buyer: true } }),
+  "resale:start:d resale:price:d assign:d prescreen:d selection:d invite:d certify:d resale:offer:d resale:buyer:d resale:contract:n resale:closing:w", "the buyer is chosen: the project has done its job");
+assert.strictEqual(w(certified1, { done: { ...priced, offer: true, buyer: true, contract: true } }).slice(-34), "resale:contract:d resale:closing:n");
+assert.ok(!w(certified1, { done: { ...priced, offer: true, buyer: true, contract: true, closing: true }, closed: true }).includes(":n"), "closed: nothing is next");
+assert.ok(!w({ applications: 3, untested: 3 }, { done: none, cancelled: true }).includes(":n"), "a cancelled resale has nothing next");
+const one = J.whole({ applications: 0 }, { done: priced, lines: { price: "Maximum resale price $250,000" } });
+assert.deepStrictEqual([one[1].line, one[1].page, one[1].resale, one[2].key], ["Maximum resale price $250,000", "clt_/pages/resale.html", "price", "assign"]);
 """
 
 
@@ -87,8 +110,17 @@ def main():
     assert intake.PAGES["workflow"] == ("Project workflow", "clt_/pages/project.html") and "clt_/pages/project.html" in stu.WEB_RESOURCES
     # the workflow page: every project in progress, then one project's steps with the way into each
     flow = open(os.path.join(web, "project.html")).read()
-    assert flow.index('src="pages.js"') < flow.index('src="journey.js"') < flow.index("CLTJourney")
-    for piece in ('id="landing"', 'id="track"', "J.standing(", "J.track(", 'get("data")', "Do this next", "data-step=", "data-open=", "clt_invitedon ne null", '"Eligible for selection"', '"Certified"'):
+    assert flow.index('src="pages.js"') < flow.index('src="journey.js"') < flow.index('src="resale.js"') < flow.index("CLTJourney")
+    # a project remembers the resale it is finding the buyer for; in Stu, Resale sits with Applications and Sales and not under Stewardship
+    from schema import LOOKUPS
+    import app_spec as core
+    assert ("project", "sale", "sale", "Resale", "RemoveLink", False) in LOOKUPS and "sale" in str(intake.FORMS["project"])
+    areas = dict(stu.AREAS)
+    assert dict(areas["Applications and Sales"])["Sales"] == ["page:resale"] and [g for g, _ in areas["Applications and Sales"]].index("Sales") == [g for g, _ in areas["Applications and Sales"]].index("Projects") + 1
+    assert "page:resale" not in dict(areas["Stewardship"])["Activities"] and "page:aftersale" in dict(areas["Stewardship"])["Activities"]
+    assert "page:resale" in dict(core.NAVIGATION)["Activities"], "a Stewardship-only app keeps Resale"
+    assert stu.NAVIGATION == [g for _, groups in stu.AREAS for g in groups]
+    for piece in ('id="landing"', 'id="track"', "J.standing(", "J.whole(", "CLTResale.progress(", "_clt_sale_value", '"sale=" + $("track").dataset.sale', 'get("data")', "Do this next", "data-step=", "data-open=", "clt_invitedon ne null", '"Eligible for selection"', '"Certified"'):
         assert piece in flow, piece
     assert "Eligible for selection" in CHOICES["prescreenresult"][1] and "Certified" in CHOICES["certificationstatus"][1]
     p = subprocess.run([node, "-e", "new Function(require('fs').readFileSync(0, 'utf8'))"], input=re.findall(r"<script>(.*?)</script>", flow, re.S)[-1], capture_output=True, text=True)

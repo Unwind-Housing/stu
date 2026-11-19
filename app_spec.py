@@ -125,6 +125,8 @@ VIEWS = [
     v("aftersaletask", None, [("order", 70), ("name", 300), ("action", 200), ("appliesto", 130)], sort=("order", False), default=True),
     v("saletask", None, [("name", 280), ("sale", 200), ("status", 100), ("donedate", 100)], sort=("order", False), default=True),
     v("salefunding", None, [("name", 220), ("sale", 200), ("type", 110), ("amount", 110), ("interestrate", 110)], default=True),
+    v("saleoffer", None, [("name", 220), ("sale", 200), ("household", 160), ("status", 110), ("offeredon", 110), ("responsedue", 110), ("respondedon", 110)],
+      sort=("offeredon", True), default=True),
     v("sale", "Pending sales", [("name", 200), ("property", 160), ("selleroccupancy", 160),
                                 ("buyerhousehold", 160), ("closingdate", 100), ("maxpriceatsale", 120),
                                 ("purchaseprice", 120)],
@@ -361,6 +363,7 @@ FORMS = {
         tabs=[
             tab("Sale",
                 [("1. Property", ["!recordnumber", "name", "property", "saletype", "selleroccupancy", "noticedate"]),
+                 ("Offers", [sub("Offers", "saleoffer", "sale", "sale", rows=3)]),
                  ("2. Buyer and contract", ["buyerhousehold", "contractdate", "purchaseprice", "lender",
                                             "titlecompany"]),
                  ("How the purchase price is made up", [sub("Purchase funding", "salefunding", "sale", "sale", rows=4)]),
@@ -380,6 +383,9 @@ FORMS = {
         header=["status", "donedate"],
         tabs=[tab("General", [("Sale task", ["name", "sale", "status", "donedate", "action", "order"])], [("Details", ["details"]), ("Notes", ["notes"])])]),
 
+    "saleoffer": dict(
+        header=["status", "responsedue"],
+        tabs=[tab("General", [("Offer", ["sale", "household", "offeredon", "responsedue", "status", "respondedon", "reason", "sentto", "!name"])])]),
     "salefunding": dict(
         header=["type", "amount"],
         tabs=[tab("General", [("Purchase funding", ["sale", "type", "amount", "interestrate", "notes", "!name"])])]),
@@ -466,6 +472,7 @@ WEB_RESOURCES = {
     "clt_/pages/insurancecheck.js": "webresources/insurancecheck.js",
     "clt_/pages/resale.html":      "webresources/resale.html",
     "clt_/pages/resale.js":        "webresources/resale.js",
+    "clt_/pages/pdf.js": "webresources/pdf.js",   # the Resale page makes the home's flyer with it
     "clt_/pages/aftersale.html":   "webresources/aftersale.html",
     "clt_/pages/aftersale.js":     "webresources/aftersale.js",
     "clt_/pages/loan.js":          "webresources/loan.js",

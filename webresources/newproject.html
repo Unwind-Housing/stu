@@ -227,7 +227,8 @@
       var home = want && properties.filter(function (p) { return p.clt_propertyid === want[1].toLowerCase(); })[0];
       // ... and with its price (the resale's maximum resale price), which starts off that home size's sale price
       var price = /(?:^|&)price=([0-9.]+)/.exec(decodeURIComponent((/[?&]data=([^&]*)/.exec(location.search) || [])[1] || ""));
-      if (home && price && Number(price[1]) > 0) resale = { propertyId: home.clt_propertyid, price: String(Number(price[1])) };
+      var from = /(?:^|&)sale=([0-9a-f-]+)/i.exec(decodeURIComponent((/[?&]data=([^&]*)/.exec(location.search) || [])[1] || ""));
+      if (home) resale = { propertyId: home.clt_propertyid, price: price && Number(price[1]) > 0 ? String(Number(price[1])) : "", sale: from ? from[1].toLowerCase() : "" };
       if (home) {
         ticked[home.clt_propertyid] = { propertyId: home.clt_propertyid, name: home.clt_name || "(no name)", bedrooms: home.clt_bedrooms == null ? "" : home.clt_bedrooms };
         syncHomes();
@@ -333,7 +334,7 @@
       var c = state.costs[size] = state.costs[size] || {};
       c.prices = c.prices || {};
       // a resale's home: its sale price starts as the resale's price, once, and can be changed
-      if (resale && !resale.used && homes.some(function (h) { return h.propertyId === resale.propertyId; })) {
+      if (resale && resale.price && !resale.used && homes.some(function (h) { return h.propertyId === resale.propertyId; })) {
         resale.used = true;
         if (c.price == null || c.price === "") c.price = resale.price;
       }
@@ -531,7 +532,9 @@
     try { body = N.plan(state, choices); } catch (e) { $("msg").textContent = e.message; $("msg").className = "msg err"; return; }
     busy = true; $("next").disabled = true; $("back").disabled = true;
     $("msg").className = "msg"; $("msg").textContent = "Creating the project, its homes and its priorities...";
-    P.create("clt_projects", body).then(function (rec) {
+    // started from a resale: the project remembers it, so the two show as one sale on the Project workflow page
+    (resale && resale.sale ? P.entitySet("clt_sale").then(function (es) { body["clt_sale@odata.bind"] = "/" + es + "(" + resale.sale + ")"; }) : Promise.resolve())
+    .then(function () { return P.create("clt_projects", body); }).then(function (rec) {
       done = true; busy = false;
       $("problems").innerHTML = '<div class="msgbox ok"><b>' + esc(body.clt_name) + " is created,</b> with " + body.clt_project_projecthome_project.length +
         " homes and " + body.clt_project_projectpriority_project.length + ' priorities. <a id="open">Open the project record</a></div>';

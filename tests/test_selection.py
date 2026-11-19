@@ -122,7 +122,7 @@ const dent = [
   { applicationId: "a7", bedrooms: 2, rank: 5, status: "Invited", invitedOn: "2026-11-05T08:00:00Z", responseDue: "2026-11-20" },
   { applicationId: "a6", bedrooms: 2, rank: 6, status: "Invited", invitedOn: "2026-11-16", responseDue: "2026-12-01" }];
 let board = S.dashboard(dapps, dent, "2026-11-20");
-assert.deepStrictEqual(board.figures, { applications: 6, eligible: 5, listed: 5, invited: 4, submitted: 1, waiting: 2, late: 1, certified: 0, notCertified: 0, toReview: 1 });
+assert.deepStrictEqual(board.figures, { applications: 6, eligible: 5, listed: 5, invited: 4, submitted: 1, waiting: 2, late: 1, out: 0, certified: 0, notCertified: 0, toReview: 1 });
 assert.deepStrictEqual(board.invited.map(r => r.review), ["", "", "", "To review"]);
 // once it's reviewed, the row and the figures say how it came out
 const certified = S.dashboard(dapps.map(a => a.id === "a1" ? { ...a, stage: "Certified" } : a), dent, "2026-11-20");
@@ -139,8 +139,33 @@ assert.deepStrictEqual(board.invited.map(r => [r.applicationId, r.state, r.text]
 assert.deepStrictEqual(board.invited[3].lists, [{ bedrooms: 2, rank: 2 }, { bedrooms: 3, rank: 1 }], "a household on two lists is one row");
 assert.strictEqual(board.invited[1].invitedOn, "2026-11-05");
 assert.strictEqual(S.dashboard(dapps, dent, "2026-11-18").invited[0].text, "Overdue by 1 day");
+// ---- a household drops out: it said no, or never answered. Every entry it has takes that status; it isn't waited for any more
+const lists = [{ id: "e1", applicationId: "a1", bedrooms: 2, rank: 1, status: "Invited", invitedOn: "2026-11-16", uniqueId: "ID-0001" },
+               { id: "e2", applicationId: "a1", bedrooms: 3, rank: 2, status: "Waitlist", uniqueId: "ID-0001" },
+               { id: "e3", applicationId: "a2", bedrooms: 2, rank: 2, status: "Invited", invitedOn: "2026-11-16", uniqueId: "ID-0002" },
+               { id: "e4", applicationId: "a3", bedrooms: 2, rank: 3, status: "Waitlist", uniqueId: "ID-0003" },
+               { id: "e5", applicationId: "a4", bedrooms: 2, rank: 4, status: "Waitlist", uniqueId: "ID-0004" },
+               { id: "e6", applicationId: "a5", bedrooms: 3, rank: 1, status: "Declined", uniqueId: "ID-0005" },
+               { id: "e7", applicationId: "a6", bedrooms: 3, rank: null, status: "Waitlist", uniqueId: "ID-0006" }];
+assert.deepStrictEqual(S.dropPlan("a1", lists), ["e1", "e2"], "both of its lists, the one it was invited on and the one it was waiting on");
+assert.deepStrictEqual(S.dropPlan("a5", lists), [], "already out"); assert.deepStrictEqual(S.dropPlan("zz", lists), []);
+assert.deepStrictEqual(S.nextUp("a1", lists), [{ bedrooms: 2, uniqueId: "ID-0003", rank: 3 }], "the best-ranked household still waiting; nobody is left on the 3 bedroom list (one declined, one unranked)");
+assert.strictEqual(S.nextText(S.nextUp("a1", lists)), "Next on the 2 bedrooms list: ID-0003 (rank 3), not invited yet."); assert.strictEqual(S.nextText([]), "");
+const dropped = lists.map(e => e.applicationId === "a1" ? { ...e, status: "Declined", statusDate: "2026-11-19", statusReason: "Bought another home" } : e);
+assert.deepStrictEqual(S.restorePlan("a1", dropped), [{ id: "e1", status: "Invited" }, { id: "e2", status: "Waitlist" }], "put back as it was");
+assert.deepStrictEqual(S.restorePlan("a2", dropped), []);
+assert.deepStrictEqual(S.DROPS, ["Declined", "Unresponsive"]); assert.ok(S.DROPS.every(s => S.OUT.includes(s)));
+assert.strictEqual(S.householdAfterDrop("Invited to full application", false), "Applicant");
+assert.strictEqual(S.householdAfterDrop("Invited to full application", true), "", "still invited in another project");
+assert.strictEqual(S.householdAfterDrop("Eligible", false), "", "a certified household keeps its status"); assert.strictEqual(S.householdAfterDrop("Homeowner", false), "");
+assert.strictEqual(S.householdAfterRestore("Applicant", [{ status: "Invited" }]), "Invited to full application"); assert.strictEqual(S.householdAfterRestore("Applicant", [{ status: "Waitlist" }]), "");
+assert.strictEqual(S.householdAfterRestore("Eligible", [{ status: "Invited" }]), "");
+const gone = S.dashboard([{ id: "a1" }, { id: "a2" }], dropped, "2026-11-20");
+assert.deepStrictEqual(gone.invited.map(r => [r.applicationId, r.state, r.text]), [["a2", "waiting", "Not yet (no due date)"], ["a1", "out", "Declined 2026-11-19"]], "dropped out: last, and not waited for");
+assert.strictEqual(gone.invited[1].reason, "Bought another home"); assert.strictEqual(gone.figures.out, 1); assert.strictEqual(gone.figures.waiting, 1); assert.strictEqual(gone.figures.late, 0);
+assert.ok(S.progress({ method: "Lottery", homes: 1, priorities: 1, costs: true, apps: [{ uniqueId: "ID-0001", result: E }], round: { status: "Certified" }, entries: 1, invited: gone.figures })[8].summary.endsWith(", 1 dropped out."));
 assert.strictEqual(S.dashboard(dapps, dent, "2026-11-30").invited.find(r => r.applicationId === "a2").text, "Not yet, 1 day left");
-assert.deepStrictEqual(S.dashboard(dapps, [], "2026-11-20").figures, { applications: 6, eligible: 5, listed: 0, invited: 0, submitted: 0, waiting: 0, late: 0, certified: 0, notCertified: 0, toReview: 0 });
+assert.deepStrictEqual(S.dashboard(dapps, [], "2026-11-20").figures, { applications: 6, eligible: 5, listed: 0, invited: 0, submitted: 0, waiting: 0, late: 0, out: 0, certified: 0, notCertified: 0, toReview: 0 });
 assert.strictEqual(S.progress({ method: "Lottery", homes: 1, priorities: 1, costs: true, apps: [{ uniqueId: "ID-0001", result: E }], round: { status: "Certified" }, entries: 1,
   invited: board.figures })[8].summary, "4 households invited, 1 full application in, 1 past their date.");
 
@@ -258,7 +283,12 @@ def main():
     assert apps_query and "clt_name" not in apps_query[1] + apps_query[2] and "household_value" not in apps_query[1] + apps_query[2]
     # names are loaded in one place only, and only once the results are certified and someone has been invited
     assert script.count("loadNames(") == 2 and re.search(r'=== "Certified" && D\.entries\.some\(function \(e\) \{ return e\.invitedOn; \}\)\) return loadNames\(', script)
-    assert script.count("_clt_household_value") == 2 and script.index("_clt_household_value") > script.index("function loadNames(")
+    # households are still read only after certification (loadNames), and when one of the invited drops out
+    assert script.count("_clt_household_value") == 4 and script.index("_clt_household_value") > script.index("function loadNames(")
+    for piece in ("S.dropPlan(", "S.restorePlan(", "S.nextUp(", "S.householdAfterDrop(", "S.householdAfterRestore(", 'data-act="drop"', 'data-act="undrop"', 'id="dropreason"',
+                  "clt_statusreason", "clt_statusdate", "objectid_clt_application@odata.bind"):
+        assert piece in script, piece
+    assert {"Declined", "Unresponsive", "Removed", "Withdrawn"} <= set(CHOICES["entrystatus"][1]) and {"Applicant", "Invited to full application"} <= set(CHOICES["householdstatus"][1])
     # the generator constants are the published ones
     assert "M = 2147483647, A = 16807, WARMUP = 10" in rules and "CHECK_MOD = 999983" in rules
     # the documents the observer signs are real PDF files: build both and check their structure

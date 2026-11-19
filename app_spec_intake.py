@@ -149,7 +149,7 @@ FORMS = {
         header=["projecttype", "status", "selectionmethod", "applicationcloses"],
         tabs=[
             tab("General",
-                [("Project", ["name", "projecttype", "status", "applicationopens", "applicationcloses"]),
+                [("Project", ["name", "projecttype", "status", "applicationopens", "applicationcloses", "sale"]),
                  ("Selection", ["selectionmethod", "rolling", "listsource", "reuseround"])],
                 [("Eligibility (blank uses the organization's rules)",
                   ["maxami", "minami", "firsttimebuyer", "localtie", "localarea", "assetlimit", "housingratiomax",
@@ -159,7 +159,7 @@ FORMS = {
                  ("Monthly housing cost by home size (the highest income band's; see the Income bands tab)",
                   ["monthlycoststudio", "monthlycost1br", "monthlycost2br", "monthlycost3br", "monthlycost4br"]),
                  ("Financing (used to work out each band's mortgage payment)", ["downpaymentpct", "loantermyears"]),
-                 ("Invitations and lists", ["invitesperlist", "invitesperhome", "responsedays", "waitlistmonths", "fullappformlink", "documentsfolderlink"]),
+                 ("Invitations and lists", ["invitesperlist", "invitesperhome", "responsedays", "offerdays", "waitlistmonths", "fullappformlink", "documentsfolderlink"]),
                  ("Notes", ["notes"])]),
             tab("Homes",
                 [("Homes", [sub("Homes", "projecthome", "project", "project", rows=6)])]),
