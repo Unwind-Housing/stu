@@ -96,6 +96,11 @@ def main():
           and all(h["Primary email"].endswith("@example.com") for h in rows["households.csv"]),
           "every person is marked as a test (last name -Test, email at example.com)")
 
+    inbox = [r[2] for r in mk.build(date(2026, 11, 18), "stutestinboxfortwentyhomes@gmail.com")["households.csv"][1]]
+    check(out, len(set(inbox)) == 19 and all(a.replace(".", "") == "stutestinboxfortwentyhomes@gmailcom" and ".." not in a for a in inbox)
+          and mk.address("ab@gmail.com", 5, "") == "ab+5@gmail.com",
+          f"with a test inbox, every household gets it with a dot in a different place ({inbox[0]}, {inbox[18]})")
+
     with tempfile.TemporaryDirectory() as tmp:
         mk.write(tmp, date(2026, 11, 18))
         fake, _, _ = ti.environment()

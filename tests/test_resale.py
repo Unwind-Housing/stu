@@ -88,7 +88,7 @@ assert.ok(R.check("price", { formula: 1, credits: 350, creditsNote: " " }, today
 assert.ok(R.check("price", { formula: 1, debits: 10 }, today)[0].includes("debits"));
 assert.ok(R.check("buyer", { household: "" }, today)[0].includes("buyer")); assert.ok(R.check("buyer", { household: "h1", sameAsSeller: true }, today)[0].includes("selling"));
 assert.deepStrictEqual(R.check("buyer", { household: "h2" }, today), []);
-assert.ok(R.warnings("buyer", { household: "h2", certificationExpires: "2026-10-01" }, today)[0].includes("expired")); assert.ok(R.warnings("buyer", { household: "h2" }, today)[0].includes("no certification"));
+assert.ok(R.warnings("buyer", { household: "h2", certificationExpires: "2026-10-01" }, today)[0].includes("expired")); assert.deepStrictEqual(R.warnings("buyer", { household: "h2" }, today), [], "certified with no expiry date: the certification doesn't run out, so nothing to warn about");
 assert.deepStrictEqual(R.warnings("buyer", { household: "h2", certificationExpires: "2027-03-01" }, today), []);
 assert.deepStrictEqual(R.check("contract", { price: "218,000", maxPrice: 220900, contractDate: today }, today), []);
 assert.deepStrictEqual(R.check("contract", { price: "220900", maxPrice: 220900, contractDate: today }, today), [], "at the maximum is fine");
@@ -98,7 +98,7 @@ assert.deepStrictEqual(R.warnings("contract", { price: 220900, maxPrice: 220900 
 assert.strictEqual(R.check("contract", { price: "", maxPrice: 220900, contractDate: "" }, today).length, 2);
 assert.ok(R.warnings("contract", { price: 218000, maxPrice: 220900 }, today)[0].includes("below"));
 assert.deepStrictEqual(R.check("closing", { closingDate: today, contractDate: "2026-10-01" }, today), []);
-assert.ok(R.check("closing", { closingDate: "2026-09-30", contractDate: "2026-10-01" }, today)[0].includes("before the contract"));
+assert.ok(R.check("closing", { closingDate: "2026-09-30", contractDate: "2026-10-01" }, today)[0].includes("before the purchase and sale agreement"));
 assert.ok(R.check("closing", { closingDate: "2026-12-01", contractDate: "2026-10-01" }, today)[0].includes("future")); assert.ok(R.check("closing", { closingDate: "" }, today)[0].includes("closing date"));
 
 // ---- where a resale stands
@@ -129,7 +129,28 @@ assert.deepStrictEqual(ops[1].body, { clt_status: 21, clt_closingdate: "2026-11-
 assert.deepStrictEqual(ops[2].body, { clt_status: 2, clt_enddate: "2026-11-17" }); assert.deepStrictEqual(ops[3].body, { clt_status: 45, "clt_currentoccupancy@odata.bind": "$1" });
 assert.deepStrictEqual(ops[4].body, { clt_status: 33 }); assert.deepStrictEqual(ops[5].body, { clt_status: 35 });
 assert.strictEqual(R.closing({ ...d, sellerHasOtherHome: true }).length, 5, "a seller who owns another home here stays a homeowner");
-process.stdout.write(JSON.stringify({ copied: R.COPIED }));
+
+// ---- how the purchase price is made up
+const typed = [{ type: "Loan", amount: "$180,000", rate: "6.5", notes: "Test Credit Union first mortgage" }, { type: "Buyer cash", amount: "20,000.00", rate: "9", notes: "" },
+               { type: "Subsidy", amount: "18000", rate: "", notes: "Down payment assistance" }, { type: "", amount: "", rate: "", notes: " " }];
+assert.deepStrictEqual(R.fundingLines(typed), [{ id: "", type: "Loan", amount: 180000, rate: 6.5, notes: "Test Credit Union first mortgage" }, { id: "", type: "Buyer cash", amount: 20000, rate: null, notes: "" },
+                                               { id: "", type: "Subsidy", amount: 18000, rate: null, notes: "Down payment assistance" }], "a blank line is dropped; a rate is kept only for a loan");
+assert.strictEqual(R.fundingTotal(typed), 218000); assert.deepStrictEqual(R.fundingProblems(typed), []); assert.deepStrictEqual(R.fundingWarnings(typed, "$218,000.00"), []);
+assert.ok(R.fundingProblems([{ type: "Loan", amount: "100", rate: "" }])[0].includes("interest rate"), "a loan needs its interest rate");
+assert.deepStrictEqual(R.fundingProblems([{ type: "Loan", amount: "100", rate: "0" }]), [], "0 is a rate: a loan with no interest");
+assert.ok(R.fundingProblems([{ type: "Loan", amount: "100", rate: "lots" }])[0].includes("0 to 100")); assert.deepStrictEqual(R.fundingProblems([{ type: "Subsidy", amount: "100", rate: "" }]), []);
+assert.ok(R.fundingProblems([{ type: "", amount: "100" }])[0].includes("choose the type")); assert.ok(R.fundingProblems([{ type: "Other", amount: "" }])[0].includes("enter the amount"));
+assert.ok(R.fundingProblems([{ type: "Other", amount: "0" }])[0].includes("above 0")); assert.deepStrictEqual(R.fundingProblems([]), []);
+assert.deepStrictEqual(R.fundingWarnings(typed, 220000), ["The funding adds up to $218,000.00, $2,000.00 less than the purchase price."]);
+assert.ok(R.fundingWarnings(typed, 210000)[0].includes("$8,000.00 more")); assert.deepStrictEqual(R.fundingWarnings([], 210000), [], "no lines yet is fine");
+assert.strictEqual(R.fundingName({ type: "Loan", notes: "Test Credit Union first mortgage" }), "Loan, Test Credit Union first mortgage"); assert.strictEqual(R.fundingName({ type: "Buyer cash", notes: "" }), "Buyer cash");
+assert.strictEqual(R.fundingSummary(typed), "Loan $180,000.00 at 6.5%, Buyer cash $20,000.00, Subsidy $18,000.00");
+// ---- the closing: closing costs are optional, and the settlement statement is a PDF or a photo
+assert.deepStrictEqual(R.check("closing", { closingDate: today, contractDate: "2026-10-01", closingCosts: "" }, today), []); assert.deepStrictEqual(R.check("closing", { closingDate: today, closingCosts: "$4,250.10" }, today), []);
+assert.ok(R.check("closing", { closingDate: today, closingCosts: "some" }, today)[0].includes("closing costs"));
+assert.strictEqual(R.statementProblem(null), ""); assert.strictEqual(R.statementProblem({ name: "Final ALTA.pdf", size: 400000 }), "");
+assert.ok(R.statementProblem({ name: "statement.docx", size: 10 }).includes("PDF")); assert.ok(R.statementProblem({ name: "scan.PNG", size: 30 * 1024 * 1024 }).includes("25 MB"));
+process.stdout.write(JSON.stringify({ copied: R.COPIED, funding: R.FUNDING_TYPES }));
 """
 
 
@@ -153,6 +174,12 @@ def main():
     rules = open(os.path.join(web, "resale.js")).read()
     loan = open(os.path.join(web, "loan.js")).read()
     page = open(os.path.join(web, "resale.html")).read()
+    # how the purchase price is made up: the types are the choice's, and the lines, closing costs and statement have a home
+    assert out["funding"] == CHOICES["purchasefundingtype"][1] and ("salefunding", "sale", "sale", "Sale", "Cascade", True) in LOOKUPS
+    assert {"type", "amount", "interestrate", "notes"} <= set(cols["salefunding"]) and cols["sale"]["settlementstatement"]["kind"] == "file" and cols["sale"]["closingcosts"]["kind"] == "money"
+    for piece in ('id="f-rows"', 'id="f-add"', "R.fundingProblems(", "R.fundingWarnings(", 'box("x-costs"', 'id="x-file"', 'id="addstatement"', "Purchase and sale agreement signed", "dollars(", "sale price to the selling homeowner"):
+        assert piece in page, piece
+    assert page.index("return P.batch(R.closing({") < page.index("clt_closingcosts: n(input.closingCosts)"), "the closing's own changes stay first: the new occupancy is referred to by its place in the list"
     # the terms copied to the buyer are real occupancy columns, and none of them is a price, a date or a credit
     for c in out["copied"]:
         assert c[len(PREFIX) + 1:] in cols["occupancy"], c
@@ -177,8 +204,8 @@ def main():
         p = subprocess.run([node, "-e", "new Function('require', require('fs').readFileSync(0, 'utf8'))"], input=src, capture_output=True, text=True)
         assert p.returncode == 0, p.stderr[-600:]
     # every clt_ name is real
-    used_tables = ("sale", "occupancy", "property", "household", "loan", "homeownerrequest", "project", "projecthome", "certification", "improvementcredit")
-    known = {f"{PREFIX}_name"} | {f"{PREFIX}_{c}" for c in ("saletype", "salestatus", "occupancystatus", "occupancyrole", "householdstatus", "propertystatus")}
+    used_tables = ("sale", "occupancy", "property", "household", "loan", "homeownerrequest", "project", "projecthome", "certification", "improvementcredit", "salefunding")
+    known = {f"{PREFIX}_name"} | {f"{PREFIX}_{c}" for c in ("saletype", "salestatus", "occupancystatus", "occupancyrole", "householdstatus", "propertystatus", "purchasefundingtype", "settlementstatement_name")}
     for t in used_tables:
         known |= {f"{PREFIX}_{c}" for c in cols[t]} | {f"{PREFIX}_{t}", f"{PREFIX}_{t}id"}
     known |= {f"{PREFIX}_{col}" for child, col, *_ in LOOKUPS if child in used_tables}

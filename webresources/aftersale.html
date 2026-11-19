@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>After the sale</title>
+<link rel="stylesheet" href="pages.css">
+<script src="pages.js"></script>
+<script src="resale.js"></script>
+<script src="aftersale.js"></script>
+<style>
+  .task p { margin: 4px 0 0; color: var(--muted); max-width: 80ch; }
+  .task .actions { margin-top: 10px; align-items: center; }
+  .task .stepmore .fields { margin-top: 10px; }
+  .track .step.skipped .stepbody { background: transparent; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="banner">
+    <img data-logo alt="">
+    <div>
+      <h1>After the sale</h1>
+      <p>The stewardship work that follows a closing: the buyer's insurance, the documents and the rest of your organization's list, one sale at a time.</p>
+    </div>
+  </div>
+
+  <div class="toolbar" style="margin-top: 18px">
+    <label>Sale
+      <select id="sale"><option value="">Loading...</option></select>
+    </label>
+    <span class="mutedtext" id="saleinfo"></span>
+  </div>
+  <div class="bottombar"><span class="msg" id="msg"></span></div>
+
+  <ol class="track" id="track"></ol>
+
+  <p class="note">Every closed sale is listed, the ones with work left first. The tasks are your organization's own list: whoever looks after Stu can change it under Settings, After-sale tasks.
+    A sale gets its copy of the list the first time it is opened here, so a later change to the list doesn't alter sales already under way.
+    Entering the buyer's insurance also records the home's first insurance verification, dated the closing, so the next one falls due a year after the purchase.</p>
+</div>
+
+<script>
+(function () {
+  var P = CLTPage, A = CLTAfterSale, R = CLTResale, $ = function (id) { return document.getElementById(id); };
+  var fv = P.fv, sets = {}, ch = {}, sales = [], tasks = [], templates = [], D = null, open = "";
+  var TABLES = ["clt_sale", "clt_saletask", "clt_aftersaletask", "clt_occupancy", "clt_insurancepolicy", "clt_insuranceverification"];
+  // Opened from the Resale page when a closing is recorded: ?data=sale=<sale id>
+  var data = decodeURIComponent((/[?&]data=([^&]*)/.exec(location.search) || [])[1] || "");
+  var want = ((/(?:^|&)sale=([\w-]+)/.exec(data) || [])[1] || "").toLowerCase();
+
+  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+  function today() { var d = new Date(); return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2); }
+  function day(v) { return v ? String(v).slice(0, 10) : ""; }
+  function val(id) { return $(id) ? $(id).value.trim() : ""; }
+  function say(text, err) { $("msg").textContent = text || ""; $("msg").className = "msg" + (err ? " err" : ""); }
+  function bind(table, id) { return "/" + sets[table] + "(" + id + ")"; }
+  function label(map, value) { return Object.keys(map).filter(function (l) { return map[l] === value; })[0] || ""; }
+
+  // ---- loading
+  function loadAll(pick) {
+    return Promise.all([
+      P.getAll(sets.clt_sale + "?$select=clt_saleid,clt_name,clt_status,clt_saletype,clt_closingdate,clt_settlementstatement_name,_clt_property_value,_clt_buyeroccupancy_value,_clt_buyerhousehold_value" +
+               "&$filter=statecode eq 0 and clt_status eq " + ch.salestatus.Closed),
+      P.getAll(sets.clt_saletask + "?$select=clt_saletaskid,clt_name,clt_order,clt_action,clt_details,clt_status,clt_donedate,clt_notes,_clt_sale_value&$filter=statecode eq 0"),
+      P.getAll(sets.clt_aftersaletask + "?$select=clt_name,clt_order,clt_action,clt_appliesto,clt_details&$filter=statecode eq 0")
+    ]).then(function (r) {
+      tasks = r[1].map(function (t) {
+        return { id: t.clt_saletaskid, sale: t._clt_sale_value, name: t.clt_name || "", order: t.clt_order, action: fv(t, "clt_action") || A.TICK, details: t.clt_details || "",
+                 status: fv(t, "clt_status") || A.TODO, doneOn: day(t.clt_donedate), notes: t.clt_notes || "" };
+      });
+      templates = r[2].map(function (t) { return { name: t.clt_name, order: t.clt_order, action: fv(t, "clt_action"), appliesTo: fv(t, "clt_appliesto"), details: t.clt_details || "" }; });
+      sales = A.sales(r[0].map(function (s) {
+        return { id: s.clt_saleid, name: s.clt_name || fv(s, "_clt_property_value"), closed: true, closingDate: day(s.clt_closingdate), type: label(ch.saletype, s.clt_saletype),
+                 home: fv(s, "_clt_property_value"), propertyId: s._clt_property_value, occupancyId: s._clt_buyeroccupancy_value, occupancy: fv(s, "_clt_buyeroccupancy_value"),
+                 buyer: fv(s, "_clt_buyerhousehold_value"), statement: s.clt_settlementstatement_name || "" };
+      }), tasks);
+      var todo = sales.filter(function (s) { return s.state !== "done"; }), finished = sales.filter(function (s) { return s.state === "done"; });
+      var opt = function (s) { return '<option value="' + s.id + '">' + esc(s.name) + (s.closingDate ? ", closed " + s.closingDate : "") + (s.state === "open" ? " (" + s.open + " to do)" : "") + "</option>"; };
+      $("sale").innerHTML = '<option value="">' + (sales.length ? "Choose a sale" : "No closed sales yet") + "</option>" +
+        (todo.length ? '<optgroup label="Work left to do">' + todo.map(opt).join("") + "</optgroup>" : "") +
+        (finished.length ? '<optgroup label="All done">' + finished.map(opt).join("") + "</optgroup>" : "");
+      if (!pick && todo.length === 1) pick = todo[0].id;
+      if (pick && !sales.some(function (s) { return s.id.toLowerCase() === String(pick).toLowerCase(); })) pick = "";
+      pick = pick ? sales.filter(function (s) { return s.id.toLowerCase() === String(pick).toLowerCase(); })[0].id : "";
+      $("sale").value = pick;
+      return pick ? show(pick) : (D = null, render());
+    });
+  }
+
+  // One sale: its tasks (copied from the organization's list the first time) and the buyer's occupancy.
+  function show(id) {
+    var sale = sales.filter(function (s) { return s.id === id; })[0];
+    if (!sale) { D = null; return render(); }
+    var mine = tasks.filter(function (t) { return t.sale === id; });
+    var ready = mine.length ? Promise.resolve(false) : P.batch(A.tasksFor(templates, sale.type).map(function (t) {
+      var body = { clt_name: t.name, clt_order: t.order, clt_action: ch.action[t.action], clt_details: t.details || null, clt_status: ch.status[A.TODO] };
+      body["clt_sale@odata.bind"] = bind("clt_sale", id);
+      return { method: "POST", path: sets.clt_saletask, body: body };
+    })).then(function () { return A.tasksFor(templates, sale.type).length > 0; });
+    return ready.then(function (made) {
+      if (made) return loadAll(id);   // read the new tasks back, then show them
+      return (sale.occupancyId ? P.get(sets.clt_occupancy + "(" + sale.occupancyId + ")?$select=clt_occupancyid,clt_name,clt_documentsfolder,clt_lastinsuranceverified") : Promise.resolve(null))
+        .then(function (o) {
+          D = { sale: sale, tasks: mine.slice().sort(function (a, b) { return (a.order == null ? 1e9 : a.order) - (b.order == null ? 1e9 : b.order) || (a.name < b.name ? -1 : 1); }), occ: o };
+          render();
+        });
+    });
+  }
+
+  // ---- showing
+  function insuranceForm() {
+    var s = D.sale;
+    return '<div class="stepmore"><div class="fields">' +
+      '<label class="field">Insurer<input id="i-carrier" type="text" maxlength="200"></label>' +
+      '<label class="field">Policy number<input id="i-number" type="text" maxlength="100"></label>' +
+      '<label class="field">Dwelling coverage<input id="i-coverage" type="text" inputmode="decimal" placeholder="$"></label>' +
+      '<label class="field">Policy starts<input id="i-effective" type="date" value="' + esc(s.closingDate) + '"></label>' +
+      '<label class="field">Renewal date<input id="i-renewal" type="date"></label>' +
+      '<label class="field">Proof of insurance<input id="i-file" type="file" accept=".pdf,.jpg,.jpeg,.png"><small>A PDF, or a photo. Optional.</small></label>' +
+      '</div><p><label><input id="i-additional" type="checkbox"> ' + esc(orgName()) + " is listed as additional insured</label></p>" +
+      '<div id="errs"></div><div class="actions"><button class="btn primary" type="button" data-save="' + open + '">Save the insurance</button>' +
+      '<button class="btn" type="button" data-cancel="1">Cancel</button></div></div>';
+  }
+  var org = {};
+  function orgName() { return org.OrgName || "Your organization"; }
+  function buttons(t) {
+    var s = D.sale, out = "";
+    if (t.status !== A.TODO) return '<button class="btn small" type="button" data-undo="' + t.id + '">Undo</button>';
+    if (t.action === A.INSURANCE) out += s.occupancyId ? '<button class="btn primary" type="button" data-open="' + t.id + '">Enter the insurance</button>' : '<span class="mutedtext">This sale has no buyer\'s occupancy linked yet, so there is nowhere to record it.</span>';
+    else if (t.action === A.STATEMENT) out += s.statement ? '<span>On file: <b>' + esc(s.statement) + "</b></span>"
+      : '<label>Final settlement statement (PDF, or a photo) <input id="st-' + t.id + '" type="file" accept=".pdf,.jpg,.jpeg,.png"></label><button class="btn primary" type="button" data-statement="' + t.id + '">Save the file</button>';
+    else if (t.action === A.OCCUPANCY && s.occupancyId) out += '<button class="btn" type="button" data-go="occupancy">Open the new occupancy</button>';
+    else if (t.action === A.FOLDER && D.occ && D.occ.clt_documentsfolder) out += '<a class="btn" target="_blank" rel="noopener" href="' + esc(D.occ.clt_documentsfolder) + '">Open the documents folder</a>';
+    else if (t.action === A.FOLDER && s.occupancyId) out += '<button class="btn" type="button" data-go="occupancy">Open the new occupancy</button>';
+    else if (t.action === A.PROPERTY && s.propertyId) out += '<button class="btn" type="button" data-go="property">Open the property</button>';
+    else if (t.action === A.WILD) out += '<button class="btn" type="button" data-go="wild">Open Stu in the wild</button>';
+    if (t.action !== A.INSURANCE) out += '<button class="btn' + (t.action === A.TICK ? " primary" : "") + '" type="button" data-done="' + t.id + '">Mark done</button>';
+    return out + '<button class="btn small" type="button" data-skip="' + t.id + '">Not needed</button>';
+  }
+  function render() {
+    if (!D) { $("saleinfo").textContent = ""; $("track").innerHTML = ""; return; }
+    var s = D.sale, p = A.progress(D.tasks);
+    $("saleinfo").textContent = (s.buyer ? s.buyer + " · " : "") + (s.closingDate ? "closed " + s.closingDate + " · " : "") + (p.total ? p.done + " of " + p.total + " done" : "");
+    if (!D.tasks.length) {
+      $("track").innerHTML = '<li style="list-style:none"><div class="msgbox warn">Your organization has no after-sale tasks for this kind of sale. Whoever looks after Stu can add them under Settings, After-sale tasks.</div></li>';
+      return;
+    }
+    $("track").innerHTML = D.tasks.map(function (t, i) {
+      var done = t.status === A.DONE, skipped = t.status === A.SKIPPED;
+      return '<li class="step task ' + (done ? "done" : skipped ? "skipped" : "next") + '"><div class="stepnum">' + (done ? "&#10003;" : i + 1) + '</div><div class="stepbody">' +
+        '<div class="stephead"><h3>' + esc(t.name) + "</h3>" + (done ? '<span class="pill ok">Done' + (t.doneOn ? " " + t.doneOn : "") + "</span>" : skipped ? '<span class="pill">Not needed</span>' : "") + "</div>" +
+        (t.details ? "<p>" + esc(t.details) + "</p>" : "") + (t.notes ? "<p>" + esc(t.notes) + "</p>" : "") +
+        (open === t.id ? insuranceForm() : '<div class="actions">' + buttons(t) + "</div>") +
+        "</div></li>";
+    }).join("");
+  }
+
+  // ---- saving
+  function setStatus(id, status, extra) {
+    var body = { clt_status: ch.status[status], clt_donedate: status === A.TODO ? null : today() };
+    Object.keys(extra || {}).forEach(function (k) { body[k] = extra[k]; });
+    return P.batch([{ method: "PATCH", path: sets.clt_saletask + "(" + id + ")", body: body }]).then(function () { open = ""; return loadAll(D.sale.id); });
+  }
+  function fail(what) { return function (e) { say("Couldn't " + what + ": " + e.message, true); }; }
+  // The buyer's insurance: the policy, and the home's first insurance verification (approved, dated the closing).
+  function saveInsurance(taskId) {
+    var s = D.sale, o = D.occ, file = $("i-file").files && $("i-file").files[0] ? $("i-file").files[0] : null;
+    var inp = { carrier: val("i-carrier"), policyNumber: val("i-number"), coverage: val("i-coverage"), effective: val("i-effective"), renewal: val("i-renewal") };
+    var bad = A.insuranceProblems(inp, today()), fp = R.statementProblem(file);
+    if (fp) bad.push(fp.replace("settlement statement", "proof of insurance"));
+    if (bad.length) { $("errs").innerHTML = '<div class="msgbox bad"><ul>' + bad.map(function (m) { return "<li>" + esc(m) + "</li>"; }).join("") + "</ul></div>"; return; }
+    var on = A.verifiedOn(s.closingDate, today()), coverage = A.num(inp.coverage), additional = $("i-additional").checked;
+    var ver = { clt_name: A.recordName(on, o.clt_name), clt_date: on, clt_status: ch.review.Approved, clt_method: ch.method.Paper, clt_verifieddate: on, clt_replacementcoverage: coverage,
+                clt_contactrequested: false, clt_notes: "The buyer's insurance at closing: " + inp.carrier + (inp.policyNumber ? ", policy " + inp.policyNumber : "") + "." };
+    ver["clt_occupancy@odata.bind"] = bind("clt_occupancy", o.clt_occupancyid);
+    document.querySelectorAll("[data-save]").forEach(function (b) { b.disabled = true; });
+    // the verification first (the proof is kept on it), then the policy, the occupancy's date and the task as one change set
+    P.create(sets.clt_insuranceverification, ver).then(function (rec) {
+      return file ? P.upload(sets.clt_insuranceverification + "(" + rec.clt_insuranceverificationid + ")/clt_document", file) : null;
+    }).then(function () {
+      var policy = { clt_name: A.policyName(inp.carrier, inp.effective, inp.renewal), clt_carrier: inp.carrier, clt_policynumber: inp.policyNumber || null, clt_coveragea: coverage,
+                     clt_effectivedate: inp.effective, clt_renewaldate: inp.renewal || null, clt_cltadditionalinsured: additional, clt_verifieddate: on };
+      policy["clt_occupancy@odata.bind"] = bind("clt_occupancy", o.clt_occupancyid);
+      var ops = [{ method: "POST", path: sets.clt_insurancepolicy, body: policy },
+                 { method: "PATCH", path: sets.clt_saletask + "(" + taskId + ")", body: { clt_status: ch.status[A.DONE], clt_donedate: today(),
+                   clt_notes: inp.carrier + (inp.policyNumber ? ", policy " + inp.policyNumber : "") + ", dwelling coverage " + R.usd(coverage) + "." } }];
+      if (on > day(o.clt_lastinsuranceverified)) ops.push({ method: "PATCH", path: sets.clt_occupancy + "(" + o.clt_occupancyid + ")", body: { clt_lastinsuranceverified: on } });
+      return P.batch(ops);
+    }).then(function () { open = ""; say("Insurance saved. The next insurance verification is due a year after " + on + "."); return loadAll(s.id); })
+      .catch(function (e) {
+        document.querySelectorAll("[data-save]").forEach(function (b) { b.disabled = false; });
+        $("errs").innerHTML = '<div class="msgbox bad">Couldn\'t save the insurance: ' + esc(e.message) + " Check the home's insurance verifications before trying again.</div>";
+      });
+  }
+
+  // ---- events
+  $("sale").addEventListener("change", function () { open = ""; say(""); show($("sale").value); });
+  $("track").addEventListener("click", function (e) {
+    var t = e.target, d = t.dataset;
+    if (d.done) setStatus(d.done, A.DONE).then(function () { say("Marked done."); }, fail("save it"));
+    else if (d.skip) setStatus(d.skip, A.SKIPPED).then(function () { say("Marked not needed."); }, fail("save it"));
+    else if (d.undo) setStatus(d.undo, A.TODO, { clt_notes: null }).then(function () { say("Back on the list. Anything it recorded elsewhere is still there."); }, fail("save it"));
+    else if (d.open) { open = d.open; render(); }
+    else if (d.cancel) { open = ""; render(); }
+    else if (d.save) saveInsurance(d.save);
+    else if (d.statement) {
+      var input = $("st-" + d.statement), file = input.files && input.files[0], bad = file ? R.statementProblem(file) : "Choose the file first.";
+      if (bad) { say(bad, true); return; }
+      t.disabled = true;
+      P.upload(sets.clt_sale + "(" + D.sale.id + ")/clt_settlementstatement", file).then(function () { return setStatus(d.statement, A.DONE); })
+        .then(function () { say("Settlement statement saved."); }, function (err) { t.disabled = false; say("Couldn't save the file: " + err.message, true); });
+    }
+    else if (d.go === "occupancy") P.openRecord("clt_occupancy", D.sale.occupancyId);
+    else if (d.go === "property") P.openRecord("clt_property", D.sale.propertyId);
+    else if (d.go === "wild") P.go({ pageType: "webresource", webresourceName: "clt_/pages/field.html" });
+  });
+
+  Promise.all([P.brand(), P.choice("clt_salestatus"), P.choice("clt_saletype"), P.choice("clt_saletaskstatus"), P.choice("clt_aftersaleaction"),
+               P.choice("clt_insurancereviewstatus"), P.choice("clt_verificationmethod")].concat(TABLES.map(P.entitySet)))
+    .then(function (r) {
+      org = r[0] || {}; ch = { salestatus: r[1], saletype: r[2], status: r[3], action: r[4], review: r[5], method: r[6] };
+      TABLES.forEach(function (t, i) { sets[t] = r[7 + i]; });
+      return loadAll(want);
+    }).catch(function (e) { $("sale").innerHTML = '<option value="">Couldn\'t load</option>'; say("Couldn't load: " + e.message, true); });
+})();
+</script>
+</body>
+</html>

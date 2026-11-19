@@ -111,8 +111,8 @@
       P.getAll(sets.clt_occupancy + "?$select=clt_occupancyid,clt_name,clt_recordnumber,clt_lastoccupancyverified,clt_documentsfolder,_clt_property_value,_clt_household_value" +
                "&$filter=statecode eq 0 and clt_status eq " + ch.occupancystatus.Current + "&$orderby=clt_name asc"),
       P.getAll(sets.clt_annualverification + "?$select=clt_annualverificationid,clt_name,clt_year,clt_status,clt_method,clt_sentdate,clt_duedate,clt_receiveddate,clt_sentto,clt_verificationcode," +
-               "clt_sentlink,clt_signedform_name,clt_primaryresidence,clt_rentalstatus,clt_insurancereceived,clt_notes,clt_formentryid,clt_uploadslink," +
-               "clt_peopleinhome,clt_noshorttermrental,clt_tenantdetails,clt_insurancecurrent,clt_insurancecontact,clt_mortgagecontact,clt_signeddate,clt_phone," +
+               "clt_sentlink,clt_signedform_name,clt_primaryresidence,clt_rentalstatus,clt_notes,clt_formentryid," +
+               "clt_peopleinhome,clt_noshorttermrental,clt_tenantdetails,clt_mortgagecontact,clt_signeddate,clt_phone," +
                "_clt_occupancy_value&$filter=statecode eq 0"),
       P.getAll(sets.clt_household + "?$select=clt_householdid,clt_name,clt_recordnumber,clt_primaryemail&$filter=statecode eq 0"),
       P.getAll(sets.clt_householdmember + "?$select=clt_firstname,clt_lastname,_clt_household_value&$filter=statecode eq 0 and clt_applicantrole eq " + ch.applicantrole["Primary applicant"]),
@@ -133,10 +133,10 @@
         return { id: x.clt_annualverificationid, occupancy: x._clt_occupancy_value, year: x.clt_year, status: fv(x, "clt_status"), method: fv(x, "clt_method"),
                  sent: day(x.clt_sentdate), due: day(x.clt_duedate), received: day(x.clt_receiveddate), sentTo: x.clt_sentto || "", code: x.clt_verificationcode || "",
                  link: x.clt_sentlink || "", file: x.clt_signedform_name || "", primary: x.clt_primaryresidence, rental: fv(x, "clt_rentalstatus"),
-                 insurance: x.clt_insurancereceived, notes: x.clt_notes || "", rentalValue: x.clt_rentalstatus,
+                 notes: x.clt_notes || "", rentalValue: x.clt_rentalstatus,
                  // what the household answered on the online form, when its entry has come in
-                 entry: x.clt_formentryid || "", uploads: x.clt_uploadslink || "", people: x.clt_peopleinhome, noShortTerm: x.clt_noshorttermrental,
-                 tenant: x.clt_tenantdetails || "", insuranceCurrent: x.clt_insurancecurrent, insuranceContact: x.clt_insurancecontact, mortgageContact: x.clt_mortgagecontact,
+                 entry: x.clt_formentryid || "", people: x.clt_peopleinhome, noShortTerm: x.clt_noshorttermrental,
+                 tenant: x.clt_tenantdetails || "", mortgageContact: x.clt_mortgagecontact,
                  signed: day(x.clt_signeddate), phone: x.clt_phone || "" };
       });
       build(); renderOpen();
@@ -288,12 +288,9 @@
     else if (x.method === V.ONLINE) html += '<div class="reqline mutedtext">The link wasn\'t kept for this request (it was sent before Stu started keeping them).</div>';
     if (x.entry) html += '<div class="answers"><b>What the household answered</b>' + (x.signed ? " on " + x.signed : "") + "<dl>" +
       [["People living in the home", x.people == null ? "" : x.people], ["Lives there as primary residence", yes(x.primary)], ["No short-term rental", yes(x.noShortTerm)],
-       ["Renting", (x.rental || "") + (x.tenant ? ". " + x.tenant : "")], ["Insurance paid and current", yes(x.insuranceCurrent)],
-       ["Proof of insurance attached", yes(x.insurance)], ["Phone", x.phone]].filter(function (a) { return a[1] !== ""; })
+       ["Renting", (x.rental || "") + (x.tenant ? ". " + x.tenant : "")], ["Phone", x.phone]].filter(function (a) { return a[1] !== ""; })
         .map(function (a) { return "<dt>" + a[0] + "</dt><dd>" + esc(a[1]) + "</dd>"; }).join("") + "</dl>" +
-      (x.insuranceContact ? '<p><span class="pill bad">Asked for help with insurance</span> See Insurance verification.</p>' : "") +
-      (x.mortgageContact ? '<p><span class="pill bad">Asked for contact about the mortgage</span> Get in touch with the household.</p>' : "") +
-      '<div class="reqline">' + (x.uploads ? '<a class="btn small" target="_blank" rel="noopener" href="' + esc(x.uploads) + '">Open the uploaded documents</a>' : "") + "</div></div>";
+      (x.mortgageContact ? '<p><span class="pill bad">Asked for contact about the mortgage</span> Get in touch with the household.</p>' : "") + "</div>";
     html += '<div class="reqline"><span class="mutedtext">Signed form</span>' +
       (x.file ? "<b>" + esc(x.file) + '</b><button class="btn small" type="button" id="c-view">View</button>' : '<span class="mutedtext">none yet</span>') +
       (cancelled ? "" : "<label>" + (x.file ? "Replace it" : "Add the signed form") + ' (PDF, or a photo) <input id="c-file" type="file" accept=".pdf,.jpg,.jpeg,.png"></label>' +
@@ -304,12 +301,10 @@
       '<label class="tick"><input id="c-primary" type="checkbox"' + (!x.entry || x.primary ? " checked" : "") + '> Primary residence confirmed</label>' +
       '<label>Renting <select id="c-rental">' + Object.keys(ch.rentalstatus).map(function (l) {
         return '<option value="' + ch.rentalstatus[l] + '"' + (x.entry && ch.rentalstatus[l] === x.rentalValue ? " selected" : "") + ">" + esc(l) + "</option>"; }).join("") + "</select></label>" +
-      '<label class="tick"><input id="c-insurance" type="checkbox"' + (x.entry && x.insurance ? " checked" : "") + '> Insurance declarations received</label>' +
       '<label>Outcome <select id="c-outcome"><option value="">Choose</option>' + V.OUTCOMES.map(function (s) { return "<option" + (s === x.status ? " selected" : "") + ">" + s + "</option>"; }).join("") + "</select></label>" +
       '<label class="wide">Notes <textarea id="c-notes" placeholder="Anything to follow up, or what the issue is">' + esc(x.notes) + "</textarea></label>" +
       '<button class="btn primary" type="button" id="c-save">Save</button>';
-    else html += '<div class="reqline">' + (cancelled ? "" : "Primary residence confirmed: " + yes(x.primary) + " &middot; Renting: " + esc(x.rental || "not recorded") +
-      " &middot; Insurance declarations received: " + yes(x.insurance)) + (x.notes ? " &middot; Notes: " + esc(x.notes) : "") + '</div><div class="closeform">';
+    else html += '<div class="reqline">' + (cancelled ? "" : "Primary residence confirmed: " + yes(x.primary) + " &middot; Renting: " + esc(x.rental || "not recorded")) + (x.notes ? " &middot; Notes: " + esc(x.notes) : "") + '</div><div class="closeform">';
     html += (cancelled ? "" : '<button class="btn" type="button" id="c-void">Cancel this verification</button>') +
       (o.folder ? '<a class="btn" target="_blank" rel="noopener" href="' + esc(o.folder) + '">Open the documents folder</a>' : "") +
       '<span class="errtext wide" id="c-err"></span></div></td></tr>';
@@ -328,7 +323,7 @@
     if (bad.length) { $("c-err").textContent = bad.join(" "); return; }
     var ops = [{ method: "PATCH", path: c.path, body: {
       clt_status: ch.status[inp.outcome], clt_method: ch.method[$("c-method").value], clt_receiveddate: inp.received, clt_primaryresidence: $("c-primary").checked,
-      clt_rentalstatus: +$("c-rental").value, clt_insurancereceived: $("c-insurance").checked, clt_notes: inp.notes.trim() || null } }];
+      clt_rentalstatus: +$("c-rental").value, clt_notes: inp.notes.trim() || null } }];
     // only an approval counts as the household being verified
     if (V.counts(inp.outcome) && inp.received > day(o.lastVerified)) ops.push({ method: "PATCH", path: sets.clt_occupancy + "(" + o.id + ")", body: { clt_lastoccupancyverified: inp.received } });
     $("c-save").disabled = true;

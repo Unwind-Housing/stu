@@ -184,7 +184,7 @@ For a **test** environment only: clear out every record and load a small made-up
 - 10 occupied. 5 of those have been resold 1 to 3 times, so they have past owners and a price history. 2 use the Appraisal share formula.
 - 10 empty: 4 vacant, 4 for sale, 2 under construction.
 - 19 households, each with a last name ending in **-Test** and an email at `example.com`.
-- History: a closed sale for each of the 10 first purchases and 9 resales; insurance policies (two under-insured, two renewing soon, two homes with none); loans; improvements; homeowner requests at different stages; follow-ups (one overdue); notes; ERRR entries; past verifications. Dates are worked out from the day you run it, so the Verification hub and the dashboard show a mix of up to date, due soon, overdue and never done.
+- History: a closed sale for each of the 10 first purchases and 9 resales; insurance policies (two under-insured, two renewing soon, two homes with none); loans; improvements; homeowner requests at different stages; follow-ups (one overdue); notes; ERRR entries; past verifications; three staff walk-bys (two within the year, one older). Dates are worked out from the day you run it, so the Verification hub and the dashboard show a mix of up to date, due soon, overdue and never done.
 - No applicants and no projects: make a project in the app, and applicants arrive through the sandbox screener form.
 
 Steps, from the repo root with `.venv` active:
@@ -206,7 +206,7 @@ Good to know:
 - **SharePoint.** With the two `--sharepoint` options, the old record folders go to the site's recycle bin (kept there about 93 days). Only folders inside the named parent folder (`DEV`) of the Property, Household, Occupancy and Project libraries are touched, so an environment that shares a site can't clear another one's folders. Leave the options off and SharePoint isn't touched. Loading makes a new folder per property, household and occupancy when the folder flows are on.
 - **Record numbers carry on.** After a reset the next property is not P-00001; the counter keeps going.
 - **The forms platform isn't touched.** Old sandbox entries stay there; delete them in the forms platform if you want a clean list.
-- **Emails go nowhere.** `example.com` addresses can't receive mail. To try the verification emails for real, change a test household's **Primary email** to an address of your own.
+- **Emails.** By default the test households' addresses are at `example.com` and go nowhere. To receive what Stu prepares, add `--email you@gmail.com`: each household gets that address with a dot in a different place (`y.ou@gmail.com`, `yo.u@gmail.com`). Gmail ignores the dots, so everything lands in the one inbox, and the address shows which household it was for. Use an inbox kept for testing.
 - **Just the pieces.** `tools/reset_records.py` only clears records (it keeps projects unless given `--with-projects`); `tools/make_test_data.py` only writes the five import files to `export/test-data`; `--no-test-data` on the one command leaves the environment empty.
 - **To change the test portfolio,** edit `tools/make_test_data.py` (a short list of rules: `build` for the homes and people, `history` for the rest) and add a check to `tests/test_reset.py`.
 
@@ -240,7 +240,7 @@ One made-up household through the whole path, before a release goes to a new env
 
 **6. Sale and occupancy (by hand), in CLT Stewardship.**
 1. **People › Households**: open the household. Copy the certified figures onto it: **Income certification date**, **Certification expires**, **Certified household size**, **Certified annual income**, **Certified income (% of AMI)**. Set **Status** to *Eligible*.
-2. **Portfolio › Sales › + New**: pick the **Property** and **Buyer household**, **Status** *Pending*, **Contract date**, **Purchase price**, **Lender**. **Save**.
+2. **Portfolio › Sales › + New**: pick the **Property** and **Buyer household**, **Status** *Pending*, **Purchase and sale agreement signed**, **Purchase price**, **Lender**. **Save**.
 3. **Portfolio › Occupancies › + New**: pick the **Property** and **Household**, **Role** *Owner*, **Status** *Pending*, the resale formula terms. **Save**, then set **Buyer occupancy** on the sale.
 4. At closing: sale **Status** *Closed* with the **Closing date**; occupancy **Status** *Current* with the **Start date**; household **Status** *Homeowner*; application **Stage** *Purchased*.
 

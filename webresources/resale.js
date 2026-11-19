@@ -90,6 +90,54 @@ var CLTResale = (function () {
     return { maxPrice: max, basis: basis, recapture: recapture, net: net };
   }
 
+  // ---- how the purchase price is made up: the buyer's cash, loans, subsidies and anything else
+  var FUNDING_TYPES = ["Buyer cash", "Loan", "Subsidy", "Other"], LOAN = "Loan", STATEMENT_TYPES = ["pdf", "jpg", "jpeg", "png"], STATEMENT_MAX_MB = 25;
+  function usd(v) { return "$" + Number(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  // The lines as typed -> the ones with something on them, with numbers read: [{ id, type, amount, rate, notes }]
+  // (rate is kept only for a loan). A line with nothing typed is dropped.
+  function fundingLines(lines) {
+    return (lines || []).filter(function (l) { return !blank(l.type) || !blank(l.amount) || !blank(l.rate) || String(l.notes || "").trim(); }).map(function (l) {
+      return { id: l.id || "", type: l.type || "", amount: num(l.amount), rate: l.type === LOAN ? num(l.rate) : null, notes: String(l.notes || "").trim() };
+    });
+  }
+  function fundingTotal(lines) { return cents(fundingLines(lines).reduce(function (t, l) { return t + (l.amount > 0 ? l.amount : 0); }, 0)); }
+  // What's wrong with the lines -> [messages]. Every line needs a type and an amount; a loan needs its interest rate (0 is fine).
+  function fundingProblems(lines) {
+    var e = [];
+    fundingLines(lines).forEach(function (l, i) {
+      var which = "Funding line " + (i + 1) + (l.type ? " (" + l.type + ")" : "");
+      if (FUNDING_TYPES.indexOf(l.type) < 0) e.push(which + ": choose the type.");
+      if (l.amount === null) e.push(which + ": enter the amount.");
+      else if (isNaN(l.amount) || l.amount <= 0) e.push(which + ": the amount must be a number above 0.");
+      if (l.type === LOAN) {
+        if (l.rate === null) e.push(which + ": enter the interest rate (0 for a loan with no interest).");
+        else if (isNaN(l.rate) || l.rate < 0 || l.rate > 100) e.push(which + ": the interest rate must be a number from 0 to 100.");
+      }
+    });
+    return e;
+  }
+  // Worth a second look: lines were entered and don't add up to the purchase price. No lines at all is fine.
+  function fundingWarnings(lines, price) {
+    var p = num(price), total = fundingTotal(lines);
+    if (!fundingLines(lines).length || !(p > 0) || total === cents(p)) return [];
+    var gap = cents(p - total);
+    return ["The funding adds up to " + usd(total) + ", " + usd(Math.abs(gap)) + (gap > 0 ? " less" : " more") + " than the purchase price."];
+  }
+  // "Loan, Test Credit Union first mortgage"
+  function fundingName(line) { return ((line.type || "Funding") + (line.notes ? ", " + line.notes : "")).slice(0, 100); }
+  // "Loan $180,000.00 at 6.5%, Buyer cash $20,000.00"
+  function fundingSummary(lines) {
+    return fundingLines(lines).map(function (l) { return l.type + " " + usd(l.amount || 0) + (l.type === LOAN && l.rate !== null && !isNaN(l.rate) ? " at " + l.rate + "%" : ""); }).join(", ");
+  }
+  // What's wrong with a settlement statement file ("" when it's fine, or when there isn't one).
+  function statementProblem(file) {
+    if (!file) return "";
+    var ext = (/\.([A-Za-z0-9]+)$/.exec(file.name || "") || [])[1];
+    if (STATEMENT_TYPES.indexOf(String(ext || "").toLowerCase()) < 0) return "The settlement statement should be a PDF, or a JPG or PNG photo.";
+    if (file.size > STATEMENT_MAX_MB * 1024 * 1024) return "That file is over " + STATEMENT_MAX_MB + " MB. Scan it at a lower quality and try again.";
+    return "";
+  }
+
   // What's wrong with a step's answers. -> [messages]; empty means it can be saved.
   function check(step, input, today) {
     var e = [], money = function (label, v, required) {
@@ -112,12 +160,13 @@ var CLTResale = (function () {
     } else if (step === "contract") {
       var p = num(input.price);
       if (p === null || isNaN(p) || !(p > 0)) e.push("Enter the purchase price.");
-      if (!iso(input.contractDate)) e.push("Enter the contract date.");
-      else if (iso(input.contractDate) > today) e.push("The contract date can't be in the future.");
+      if (!iso(input.contractDate)) e.push("Enter the date the purchase and sale agreement was signed.");
+      else if (iso(input.contractDate) > today) e.push("The date the purchase and sale agreement was signed can't be in the future.");
     } else if (step === "closing") {
       if (!iso(input.closingDate)) e.push("Enter the closing date.");
       else if (iso(input.closingDate) > today) e.push("Record the closing once it has happened: the date can't be in the future.");
-      else if (iso(input.contractDate) && iso(input.closingDate) < iso(input.contractDate)) e.push("The closing can't be before the contract date.");
+      else if (iso(input.contractDate) && iso(input.closingDate) < iso(input.contractDate)) e.push("The closing can't be before the purchase and sale agreement was signed.");
+      money("closing costs", input.closingCosts, false);
     }
     return e;
   }
@@ -126,8 +175,8 @@ var CLTResale = (function () {
   function warnings(step, input, today) {
     var w = [];
     if (step === "buyer" && !blank(input.household)) {
-      if (!iso(input.certificationExpires)) w.push("This household has no certification date on record.");
-      else if (iso(input.certificationExpires) < today) w.push("This household's certification expired on " + iso(input.certificationExpires) + ".");
+      // No expiry date means the certification doesn't run out (the organization set no validity period), not that there isn't one.
+      if (iso(input.certificationExpires) && iso(input.certificationExpires) < today) w.push("This household's certification expired on " + iso(input.certificationExpires) + ".");
     }
     if (step === "contract" && num(input.price) > 0 && num(input.maxPrice) !== null) {
       var over = cents(num(input.price) - num(input.maxPrice));
@@ -191,7 +240,9 @@ var CLTResale = (function () {
     return ops;
   }
 
-  var api = { STEPS: STEPS, COPIED: COPIED, num: num, loansOwed: loansOwed, creditValue: creditValue, creditsTotal: creditsTotal, improvements: improvements, buyerGroups: buyerGroups, figures: figures, check: check, warnings: warnings,
+  var api = { FUNDING_TYPES: FUNDING_TYPES, LOAN: LOAN, fundingLines: fundingLines, fundingTotal: fundingTotal, fundingProblems: fundingProblems, fundingWarnings: fundingWarnings,
+              fundingName: fundingName, fundingSummary: fundingSummary, statementProblem: statementProblem, usd: usd,
+              STEPS: STEPS, COPIED: COPIED, num: num, loansOwed: loansOwed, creditValue: creditValue, creditsTotal: creditsTotal, improvements: improvements, buyerGroups: buyerGroups, figures: figures, check: check, warnings: warnings,
               progress: progress, saleName: saleName, occupancyName: occupancyName, newTerms: newTerms, closing: closing };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   return api;

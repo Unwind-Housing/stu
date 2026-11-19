@@ -7,6 +7,21 @@
 <link rel="stylesheet" href="pages.css">
 <script src="pages.js"></script>
 <script src="stewardship.js"></script>
+<script src="field.js"></script>
+<script src="aftersale.js"></script>
+<script>
+  // On a phone, Stu opens on Stu in the wild: the Dashboard hands over the first time it loads in a session.
+  (function () {
+    try {
+      var X = null, factor = "";
+      try { X = window.parent.Xrm || window.Xrm; factor = X.Utility.getGlobalContext().client.getFormFactor(); } catch (e) { /* outside the app */ }
+      var seen = sessionStorage.getItem("clt_landed");
+      sessionStorage.setItem("clt_landed", "1");
+      // It loads in this page's own place, which works the same in the phone app and in a browser.
+      if (CLTField.startHere(factor, window.screen && screen.width, seen)) location.replace("field.html");
+    } catch (e) { /* the Dashboard shows as usual */ }
+  })();
+</script>
 </head>
 <body>
 <div class="page">
@@ -96,15 +111,33 @@
       return { key: c[0], el: el };
     });
     Promise.all([P.settings(), P.choice("clt_occupancystatus"), P.entitySet("clt_occupancy")]).then(function (r) {
-      return P.getAll(r[2] + "?$select=clt_lastoccupancyverified,clt_lastinsuranceverified&$filter=statecode eq 0 and clt_status eq " + r[1].Current).then(function (rows) {
+      return P.getAll(r[2] + "?$select=clt_startdate,clt_lastoccupancyverified,clt_lastinsuranceverified&$filter=statecode eq 0 and clt_status eq " + r[1].Current).then(function (rows) {
         var d = new Date(), today = d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2);
-        var n = CLTRegular.dashboard(rows.map(function (o) { return { dates: { occupancy: o.clt_lastoccupancyverified, insurance: o.clt_lastinsuranceverified } }; }), r[0] || {}, today);
+        var n = CLTRegular.dashboard(rows.map(function (o) { return { start: o.clt_startdate, dates: { occupancy: o.clt_lastoccupancyverified, insurance: o.clt_lastinsuranceverified } }; }), r[0] || {}, today);
         made.forEach(function (m) { m.el.querySelector(".n").textContent = n[m.key]; m.el.classList.add(n[m.key] ? "hot" : "zero"); });
       });
     }).catch(function () { made.forEach(function (m) { m.el.remove(); }); });
   }
 
   // Follow-ups that are due: open, with a due date of today or earlier. Opens the Open follow-ups list.
+  // Closed sales with after-sale work left (tasks open, or not set up yet). Opens the After the sale page.
+  function afterSaleTile(box) {
+    var P = CLTPage, el = document.createElement("button");
+    el.className = "tile"; el.title = "Open After the sale";
+    el.innerHTML = '<div class="n">&middot;</div><div class="t">Sales with set-up to finish</div><div class="d">Closed sales with after-sale tasks still to do</div>';
+    box.appendChild(el);
+    el.addEventListener("click", function () { P.go({ pageType: "webresource", webresourceName: "clt_/pages/aftersale.html" }); });
+    Promise.all([P.choice("clt_salestatus"), P.entitySet("clt_sale"), P.entitySet("clt_saletask"), P.choice("clt_saletaskstatus")]).then(function (r) {
+      return Promise.all([P.getAll(r[1] + "?$select=clt_saleid&$filter=statecode eq 0 and clt_status eq " + r[0].Closed),
+                          P.getAll(r[2] + "?$select=clt_status,_clt_sale_value&$filter=statecode eq 0")]).then(function (d) {
+        var label = {}; Object.keys(r[3]).forEach(function (l) { label[r[3][l]] = l; });
+        var n = CLTAfterSale.unfinished(d[0].map(function (s) { return { id: s.clt_saleid, closed: true }; }),
+                                        d[1].map(function (t) { return { sale: t._clt_sale_value, status: label[t.clt_status] }; }));
+        el.querySelector(".n").textContent = n; el.classList.add(n ? "hot" : "zero");
+      });
+    }).catch(function () { el.remove(); });
+  }
+
   function followUpTile(box) {
     var P = CLTPage, el = document.createElement("button");
     el.className = "tile";
@@ -128,6 +161,7 @@
   CLTPage.brand();
   verificationTiles(document.getElementById("attention"));
   followUpTile(document.getElementById("attention"));
+  afterSaleTile(document.getElementById("attention"));
   ATTENTION.forEach(function (c) { tile(document.getElementById("attention"), c); });
   PROPERTIES.forEach(function (c) { tile(document.getElementById("properties"), c); });
   HOUSEHOLDS.forEach(function (c) { tile(document.getElementById("households"), c); });

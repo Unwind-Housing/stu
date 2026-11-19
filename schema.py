@@ -70,7 +70,7 @@ CHOICES = {
     "verificationstatus": ("Verification status", [
         "Due", "Sent", "Received", "Approved", "Issue found", "Waived", "Cancelled"]),
     "verificationmethod": ("Verification method", [
-        "Online form", "Paper"]),
+        "Online form", "Paper", "Insurer's card"]),
     "rentalstatus": ("Rental status", [
         "Not renting", "Renting ADU", "Renting rooms", "Renting whole home"]),
     "loanstatus": ("Loan status", [
@@ -79,8 +79,17 @@ CHOICES = {
         "To review", "Needs contact", "Approved", "Issue found", "Cancelled", "Requested"]),
     "followupstatus": ("Follow-up status", [
         "Open", "Done"]),
-    "walkbyresult": ("Walk-by result", [
-        "Looks good", "Needs follow-up", "Concern"]),
+    "aftersaleaction": ("After-sale task: what it does", [
+        "Tick it off", "Enter the insurance", "Add the settlement statement", "Open the new occupancy", "Open the documents folder",
+        "Open the property", "Open Stu in the wild"]),
+    "aftersaleapplies": ("After-sale task: which sales", [
+        "Every sale", "Resales only", "First sales only"]),
+    "saletaskstatus": ("Sale task status", [
+        "To do", "Done", "Not needed"]),
+    "purchasefundingtype": ("Purchase funding type", [
+        "Buyer cash", "Loan", "Subsidy", "Other"]),
+    "walkbystatus": ("Walk-by status", [
+        "Draft", "Submitted"]),
     "contactmethod": ("Contact method", [
         "Phone", "Email", "In person", "Text", "Mail", "Other"]),
     "requesttype": ("Request type", [
@@ -270,6 +279,7 @@ TABLES = [
              date("acquisitiondate", "Acquisition date"),
              money("replacementcost", "Replacement cost", "Estimated cost to rebuild. Copied to insurance policies for the coverage check."),
              date("replacementcostdate", "Replacement cost as of"),
+             date("lastwalkby", "Last staff walk-by", "When staff last walked or drove by the home. Set when a walk-by is submitted on the Stu in the wild page."),
              url("documentsfolder", "Documents folder", "Opens this record's folder in SharePoint. Filled in by the folder flow."),
              memo("notes", "Notes"),
          ]),
@@ -513,7 +523,6 @@ TABLES = [
              # page keep them in step with the records (verifications, policies, walk-bys, relationship notes).
              date("lastoccupancyverified", "Last occupancy verification", "When this household was last confirmed to live in the home. Blank counts as overdue."),
              date("lastinsuranceverified", "Last insurance verification", "When this home's insurance was last checked. Blank counts as overdue."),
-             date("lastwalkby", "Last staff walk-by", "When staff last walked or drove by the home. Blank counts as overdue."),
              date("lastcontact", "Last contact", "The newest relationship note, or verification that came back."),
              memo("notes", "Notes"),
          ]),
@@ -532,15 +541,11 @@ TABLES = [
              bool_("primaryresidence", "Primary residence confirmed"),
              choice("rentalstatus", "Rental status", "rentalstatus", default="Not renting"),
              memo("tenantdetails", "Tenant details", "Tenant household size, income and rent, if renting"),
-             bool_("insurancereceived", "Insurance declarations received"),
              int_("peopleinhome", "People living in the home", "From the online form"),
              bool_("noshorttermrental", "No short-term rental certified", "The household certified it does not use the home as a short-term rental"),
-             bool_("insurancecurrent", "Insurance certified current", "The household certified its homeowner's insurance is paid and current"),
-             bool_("insurancecontact", "Asked for help with insurance", "The household couldn't find its insurance document or has questions"),
              bool_("mortgagecontact", "Asked for contact about the mortgage", "The household asked staff to get in touch about difficulty with its mortgage"),
              date("signeddate", "Signed on"),
              phone("phone", "Phone on the form"),
-             url("uploadslink", "Uploaded documents", "Where the forms platform saved what the household attached. Set by the intake flow."),
              text("verificationcode", "Verification code", "Unique code sent in the form link so the reply matches this record. Set by a flow.", max=20),
              email("sentto", "Sent to"),
              text("formentryid", "Form entry ID", "Forms platform entry ID. Set by the intake flow.", max=100),
@@ -580,27 +585,27 @@ TABLES = [
 
     dict(name="insuranceverification", label="Insurance verification", plural="Insurance verifications",
          primary_required=False,  # name is filled by the form script (webresources/names.js), the Insurance verification page or the intake flow
-         desc="A check of a home's insurance coverage: proof the household sent in for staff to review, or a household that asked for help with it.",
+         desc="A check of a home's insurance coverage: the card the insurer mailed, or proof the household sent in for staff to review.",
          primary=("Insurance verification", "For example: 2026-11-17, Rivera - 12 Pine St"),
          columns=[
              date("date", "Started"),
              choice("status", "Status", "insurancereviewstatus", "Requested: the household has been asked for proof. To review: proof is waiting for staff. "
                     "Needs contact: the household asked for help, or sent no proof.", default="To review"),
-             choice("method", "How", "verificationmethod", "An online form the household fills in, or a paper copy staff close by hand"),
+             choice("method", "How", "verificationmethod", "An online form the household fills in, a paper copy staff close by hand, or the card the insurer mails"),
              date("duedate", "Due date"),
              date("sentdate", "Sent date"),
              email("sentto", "Sent to"),
              memo("sentlink", "Link sent", "The household's own link to the online form, as it was sent. Set by the Insurance verification page.", max=4000),
              text("verificationcode", "Verification code", "Unique code sent in the form link so the reply matches this record.", max=20),
              bool_("contactrequested", "Asked to be contacted"),
-             url("documentslink", "Uploaded documents", "Where the forms platform saved the household's proof of insurance. Set by the intake flow."),
              file("document", "Insurance document", "Proof of insurance added by staff on the Insurance verification page."),
              date("verifieddate", "Reviewed on"),
              money("replacementcoverage", "Replacement coverage limit", "The dwelling replacement coverage shown on the proof of insurance"),
              memo("notes", "Notes"),
          ]),
     dict(name="followup", label="Follow-up", plural="Follow-ups",
-         desc="Something staff need to come back to for an occupancy, with the date it is due.",
+         desc="Something staff need to come back to, with the date it is due: for a home (its property), for the household in it "
+              "(its occupancy), or both.",
          primary=("Follow-up", "What to follow up on, for example: Call about the fence"),
          columns=[
              date("duedate", "Due date"),
@@ -620,13 +625,24 @@ TABLES = [
              memo("notes", "Notes"),
          ]),
     dict(name="walkby", label="Staff walk-by", plural="Staff walk-bys",
-         primary_required=False,  # name is filled by the form script (webresources/names.js) or the Verification hub page
-         desc="A staff visit to look at a home from the outside, with what they saw.",
-         primary=("Walk-by", "For example: 2026-11-17, Rivera - 12 Pine St"),
+         primary_required=False,  # name is filled by the form script (webresources/names.js) or the Stu in the wild page
+         desc="A staff visit to look at a home from the outside, with what they saw. It belongs to the property, so an empty "
+              "home can have one; the occupancy at the time is linked too when there is one.",
+         primary=("Walk-by", "For example: 2026-11-17, 12 Pine St"),
          columns=[
              date("date", "Date"),
-             choice("result", "What you saw", "walkbyresult"),
+             choice("status", "Status", "walkbystatus", "Draft: saved on the Stu in the wild page and not finished yet. Submitted: done; it counts "
+                    "as the home's last walk-by.", default="Submitted"),
+             bool_("followupneeded", "Follow-up needed", "Submitting the walk-by adds an open follow-up for the home."),
+             date("followupdue", "Follow-up due", "The due date for that follow-up. The day of the walk-by unless changed."),
              memo("notes", "Notes", "What you saw from the street: the yard, the outside of the home, anything to follow up."),
+         ]),
+    dict(name="walkbyphoto", label="Walk-by photo", plural="Walk-by photos",
+         primary_required=False,  # name is filled by the Stu in the wild page
+         desc="A photo taken on a staff walk-by. Added on the Stu in the wild page, which shrinks it first.",
+         primary=("Photo", "For example: Photo 1"),
+         columns=[
+             file("photo", "Photo", "The picture, as a JPG.", max_kb=10240),
          ]),
     dict(name="relationshipnote", label="Relationship note", plural="Relationship notes",
          primary_required=False,  # name is filled by the form script (webresources/names.js) or the Verification hub page
@@ -679,7 +695,7 @@ TABLES = [
              choice("saletype", "Sale type", "saletype", "Set automatically: Resale if the property has a current owner, otherwise Initial sale"),
              choice("status", "Status", "salestatus", default="Pending"),
              date("noticedate", "Notice of intent to sell", "Resales: the date the homeowner said they want to sell"),
-             date("contractdate", "Contract date"),
+             date("contractdate", "Purchase and sale agreement signed"),
              date("closingdate", "Closing date"),
              money("appraisedvalue", "Appraised value"),
              money("formulapriceatsale", "Formula price at sale", "Snapshot from the seller's occupancy"),
@@ -694,7 +710,42 @@ TABLES = [
              text("otherdebitsnote", "Other debits: what for"),
              text("lender", "Lender"),
              text("titlecompany", "Title or escrow company"),
+             money("closingcosts", "Closing costs", "The buyer's closing costs, from the final settlement statement"),
+             file("settlementstatement", "Final settlement statement", "The final settlement statement, as a PDF or a photo. Added on the Resale page."),
              memo("notes", "Notes"),
+         ]),
+    dict(name="aftersaletask", label="After-sale task", plural="After-sale tasks",
+         desc="The organization's own list of what has to happen after a sale closes. Each closed sale gets a copy of the tasks that "
+              "apply to it, on the After the sale page. Change, add or deactivate tasks here; sales already set up keep their copy.",
+         primary=("Task", "For example: Enter the buyer's insurance"),
+         columns=[
+             int_("order", "Order", "Tasks are listed lowest first"),
+             choice("action", "What it does", "aftersaleaction", "Tick it off: staff mark it done. The others also do the work, or open "
+                    "the place to do it, on the After the sale page.", default="Tick it off"),
+             choice("appliesto", "Which sales", "aftersaleapplies", default="Every sale"),
+             memo("details", "Details", "A line or two telling staff what to do", max=2000),
+         ]),
+    dict(name="saletask", label="Sale task", plural="Sale tasks",
+         primary_required=False,  # copied from the After-sale tasks by the After the sale page
+         desc="One after-sale task for one sale, with whether it is done.",
+         primary=("Task", "For example: Enter the buyer's insurance"),
+         columns=[
+             int_("order", "Order"),
+             choice("action", "What it does", "aftersaleaction", default="Tick it off"),
+             memo("details", "Details", max=2000),
+             choice("status", "Status", "saletaskstatus", default="To do"),
+             date("donedate", "Done on"),
+             memo("notes", "Notes", max=2000),
+         ]),
+    dict(name="salefunding", label="Purchase funding", plural="Purchase funding",
+         primary_required=False,  # name is filled by the Resale page
+         desc="One part of how a sale's purchase price is made up: the buyer's cash, a loan, a subsidy or something else.",
+         primary=("Funding", "For example: Loan, first mortgage"),
+         columns=[
+             choice("type", "Type", "purchasefundingtype"),
+             money("amount", "Amount"),
+             dec("interestrate", "Interest rate (%)", "For a loan. 0 for a loan with no interest.", precision=3),
+             text("notes", "Notes", "Who it is from, or what it is: the lender, the program, the gift giver", max=500),
          ]),
 
     # 13 ------------------------------------------------------------------
@@ -1087,6 +1138,10 @@ TABLES = [
 #              "RemoveLink" keep the child rows, clear the lookup
 #              "Restrict"  block deleting the parent while child rows exist
 # ---------------------------------------------------------------------------
+# Lookups that an earlier version made required, or deleted with their parent. The schema build brings one that already
+# exists in line with LOOKUPS, and only ever in the looser direction: required to optional, Cascade to RemoveLink.
+LOOSENED = [("walkby", "occupancy"), ("followup", "occupancy")]
+
 LOOKUPS = [
     ("householdmember",   "household",       "household",        "Household",            "Cascade",    True),
     ("application",       "household",       "household",        "Household",            "Restrict",   True),
@@ -1100,17 +1155,22 @@ LOOKUPS = [
     ("occupancy",         "household",       "household",        "Household",            "Restrict",   True),
     ("annualverification","occupancy",       "occupancy",        "Occupancy",            "Cascade",    True),
     ("insurancepolicy",   "occupancy",       "occupancy",        "Occupancy",            "Cascade",    True),
-    ("walkby",            "occupancy",       "occupancy",        "Occupancy",            "Cascade",    True),
+    ("walkby",            "property",        "property",         "Property",             "Cascade",    True),
+    ("walkby",            "occupancy",       "occupancy",        "Occupancy",            "RemoveLink", False),
+    ("walkbyphoto",       "walkby",          "walkby",           "Staff walk-by",        "Cascade",    True),
     ("insuranceverification", "occupancy",   "occupancy",        "Occupancy",            "Cascade",    True),
-    ("followup",          "occupancy",       "occupancy",        "Occupancy",            "Cascade",    True),
+    ("followup",          "occupancy",       "occupancy",        "Occupancy",            "RemoveLink", False),
+    ("followup",          "property",        "property",         "Property",             "Cascade",    False),
+    ("followup",          "walkby",          "walkby",           "Staff walk-by",        "RemoveLink", False),
     ("improvementcredit", "occupancy",       "occupancy",        "Occupancy",            "Cascade",    True),
     ("improvementcredit", "homeownerrequest", "homeownerrequest", "Homeowner request",   "RemoveLink", False),
-    ("insuranceverification", "annualverification", "annualverification", "From annual verification", "RemoveLink", False),
     ("loan",              "occupancy",       "occupancy",        "Occupancy",            "Cascade",    True),
     ("relationshipnote",  "occupancy",       "occupancy",        "Occupancy",            "Cascade",    True),
     ("homeownerrequest",  "occupancy",       "occupancy",        "Occupancy",            "Restrict",   True),
     ("homeownerrequest",  "property",        "property",         "Property",             "RemoveLink", False),
     ("sale",              "property",        "property",         "Property",             "Restrict",   True),
+    ("salefunding",       "sale",            "sale",             "Sale",                 "Cascade",    True),
+    ("saletask",          "sale",            "sale",             "Sale",                 "Cascade",    True),
     ("sale",              "selleroccupancy", "occupancy",        "Seller's occupancy",   "RemoveLink", False),
     ("sale",              "buyerhousehold",  "household",        "Buyer household",      "RemoveLink", False),
     ("sale",              "buyeroccupancy",  "occupancy",        "Buyer's occupancy",    "RemoveLink", False),
@@ -1311,6 +1371,25 @@ SEED_LISTS = {
 # Starter rows for ordinary tables, created only when the table is empty (build_schema.seed_rows).
 # Choice values by label; multi-select as a list of labels.
 SEED_ROWS = {
+    # A starting point: each organization edits its own list (Settings > After-sale tasks).
+    "aftersaletask": [
+        dict(name="Enter the buyer's insurance", order=10, action="Enter the insurance", appliesto="Every sale",
+             details="The policy the buyer had in place at closing. Saving it also records the home's first insurance verification, so the next one is due a year after the purchase."),
+        dict(name="Add the final settlement statement", order=20, action="Add the settlement statement", appliesto="Every sale",
+             details="The final settlement statement from the title or escrow company, as a PDF or a photo."),
+        dict(name="File the recorded ground lease and closing documents", order=30, action="Open the documents folder", appliesto="Every sale",
+             details="Put the recorded ground lease, its memorandum and the closing documents in the occupancy's documents folder."),
+        dict(name="Check the new occupancy's resale terms", order=40, action="Open the new occupancy", appliesto="Every sale",
+             details="The formula and limits were copied from the last owner. Change them if this buyer's ground lease differs."),
+        dict(name="Set up the monthly fees for the new owner", order=50, action="Open the property", appliesto="Every sale",
+             details="Check the fee schedule on the property's ERRR and fees tab: the lease fee and the repair reserve contribution."),
+        dict(name="Take photos of the home at purchase", order=60, action="Open Stu in the wild", appliesto="Every sale",
+             details="Record a staff walk-by with photos, so there is a picture of the home on the day this owner took it on."),
+        dict(name="Welcome the new homeowner", order=70, action="Tick it off", appliesto="Every sale",
+             details="Send the welcome letter or packet, and tell them when their first yearly verification will come."),
+        dict(name="Close out the seller's repair reserve and loans", order=80, action="Tick it off", appliesto="Resales only",
+             details="Settle what the seller is owed or owes: the repair reserve balance and any loan from the organization."),
+    ],
     # Starting point only: each CLT confirms its own figures (DESIGN.md, Eligibility).
     "eligibility": [dict(name="Organization eligibility", maxami=80, firsttimebuyer="Required",
                          housingratiomax=38, debtratiomax=45)],
@@ -1354,15 +1433,14 @@ ENVIRONMENT_VARIABLES = [
               "link so the reply can be matched. To fill in your form's own questions, put {year}, {household id}, {code}, {first name}, "
               "{last name}, {street}, {unit}, {city}, {state} and {zip} in the link the way your forms platform fills in a form from its "
               "address; a plain link gets the year, household ID and code added the usual way for Cognito Forms or Jotform."),
-    dict(name="InsuranceFormLink", label="Insurance verification: form link",
-         desc="The web address of the form a household uses to send proof of insurance. It can be the same form as the annual "
-              "verification. The link is filled in for each household the same way: see Annual verification: form link."),
     dict(name="OccupancyVerificationMonths", label="Verification hub: months between occupancy verifications",
-         desc="How often each home's occupancy is verified, in months. Blank means every 12."),
+         desc="Occupancy verification is due on each anniversary of the occupancy's start date. This is used only for an "
+              "occupancy with no start date: months from its last verification. Blank means 12."),
     dict(name="InsuranceVerificationMonths", label="Verification hub: months between insurance verifications",
          desc="How often each home's insurance is checked, in months. Blank means every 12."),
     dict(name="WalkByMonths", label="Verification hub: months between staff walk-bys",
-         desc="How often staff walk or drive by each home, in months. Blank means every 12."),
+         desc="How often staff walk or drive by each home, in months. Blank means every 12. On the Stu in the wild page a home is green "
+              "while its last submitted walk-by is newer than this."),
     dict(name="BrandLogoUrl", label="Brand: logo URL",
          desc="Web address of the CLT's logo (PNG or SVG; square works best). Shown on the home page."),
 ]
@@ -1397,6 +1475,10 @@ RETIRED = {
         ("property", "state"), ("household", "mailingstate"),
         ("propertyfunding", "origin"), ("incomelimitset", "roundto"),
         ("application", "statedamipct"),  # now the formula column amipct
+        # insurance is checked on its own, so the yearly occupancy form's insurance answers and uploads are gone
+        ("annualverification", "insurancereceived"), ("annualverification", "insurancecurrent"), ("annualverification", "insurancecontact"),
+        ("annualverification", "uploadslink"), ("insuranceverification", "documentslink"),
+        ("walkby", "result"), ("occupancy", "lastwalkby"),  # a walk-by has a follow-up tick box; the last walk-by is on the property
         *[("incomelimitset", f"limit{n}") for n in range(1, 9)],  # money; now whole-dollar size1..size8
     ],
     # (child, column, parent): lookups deleted by removing their relationship
@@ -1404,10 +1486,11 @@ RETIRED = {
         ("property", "development", "development"), ("insurancepolicy", "property", "property"),
         ("propertyfunding", "fundingprogram", "fundingprogram"), ("eligibilitycheck", "fundingprogram", "fundingprogram"),
         ("checklistitem", "requirement", "documentrequirement"),
+        ("insuranceverification", "annualverification", "annualverification"),
     ],
     # In order: a table goes after any retired table that looks it up (Funding program last).
     "tables": ["development", "document", "projectfunding", "documentrequirement", "incomelimit", "fundingprogram"],
     "choices": ["propertytype", "tenuretype", "relationship", "housingstatus", "incometype", "debttype",
                 "assettype", "fundingtype", "incomedefinition", "housingratioincludes", "debtratioincludes",
-                "reportformat", "fundingorigin", "documentscope"],
+                "reportformat", "fundingorigin", "documentscope", "walkbyresult"],
 }

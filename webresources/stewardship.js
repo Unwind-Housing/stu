@@ -1,4 +1,5 @@
-// Verification hub: which homes are due for an occupancy verification or an insurance verification (deployed as clt_/pages/stewardship.js by build_app.py). Plain rules with no Dataverse calls, so
+// Verification hub: which homes are due for an occupancy verification (on each anniversary of the purchase) and which
+// have had no insurance verification entered in the last 12 months. The two run on separate clocks. (Deployed as clt_/pages/stewardship.js by build_app.py). Plain rules with no Dataverse calls, so
 // tests/test_regular.py runs them in Node on worked examples. The page (stewardship.html) loads, shows and saves.
 var CLTRegular = (function () {
   // The two verifications: the organization setting that says how often, and the date on the occupancy.
@@ -7,7 +8,7 @@ var CLTRegular = (function () {
     { key: "insurance", label: "Insurance verification", setting: "InsuranceVerificationMonths", field: "clt_lastinsuranceverified" }
   ];
   var CONTACT_FIELD = "clt_lastcontact";
-  var DEFAULT_MONTHS = 12, SOON_DAYS = 30;
+  var DEFAULT_MONTHS = 12, SOON_DAYS = 30, EARLY_DAYS = 60;
   var OVERDUE = "Overdue", SOON = "Due soon", OK = "Up to date";
 
   function blank(v) { return v === null || v === undefined || v === ""; }
@@ -46,8 +47,38 @@ var CLTRegular = (function () {
     return { state: due < today ? OVERDUE : due <= addDays(today, SOON_DAYS) ? SOON : OK, last: last, dueOn: due };
   }
 
+  // Occupancy verification: due on each anniversary of the purchase (the occupancy's start date), whenever the last one
+  // came back. A verification counts for an anniversary when it came back no more than EARLY_DAYS before it, or any
+  // time after, so a late reply doesn't move next year's date and a reply to an early request isn't asked for again.
+  //   start: the occupancy's start date; last: the newest verification that counts ("" if never); today: "yyyy-mm-dd"
+  // -> { state, last, dueOn }, or null when there is no start date (the caller falls back to months since the last one).
+  // A new owner isn't due until the first anniversary. Due today is due soon, not overdue.
+  function anniversary(start, last, today) {
+    start = iso(start); last = iso(last);
+    if (!start) return null;
+    var k = 1;
+    while (addMonths(start, 12 * k) < today) k++;
+    var next = addMonths(start, 12 * k), prev = k > 1 ? addMonths(start, 12 * (k - 1)) : "";
+    function done(a) { return !!last && last >= addDays(a, -EARLY_DAYS); }
+    if (prev && !done(prev)) return { state: OVERDUE, last: last, dueOn: prev };
+    if (done(next)) return { state: OK, last: last, dueOn: addMonths(start, 12 * (k + 1)) };
+    return { state: next <= addDays(today, SOON_DAYS) ? SOON : OK, last: last, dueOn: next };
+  }
+
+  // Where one activity stands for one occupancy: occupancy verification by the anniversary, insurance by months since
+  // the last one. A new purchase starts both clocks: with no insurance verification yet, the first is due that many
+  // months after the start date (a year), not straight away.
+  function stand(a, start, last, settings, today) {
+    if (a.key === "occupancy") return anniversary(start, last, today) || status(last, months(settings[a.setting]), today);
+    if (!iso(last) && iso(start)) {
+      var s = status(start, months(settings[a.setting]), today);
+      return { state: s.state, last: "", dueOn: s.dueOn };
+    }
+    return status(last, months(settings[a.setting]), today);
+  }
+
   // One row per current occupancy.
-  //   occupancies: [{ id, name, property, household, role, dates: { occupancy, insurance, contact } }]  the dates typed on the occupancy
+  //   occupancies: [{ id, name, property, household, role, start: the start date, dates: { occupancy, insurance, contact } }]  the dates typed on the occupancy
   //   records:     { occupancy: { <occupancy id>: [dates] }, insurance: {...}, contact: {...} }  dates from its records
   //                (contact: every time staff were in touch: relationship notes, and verifications that came back)
   //   settings:    the organization's settings; today: "yyyy-mm-dd"
@@ -55,7 +86,7 @@ var CLTRegular = (function () {
   // onto the occupancy (an import) and records added later both count.
   //   records.requests: { <occupancy id>: { id, status, method, sent } }  the occupancy verification request that is open, if any
   //   records.insuranceRequests: { <occupancy id>: { id, status } }  the insurance verification that is open, if any
-  // -> rows, most urgent first: [{ ..., activities: { occupancy: {state, last, dueOn}, ... }, lastContact, worst, fix, request, insuranceRequest }]
+  // -> rows, the occupancy verification that is most urgent first: [{ ..., activities: { occupancy: {state, last, dueOn}, ... }, lastContact, worst, fix, request, insuranceRequest }]
   //    fix: the occupancy's dates that are behind its records ({ field: date }), for the page to bring up to date.
   function rows(occupancies, records, settings, today) {
     records = records || {}; settings = settings || {};
@@ -64,7 +95,7 @@ var CLTRegular = (function () {
       var acts = {}, fix = {}, worst = OK, soonest = "";
       ACTIVITIES.forEach(function (a) {
         var typed = iso((o.dates || {})[a.key]), newest = latest([typed].concat((records[a.key] || {})[o.id] || []));
-        var s = status(newest, months(settings[a.setting]), today);
+        var s = stand(a, o.start, newest, settings, today);
         acts[a.key] = s;
         if (newest && newest !== typed) fix[a.field] = newest;
         if (rank[s.state] < rank[worst]) worst = s.state;
@@ -72,12 +103,13 @@ var CLTRegular = (function () {
       });
       var typedContact = iso((o.dates || {}).contact), contact = latest([typedContact].concat((records.contact || {})[o.id] || []));
       if (contact && contact !== typedContact) fix[CONTACT_FIELD] = contact;
-      return { id: o.id, name: o.name || "", property: o.property || "", household: o.household || "", role: o.role || "",
+      return { id: o.id, name: o.name || "", property: o.property || "", household: o.household || "", role: o.role || "", start: iso(o.start),
                activities: acts, lastContact: contact, worst: worst, soonest: soonest, fix: fix, request: (records.requests || {})[o.id] || null,
                insuranceRequest: (records.insuranceRequests || {})[o.id] || null };
     });
     return out.sort(function (x, y) {
-      return rank[x.worst] - rank[y.worst] || (x.soonest < y.soonest ? -1 : x.soonest > y.soonest ? 1 : 0) ||
+      var a = x.activities.occupancy, b = y.activities.occupancy;
+      return rank[a.state] - rank[b.state] || (a.dueOn < b.dueOn ? -1 : a.dueOn > b.dueOn ? 1 : 0) ||
              (x.property < y.property ? -1 : x.property > y.property ? 1 : 0);
     });
   }
@@ -98,13 +130,13 @@ var CLTRegular = (function () {
 
   // The Dashboard's two figures: occupancy and insurance verifications that are overdue (or never done), and those
   // coming due between today and the end of this month. Each verification is counted once.
-  //   occupancies: [{ dates: { occupancy, insurance } }]  the dates on each current occupancy
+  //   occupancies: [{ start, dates: { occupancy, insurance } }]  the start date and the dates on each current occupancy
   function dashboard(occupancies, settings, today) {
     settings = settings || {};
     var out = { overdue: 0, thisMonth: 0 }, month = iso(today).slice(0, 7);
     (occupancies || []).forEach(function (o) {
       ACTIVITIES.forEach(function (a) {
-        var s = status((o.dates || {})[a.key], months(settings[a.setting]), today);
+        var s = stand(a, o.start, iso((o.dates || {})[a.key]), settings, today);
         if (s.state === OVERDUE) out.overdue++;
         else if (s.dueOn.slice(0, 7) === month) out.thisMonth++;
       });
@@ -118,6 +150,15 @@ var CLTRegular = (function () {
     return (list || []).filter(function (r) { return r.activities.occupancy.state !== OK && !r.request; }).map(function (r) { return r.id; });
   }
 
+  // The insurance list: homes with no insurance verification entered in the last 12 months (or the setting), or ever.
+  // Never entered first, then the longest ago.
+  function lapsed(list) {
+    return (list || []).filter(function (r) { return r.activities.insurance.state === OVERDUE; }).sort(function (x, y) {
+      var a = x.activities.insurance.last, b = y.activities.insurance.last;
+      return a < b ? -1 : a > b ? 1 : x.property < y.property ? -1 : x.property > y.property ? 1 : 0;
+    });
+  }
+
   // Which rows to show. activity: "" (any) or an activity key; show: "attention" (overdue or due soon), "overdue" or "all".
   function filter(list, activity, show) {
     return (list || []).filter(function (r) {
@@ -128,9 +169,9 @@ var CLTRegular = (function () {
     });
   }
 
-  var api = { ACTIVITIES: ACTIVITIES, CONTACT_FIELD: CONTACT_FIELD, DEFAULT_MONTHS: DEFAULT_MONTHS, SOON_DAYS: SOON_DAYS,
+  var api = { ACTIVITIES: ACTIVITIES, CONTACT_FIELD: CONTACT_FIELD, DEFAULT_MONTHS: DEFAULT_MONTHS, SOON_DAYS: SOON_DAYS, EARLY_DAYS: EARLY_DAYS,
               OVERDUE: OVERDUE, SOON: SOON, OK: OK, months: months, addMonths: addMonths, addDays: addDays, latest: latest,
-              status: status, rows: rows, summary: summary, filter: filter, toAsk: toAsk, dashboard: dashboard };
+              status: status, stand: stand, anniversary: anniversary, lapsed: lapsed, rows: rows, summary: summary, filter: filter, toAsk: toAsk, dashboard: dashboard };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   return api;
 })();

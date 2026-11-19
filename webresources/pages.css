@@ -11,6 +11,8 @@
   --warn-bg: #FFF4E0;
 }
 * { box-sizing: border-box; }
+/* Something marked hidden stays hidden, whatever its class says about display (a flex or grid box would show otherwise). */
+[hidden] { display: none !important; }
 html, body { margin: 0; background: var(--bg); color: var(--ink);
   font: 14px/1.5 "Segoe UI", "Segoe UI Web (West European)", -apple-system, BlinkMacSystemFont, Roboto, sans-serif; }
 a { color: var(--accent); }
@@ -220,7 +222,15 @@ table.kv td:first-child { color: var(--muted); white-space: nowrap; }
 label.inline { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; }
 label.inline input { font: inherit; color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
 input.roll { width: 150px; font-size: 18px; letter-spacing: .18em; font-variant-numeric: tabular-nums; }
-.lists { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; margin-top: 12px; }
+.lists { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 440px), 1fr)); gap: 16px; margin-top: 12px; }
+.lists .listbox { min-width: 0; overflow-x: auto; }   /* a list wider than its column scrolls inside it and never covers the next list */
+.funding { width: 100%; border-collapse: collapse; margin-top: 4px; }
+.funding th { text-align: left; font-size: 12.5px; font-weight: 600; color: var(--muted); padding: 4px 6px; }
+.funding td { padding: 3px 6px; vertical-align: top; }
+.funding select, .funding input { width: 100%; font: inherit; color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
+.funding .narrow { width: 110px; } .funding .x { width: 36px; }
+.fundingbox { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; margin-top: 12px; overflow-x: auto; }
+.fundingbox h4 { margin: 0 0 2px; font-size: 14px; } .fundingbox small { color: var(--muted); }
 .listbox h4 { margin: 0 0 4px; font-size: 14px; }
 .listbox h4 small { font-weight: 400; color: var(--muted); margin-left: 6px; }
 table.data.plain { border: 1px solid var(--line); border-radius: 6px; }

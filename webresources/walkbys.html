@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Walk-bys</title>
+<link rel="stylesheet" href="pages.css">
+<script src="pages.js"></script>
+<script src="field.js"></script>
+<style>
+  /* Shown on a form: a walk-by's photos (on the walk-by) or every walk-by for a home with its photos (on the property). */
+  html, body { background: var(--card); }
+  .wrap { padding: 4px 2px 12px; }
+  .walk { border-top: 1px solid var(--line); padding: 12px 0; }
+  .walk:first-child { border-top: 0; padding-top: 2px; }
+  .walk h3 { margin: 0 0 4px; font-size: 14px; font-weight: 600; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .walk h3 a { font-weight: 400; font-size: 12.5px; cursor: pointer; }
+  .walk p { margin: 0 0 6px; white-space: pre-wrap; }
+  .quiet { color: var(--muted); font-size: 12.5px; }
+  .thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; margin-top: 6px; }
+  .thumbs img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); display: block; background: var(--bg); cursor: zoom-in; }
+  .big { position: fixed; inset: 0; background: rgba(0,0,0,.85); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 12px; z-index: 5; }
+  .big img { max-width: 100%; max-height: calc(100% - 56px); object-fit: contain; border-radius: 4px; }
+  .big div { display: flex; gap: 10px; }
+  .big a, .big button { font: inherit; color: #fff; background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.5); border-radius: 6px; padding: 6px 12px; text-decoration: none; cursor: pointer; }
+  .more { font: inherit; margin-top: 8px; padding: 6px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); cursor: pointer; }
+</style>
+</head>
+<body>
+<div class="wrap" id="wrap"><p class="quiet">Loading...</p></div>
+<div class="big" id="big" hidden><img id="bigimg" alt="Photo"><div><a id="bigopen" target="_blank" rel="noopener">Open in a new tab</a><button type="button" id="bigclose">Close</button></div></div>
+
+<script>
+(function () {
+  var P = CLTPage, F = CLTField, $ = function (id) { return document.getElementById(id); };
+  var rec = F.formRecord(location.search), sets = {}, walks = [], shown = 0, PAGE = 6;
+  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+  function say(text) { $("wrap").innerHTML = '<p class="quiet">' + esc(text) + "</p>"; }
+
+  // A walk-by's photos, as thumbnails in the element with this id. Each is fetched as the signed-in user.
+  function photos(walkby, into) {
+    return P.getAll(sets.clt_walkbyphoto + "?$select=clt_walkbyphotoid&$filter=statecode eq 0 and _clt_walkby_value eq " + walkby + "&$orderby=createdon asc").then(function (rows) {
+      var el = $(into);
+      if (!rows.length) { el.innerHTML = '<p class="quiet">No photos.</p>'; return; }
+      el.className = "thumbs"; el.innerHTML = "";
+      return rows.reduce(function (chain, p) {
+        return chain.then(function () { return P.download(sets.clt_walkbyphoto + "(" + p.clt_walkbyphotoid + ")/clt_photo"); }).then(function (blob) {
+          var img = document.createElement("img");
+          img.alt = "Photo"; img.src = URL.createObjectURL(new Blob([blob], { type: "image/jpeg" })); el.appendChild(img);
+        }, function () { /* a photo that can't be read is left out */ });
+      }, Promise.resolve());
+    });
+  }
+  function block(w) {
+    return '<div class="walk"><h3>' + esc(w.date || "No date") + (w.status === F.DRAFT ? ' <span class="pill warn">Saved, not submitted</span>' : "") +
+           (w.followUp ? ' <span class="pill bad">Follow-up</span>' : "") + ' <a data-open="' + w.id + '">Open</a></h3>' +
+           (w.notes ? "<p>" + esc(w.notes) + "</p>" : '<p class="quiet">No notes.</p>') + '<div id="ph-' + w.id + '"><p class="quiet">Loading photos...</p></div></div>';
+  }
+  function more() {
+    var next = walks.slice(shown, shown + PAGE), old = $("more");
+    if (old) old.remove();
+    $("wrap").insertAdjacentHTML("beforeend", next.map(block).join("") +
+      (shown + next.length < walks.length ? '<button class="more" id="more" type="button">Show ' + (walks.length - shown - next.length) + " older</button>" : ""));
+    shown += next.length;
+    return next.reduce(function (chain, w) { return chain.then(function () { return photos(w.id, "ph-" + w.id); }); }, Promise.resolve());
+  }
+
+  $("wrap").addEventListener("click", function (e) {
+    var t = e.target;
+    if (t.id === "more") more();
+    else if (t.dataset.open) { e.preventDefault(); P.openRecord("clt_walkby", t.dataset.open); }
+    else if (t.tagName === "IMG") { $("bigimg").src = t.src; $("bigopen").href = t.src; $("big").hidden = false; }
+  });
+  $("bigclose").addEventListener("click", function () { $("big").hidden = true; });
+  $("big").addEventListener("click", function (e) { if (e.target.id === "big") $("big").hidden = true; });
+
+  if (!rec.id) { say(rec.table === "clt_walkby" ? "Photos are added on the Stu in the wild page. They show here once the walk-by is saved." : "Walk-bys show here once the record is saved."); return; }
+  Promise.all([P.entitySet("clt_walkby"), P.entitySet("clt_walkbyphoto")]).then(function (r) {
+    sets = { clt_walkby: r[0], clt_walkbyphoto: r[1] };
+    if (rec.table === "clt_walkby") {   // on a walk-by: its photos
+      $("wrap").innerHTML = '<div id="ph"></div>';
+      return photos(rec.id, "ph").then(function () { if (!$("ph").querySelector("img")) say("No photos on this walk-by. Photos are added on the Stu in the wild page."); });
+    }
+    // on a property: every walk-by, newest first
+    return P.getAll(sets.clt_walkby + "?$select=clt_walkbyid,clt_date,clt_status,clt_notes,clt_followupneeded&$filter=statecode eq 0 and _clt_property_value eq " + rec.id).then(function (rows) {
+      walks = F.history(rows.map(function (w) { return { id: w.clt_walkbyid, date: P.day(w.clt_date), status: P.fv(w, "clt_status"), notes: w.clt_notes || "", followUp: !!w.clt_followupneeded }; }));
+      if (!walks.length) { say("No walk-bys yet. They are added on the Stu in the wild page."); return; }
+      $("wrap").innerHTML = '<p class="quiet">' + walks.length + " walk-by" + (walks.length === 1 ? "" : "s") + ", newest first. Select a photo to see it larger.</p>";
+      return more();
+    });
+  }).catch(function (e) { say("Couldn't load: " + e.message); });
+})();
+</script>
+</body>
+</html>

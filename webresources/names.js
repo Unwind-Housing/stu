@@ -23,9 +23,12 @@ CLT.Names = (function () {
     if (last && home) setName(fc, last + " - " + home);
   }
 
-  // Staff walk-by and relationship note: "2026-11-17, Rivera - 123 Main St" (the date, then the occupancy's name)
-  function dated(ctx) {
-    var fc = ctx.getFormContext(), d = val(fc, "clt_date"), home = lookupName(fc, "clt_occupancy");
+  // Insurance verification and relationship note: "2026-11-17, Rivera - 123 Main St" (the date, then the occupancy's name)
+  function dated(ctx) { datedBy(ctx, "clt_occupancy"); }
+  // Staff walk-by: "2026-11-17, 123 Main St" (the date, then the property's name)
+  function walkby(ctx) { datedBy(ctx, "clt_property"); }
+  function datedBy(ctx, lookup) {
+    var fc = ctx.getFormContext(), d = val(fc, "clt_date"), home = lookupName(fc, lookup);
     if (!d || !home) return;
     var day = d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2);
     setName(fc, (day + ", " + home).slice(0, 100));
@@ -68,5 +71,5 @@ CLT.Names = (function () {
     });
   }
 
-  return { property: property, occupancy: occupancy, member: member, household: household, dated: dated };
+  return { property: property, occupancy: occupancy, member: member, household: household, dated: dated, walkby: walkby };
 })();

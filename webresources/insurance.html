@@ -11,6 +11,10 @@
 <script src="insurancecheck.js"></script>
 <style>
   table.data select { max-width: 150px; }
+  .cardbox { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; margin-bottom: 18px; }
+  .cardbox h2 { margin-top: 0; }
+  .cardbox .lead { color: var(--muted); max-width: 75ch; margin: 0 0 12px; }
+  .cardbox select { max-width: min(360px, 80vw); }
 </style>
 </head>
 <body>
@@ -20,53 +24,46 @@
     <img data-logo alt="">
     <div>
       <h1>Insurance verification</h1>
-      <p>Ask each household for proof of insurance, by online form or on paper, then review what comes back and approve each home's coverage.</p>
+      <p>Enter the insurer's card when it arrives, or ask a household for proof, then review it and approve the home's coverage.</p>
     </div>
   </div>
 
-  <ol class="steps" id="steps"></ol>
+  <!-- the card the insurer mails: entering it is the home's insurance verification -->
+  <div class="cardbox">
+    <h2>The insurer's card</h2>
+    <p class="lead">When your organization is listed as additional insured, the insurer mails a card. Enter it here: it is saved as an approved insurance verification for that home, with no need to ask the household.</p>
+    <div class="actions" id="k-closed"><button class="btn primary" id="k-open" type="button">Enter an insurance card</button></div>
+    <div class="closeform" id="k-form" hidden>
+      <label>Home <select id="k-home"></select></label>
+      <label>Date on the card <input id="k-date" type="date"></label>
+      <label>Replacement coverage limit ($) <input id="k-coverage" type="text" inputmode="decimal" placeholder="If the card shows it"></label>
+      <label>Photo or scan of the card (PDF, or a photo) <input id="k-file" type="file" accept=".pdf,.jpg,.jpeg,.png"></label>
+      <label class="wide">Notes <textarea id="k-notes" placeholder="Insurer, policy number, and anything else on the card worth keeping"></textarea></label>
+      <button class="btn primary" type="button" id="k-save">Save the card</button>
+      <button class="btn" type="button" id="k-cancel">Close</button>
+      <span class="mutedtext wide" id="k-note"></span>
+      <span class="errtext wide" id="k-err"></span>
+    </div>
+  </div>
 
-  <!-- 1. choose who -->
-  <div class="panel" data-step="1">
-    <h2>1. Choose who to ask <small id="count"></small></h2>
-    <p class="lead" id="lead">Every current occupancy. Homes whose insurance verification is overdue or due soon are ticked for you. Choose an online form or a paper copy for each one.</p>
+  <!-- asking a household: Stu records that it was asked; staff ask in their own way and add the proof when it arrives -->
+  <div class="panel">
+    <h2>Ask households for proof <small id="count"></small></h2>
+    <p class="lead" id="lead">Every current occupancy. Homes with no insurance verification in the last year (or, for a new owner, in the first year after the purchase) are ticked for you. Starting a request records that you asked: ask the household the way you usually do, then open the request below and add the proof when it arrives.</p>
     <div class="toolbar">
       <label>Due <input id="due" type="date"></label>
     </div>
     <div class="tablewrap" style="margin-top: 12px">
       <table class="data">
-        <thead><tr><th><input type="checkbox" id="all" title="Tick everyone who can be asked"></th><th>Home</th><th>Household</th><th>Email</th><th>Last verified</th><th>Now</th><th>How</th></tr></thead>
-        <tbody id="rows"><tr><td colspan="7">Loading...</td></tr></tbody>
+        <thead><tr><th><input type="checkbox" id="all" title="Tick everyone who can be asked"></th><th>Home</th><th>Household</th><th>Last verified</th><th>Now</th></tr></thead>
+        <tbody id="rows"><tr><td colspan="5">Loading...</td></tr></tbody>
       </table>
     </div>
   </div>
 
-  <!-- 2. the email -->
-  <div class="panel" data-step="2" hidden>
-    <h2>2. The email <small>for the households getting the online form</small></h2>
-    <p class="lead">Words in curly brackets are filled in for each household: <span id="fields"></span>.</p>
-    <div class="emailform">
-      <label for="link">Insurance form link <small>Stu fills in each household's own details, so the form opens with them and the reply can be matched.</small></label>
-      <input id="link" type="text" placeholder="Paste the form's link">
-      <small id="linknote"></small>
-      <small>It can be the same form as the annual verification. To fill in the form's own questions, put these in the link where each one goes: <span id="linkfields"></span>.</small>
-      <label for="subject">Subject</label><input id="subject" type="text" maxlength="200">
-      <label for="body">Message</label><textarea id="body" rows="12"></textarea>
-      <label class="inline" style="font-weight:400;margin-top:10px"><input id="keep" type="checkbox" style="width:auto"> Keep these words for next time</label>
-    </div>
-  </div>
-
-  <!-- 3. send, one at a time -->
-  <div class="panel" data-step="3" hidden>
-    <h2>3. Send <small id="sendcount"></small></h2>
-    <p class="lead">Copy each email into your mail program (or use Open in mail), send it, then select Sent. Stu does not send email itself.</p>
-    <div id="card"></div>
-  </div>
-
   <div id="problems"></div>
   <div class="bottombar">
-    <button class="btn" id="back" type="button" hidden>Back</button>
-    <button class="btn primary" id="next" type="button">Next</button>
+    <button class="btn primary" id="next" type="button">Start requests</button>
     <button class="btn" id="dash" type="button">Back to the Verification hub</button>
     <span class="msg" id="msg"></span>
   </div>
@@ -75,25 +72,27 @@
   <div class="toolbar"><label class="inline" style="font-weight:400"><input type="checkbox" id="showall" style="width:auto"> Show closed and cancelled ones too</label></div>
   <div class="tablewrap" style="margin-top: 8px">
     <table class="data">
-      <thead><tr><th>Home</th><th>Household</th><th>How</th><th>Status</th><th>Sent</th><th>Due</th><th>Reviewed</th><th></th></tr></thead>
+      <thead><tr><th>Home</th><th>Household</th><th>How</th><th>Status</th><th>Asked</th><th>Due</th><th>Reviewed</th><th></th></tr></thead>
       <tbody id="open"><tr><td colspan="8">Loading...</td></tr></tbody>
     </table>
   </div>
-  <p class="note"><b>Requested</b> means the household has been asked. <b>To review</b> means proof of insurance is waiting for you to look at. <b>Needs contact</b> means the household asked for help, or sent no proof.
+  <p class="note">A card you entered shows here as Approved, with <b>Insurer's card</b> under How (tick the box above to see closed ones). <b>Requested</b> means the household has been asked and you are waiting for its proof.
     <b>Issue found</b> means you looked and something is wrong: it stays open until the insurance is approved.
-    Open a request to see the link that was sent and the document, save your review or cancel it. Approving one sets the occupancy's Last insurance verification date.
+    Open a request to add or view the document, save your review or cancel it. Approving one sets the occupancy's Last insurance verification date.
     Cancelling an approved one takes that date back to the approval before it.</p>
 </div>
 
 <script>
 (function () {
   var P = CLTPage, V = CLTVerify, I = CLTInsuranceCheck, R = CLTRegular, $ = function (id) { return document.getElementById(id); };
-  var fv = P.fv, sets = {}, ch = {}, org = {}, occ = [], list = [], rows = [], picks = {}, step = 1, queue = [], at = 0, template = null, closing = "";
-  var TABLES = ["clt_occupancy", "clt_insuranceverification", "clt_household", "clt_householdmember", "clt_property"];
-  // Opened from the Verification hub: ?data=occupancies=<ids> (those households start ticked) or ?data=open=<insurance verification id>
+  var fv = P.fv, sets = {}, ch = {}, org = {}, occ = [], list = [], rows = [], picks = {}, closing = "";
+  var TABLES = ["clt_occupancy", "clt_insuranceverification"];
+  // Opened from the Verification hub: ?data=occupancies=<ids> (those households start ticked), ?data=open=<insurance verification id>
+  // or ?data=card=<occupancy id> (the card form opens, on that home when one is given)
   var data = decodeURIComponent((/[?&]data=([^&]*)/.exec(location.search) || [])[1] || "");
   var only = ((/(?:^|&)occupancies=([\w,-]+)/.exec(data) || [])[1] || "").split(",").filter(Boolean);
   var wantOpen = ((/(?:^|&)open=([\w-]+)/.exec(data) || [])[1] || "").toLowerCase();
+  var wantCard = /(?:^|&)card=([\w-]*)/.exec(data);
 
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
   function today() { var d = new Date(); return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2); }
@@ -103,156 +102,66 @@
     $("problems").innerHTML = items.length ? '<div class="msgbox bad"><ul>' + items.map(function (m) { return "<li>" + esc(m) + "</li>"; }).join("") + "</ul></div>" : "";
     return items.length;
   }
-  function newCode() { var b = new Uint8Array(8); (window.crypto || window.msCrypto).getRandomValues(b); return V.code(Array.prototype.slice.call(b)); }
   function isOpen(x) { return I.OPEN.indexOf(x.status) >= 0; }
 
   // ---- loading
   function load() {
     return Promise.all([
-      P.getAll(sets.clt_occupancy + "?$select=clt_occupancyid,clt_name,clt_recordnumber,clt_lastinsuranceverified,clt_documentsfolder,_clt_property_value,_clt_household_value" +
+      P.getAll(sets.clt_occupancy + "?$select=clt_occupancyid,clt_name,clt_startdate,clt_lastinsuranceverified,clt_documentsfolder,_clt_property_value,_clt_household_value" +
                "&$filter=statecode eq 0 and clt_status eq " + ch.occupancystatus.Current + "&$orderby=clt_name asc"),
-      P.getAll(sets.clt_insuranceverification + "?$select=clt_insuranceverificationid,clt_name,clt_status,clt_method,clt_date,clt_duedate,clt_sentdate,clt_sentto,clt_sentlink," +
-               "clt_verificationcode,clt_verifieddate,clt_replacementcoverage,clt_contactrequested,clt_documentslink,clt_document_name,clt_notes,_clt_occupancy_value,_clt_annualverification_value&$filter=statecode eq 0"),
-      P.getAll(sets.clt_household + "?$select=clt_householdid,clt_name,clt_recordnumber,clt_primaryemail&$filter=statecode eq 0"),
-      P.getAll(sets.clt_householdmember + "?$select=clt_firstname,clt_lastname,_clt_household_value&$filter=statecode eq 0 and clt_applicantrole eq " + ch.applicantrole["Primary applicant"]),
-      P.getAll(sets.clt_property + "?$select=clt_propertyid,clt_street,clt_unit,clt_city,clt_zip&$expand=clt_state($select=clt_name,clt_formanswers)").catch(function () { return []; })
+      P.getAll(sets.clt_insuranceverification + "?$select=clt_insuranceverificationid,clt_name,clt_status,clt_method,clt_date,clt_duedate," +
+               "clt_verifieddate,clt_replacementcoverage,clt_contactrequested,clt_document_name,clt_notes,_clt_occupancy_value&$filter=statecode eq 0")
     ]).then(function (r) {
-      var hh = {}, first = {}, homes = {}, every = R.months(org.InsuranceVerificationMonths);
-      r[2].forEach(function (h) { hh[h.clt_householdid] = h; });
-      r[3].forEach(function (m) { if (m.clt_firstname && !first[m._clt_household_value]) first[m._clt_household_value] = m; });
-      r[4].forEach(function (p) { homes[p.clt_propertyid] = p; });
+      var insurance = R.ACTIVITIES.filter(function (a) { return a.key === "insurance"; })[0];
       occ = r[0].map(function (o) {
-        var h = hh[o._clt_household_value] || {}, who = first[o._clt_household_value] || {}, home = homes[o._clt_property_value] || {}, st = home.clt_state || {};
-        return { id: o.clt_occupancyid, name: o.clt_name, home: fv(o, "_clt_property_value"), household: h.clt_name || fv(o, "_clt_household_value"), householdId: h.clt_recordnumber || "",
-                 occupancyId: o.clt_recordnumber || "", email: h.clt_primaryemail || "", firstName: who.clt_firstname || "", lastName: who.clt_lastname || "",
-                 street: home.clt_street || "", unit: home.clt_unit || "", city: home.clt_city || "", homeState: V.stateCode(st.clt_name, st.clt_formanswers), zip: home.clt_zip || "",
+        return { id: o.clt_occupancyid, name: o.clt_name, home: fv(o, "_clt_property_value"), household: fv(o, "_clt_household_value"),
                  lastVerified: day(o.clt_lastinsuranceverified), folder: o.clt_documentsfolder || "",
-                 due: R.status(o.clt_lastinsuranceverified, every, today()).state !== R.OK };
+                 due: R.stand(insurance, o.clt_startdate, day(o.clt_lastinsuranceverified), org, today()).state !== R.OK };
       });
       list = r[1].map(function (x) {
         return { id: x.clt_insuranceverificationid, occupancy: x._clt_occupancy_value, status: fv(x, "clt_status"), method: fv(x, "clt_method"), date: day(x.clt_date), due: day(x.clt_duedate),
-                 sent: day(x.clt_sentdate), sentTo: x.clt_sentto || "", sentLink: x.clt_sentlink || "", code: x.clt_verificationcode || "", verified: day(x.clt_verifieddate),
-                 coverage: x.clt_replacementcoverage, contact: !!x.clt_contactrequested, link: x.clt_documentslink || "", file: x.clt_document_name || "", notes: x.clt_notes || "", fromForm: !!x._clt_annualverification_value };
+                 verified: day(x.clt_verifieddate), coverage: x.clt_replacementcoverage, contact: !!x.clt_contactrequested, file: x.clt_document_name || "", notes: x.clt_notes || "" };
       });
       build(); renderOpen();
-      if (step === 1) showStep(1);   // the button says how many, so it follows the list
     });
   }
-  // Who can be asked. Ticks and methods the user has set are kept.
+  // Who can be asked. Ticks the user has set are kept.
   function build() {
     rows = I.choose(occ, list, only);
-    rows.forEach(function (r) { if (!picks[r.id]) picks[r.id] = { tick: r.tick, method: r.method }; if (r.request) picks[r.id].tick = false; });
+    rows.forEach(function (r) { if (!picks[r.id]) picks[r.id] = { tick: r.tick }; if (r.request) picks[r.id].tick = false; });
     renderRows();
   }
-
-  // ---- step 1
   function renderRows() {
     var n = rows.filter(function (r) { return picks[r.id].tick; }).length;
     $("count").textContent = n + " of " + rows.length + " ticked";
+    $("next").textContent = "Start " + n + " request" + (n === 1 ? "" : "s");
     $("rows").innerHTML = rows.length ? rows.map(function (r) {
       var p = picks[r.id], locked = !!r.request;
       return "<tr" + (locked ? ' class="locked"' : "") + '><td><input type="checkbox" data-tick="' + r.id + '"' + (p.tick ? " checked" : "") + (locked ? " disabled" : "") + "></td>" +
-        "<td>" + esc(r.home || r.name) + "</td><td>" + esc(r.household) + "</td><td>" + (esc(r.email) || '<span class="mutedtext">none</span>') + "</td>" +
+        "<td>" + esc(r.home || r.name) + "</td><td>" + esc(r.household) + "</td>" +
         "<td>" + (r.lastVerified || '<span class="mutedtext">never</span>') + (r.due ? ' <span class="pill bad">due</span>' : "") + "</td>" +
-        "<td>" + (locked ? '<span class="pill warn">Open: ' + esc(r.request.status) + "</span>" : '<span class="mutedtext">not asked</span>') + "</td>" +
-        "<td>" + (locked ? esc(r.request.method || "") : '<select data-method="' + r.id + '">' + [I.ONLINE, I.PAPER].map(function (m) {
-          return "<option" + (m === p.method ? " selected" : "") + (m === I.ONLINE && !r.email ? " disabled" : "") + ">" + m + "</option>"; }).join("") + "</select>") + "</td></tr>";
-    }).join("") : '<tr><td colspan="7">There are no current occupancies yet.</td></tr>';
+        "<td>" + (locked ? '<span class="pill warn">Open: ' + esc(r.request.status) + "</span>" : '<span class="mutedtext">not asked</span>') + "</td></tr>";
+    }).join("") : '<tr><td colspan="5">There are no current occupancies yet.</td></tr>';
   }
-  function chosen() {
-    return rows.filter(function (r) { return picks[r.id].tick && !r.request; }).map(function (r) {
-      var c = {}; Object.keys(r).forEach(function (k) { c[k] = r[k]; }); c.method = picks[r.id].method; return c;
-    });
-  }
-  function input() { return { year: new Date().getFullYear(), due: $("due").value, link: $("link").value, subject: $("subject").value, body: $("body").value }; }
+  function chosen() { return rows.filter(function (r) { return picks[r.id].tick && !r.request; }); }
 
-  // ---- the steps
-  function showStep(n) {
-    step = n; problems([]);
-    document.querySelectorAll(".panel").forEach(function (p) { p.hidden = +p.dataset.step !== n; });
-    $("steps").innerHTML = ["Choose who", "The email", "Send"].map(function (t, i) {
-      return '<li class="' + (i + 1 === n ? "on" : i + 1 < n ? "seen" : "") + '"><button type="button" disabled><span>' + (i + 1) + "</span>" + t + "</button></li>"; }).join("");
-    var online = chosen().filter(function (c) { return c.method === I.ONLINE; }).length, paper = chosen().length - online;
-    $("back").hidden = n === 1 || n === 3;
-    $("next").hidden = n === 3;
-    $("next").textContent = n === 1 ? (online ? "Next: the email" : "Start " + paper + " paper request" + (paper === 1 ? "" : "s"))
-                                    : "Start " + chosen().length + " request" + (chosen().length === 1 ? "" : "s");
-  }
-
-  // Start the batch: paper requests are opened straight away; online ones go to Send, one at a time.
+  // Start the requests: each is recorded as Requested. Stu sends nothing: staff ask the household themselves.
   function start() {
-    var c = chosen(), inp = input();
+    var c = chosen(), inp = { due: $("due").value };
     if (problems(I.startProblems(c, inp, today()))) return;
-    var paper = c.filter(function (x) { return x.method === I.PAPER; }), online = c.filter(function (x) { return x.method === I.ONLINE; });
-    var ops = paper.map(function (x) { return { method: "POST", path: sets.clt_insuranceverification, body: record(x, inp, I.PAPER, null) }; });
+    var ops = c.map(function (x) {
+      var body = { clt_name: I.recordName(today(), x.name), clt_date: today(), clt_duedate: inp.due, clt_method: ch.method[I.PAPER], clt_status: ch.status[I.REQUESTED], clt_contactrequested: false };
+      body["clt_occupancy@odata.bind"] = "/" + sets.clt_occupancy + "(" + x.id + ")";
+      return { method: "POST", path: sets.clt_insuranceverification, body: body };
+    });
     $("next").disabled = true;
-    var keep = online.length && $("keep").checked ? saveTemplate(inp) : Promise.resolve();
-    // The form is the same every time: a link that was pasted or changed becomes the organization's setting.
-    var link = inp.link.trim();
-    if (online.length && link && link !== (org.InsuranceFormLink || "").trim()) {
-      keep = keep.then(function () { return P.saveSetting("InsuranceFormLink", link); })
-        .then(function () { org.InsuranceFormLink = link; linkNote(); },
-              function () { $("linknote").textContent = "This link is used for this batch, but couldn't be saved for next time (your account can't change settings). Ask whoever looks after Stu to save it."; });
-    }
-    keep.then(function () { return P.batch(ops); }).then(function () {
+    P.batch(ops).then(function () {
       $("next").disabled = false;
-      paper.forEach(function (x) { picks[x.id].tick = false; });
-      queue = online.map(function (x) { var code = newCode(); return { row: x, code: code, mail: V.email(x, inp, org.OrgName || "", code) }; });
-      at = 0;
-      var done = paper.length ? paper.length + " paper request" + (paper.length === 1 ? "" : "s") + " opened. " : "";
+      c.forEach(function (x) { picks[x.id].tick = false; });
       return load().then(function () {
-        if (queue.length) { showStep(3); renderCard(); say(done); }
-        else { showStep(1); say(done + "Ask each household for its proof of insurance, then open the request below and add the document when it comes in."); }
+        say(c.length + " request" + (c.length === 1 ? "" : "s") + " started. Ask each household for its proof of insurance, then open the request below and add the document when it comes in.");
       });
     }).catch(function (e) { $("next").disabled = false; problems(["Couldn't start: " + e.message]); });
-  }
-  function record(x, inp, method, extra) {
-    var body = { clt_name: I.recordName(today(), x.name), clt_date: today(), clt_duedate: inp.due, clt_method: ch.method[method], clt_status: ch.status[I.REQUESTED], clt_contactrequested: false };
-    body["clt_occupancy@odata.bind"] = "/" + sets.clt_occupancy + "(" + x.id + ")";
-    Object.keys(extra || {}).forEach(function (k) { body[k] = extra[k]; });
-    return body;
-  }
-  function linkNote() {
-    $("linknote").textContent = (org.InsuranceFormLink || "").trim()
-      ? "From your organization's settings. Change it here and the new link is kept for next time."
-      : "Not set yet. Paste the link once: it is kept for next time when you start the requests.";
-  }
-  // The organization's own wording, kept as a message template where that list exists.
-  function saveTemplate(inp) {
-    if (!sets.clt_messagetemplate || ch.noticetype["Insurance verification"] == null) return Promise.resolve();
-    var words = { clt_subject: inp.subject, clt_body: inp.body };
-    return (template ? P.patch(sets.clt_messagetemplate + "(" + template.id + ")", words)
-                     : P.create(sets.clt_messagetemplate, { clt_name: "Insurance verification", clt_noticetype: ch.noticetype["Insurance verification"],
-                                                            clt_subject: inp.subject, clt_body: inp.body })).catch(function () { /* the batch still goes ahead */ });
-  }
-
-  // ---- step 3
-  function renderCard() {
-    $("sendcount").textContent = queue.length ? "email " + Math.min(at + 1, queue.length) + " of " + queue.length : "";
-    if (at >= queue.length) {
-      $("card").innerHTML = '<div class="msgbox ok">That was the last one. Each request you marked Sent is open below until the proof comes back.</div>' +
-        '<div class="actions" style="margin-top:12px"><button class="btn primary" type="button" id="again">Back to the list</button></div>';
-      return;
-    }
-    var q = queue[at], m = q.mail;
-    var mail = "mailto:" + encodeURIComponent(m.to) + "?subject=" + encodeURIComponent(m.subject) + "&body=" + encodeURIComponent(m.body);
-    $("card").innerHTML = '<div class="emailcard"><div class="emailhead"><b>' + esc(q.row.household) + "</b> &middot; " + esc(q.row.home) + "</div>" +
-      [["To", m.to, "to"], ["Subject", m.subject, "subject"]].map(function (x) {
-        return '<div class="emailrow"><span class="mutedtext">' + x[0] + '</span><span class="emailvalue">' + esc(x[1]) + '</span><button class="btn small" type="button" data-copy="' + x[2] + '">Copy</button></div>'; }).join("") +
-      '<div class="emailbody">' + V.emailHtml(m, org.BrandAccentColor, I.BUTTON) + '</div>' +
-      '<p class="note" style="word-break:break-all">The button goes to: ' + esc(m.link) + ' </p>' +
-      '<div class="actions emailactions"><button class="btn small" type="button" data-copy="body">Copy the message</button>' +
-      '<a class="btn small" href="' + esc(mail) + '" title="Mail programs only take plain words this way, so the link is spelled out instead of being a button">Open in mail (plain, no button)</a></div>' +
-      '<p class="note">Copy the message and paste it into your email to get the button.</p></div>' +
-      '<div class="actions" style="margin-top:12px"><button class="btn primary" type="button" id="sentit">Sent</button><button class="btn" type="button" id="skipit">Skip</button></div>';
-  }
-  function sent() {
-    var q = queue[at], inp = input();
-    $("sentit").disabled = true;
-    P.batch([{ method: "POST", path: sets.clt_insuranceverification,
-               body: record(q.row, inp, I.ONLINE, { clt_sentdate: today(), clt_sentto: q.mail.to, clt_verificationcode: q.code, clt_sentlink: q.mail.link }) }])
-      .then(function () { picks[q.row.id].tick = false; at++; return load(); }).then(function () { showStep(3); renderCard(); })
-      .catch(function (e) { $("sentit").disabled = false; problems(["Couldn't mark it sent: " + e.message]); });
   }
 
   // ---- requests: each one can be opened to see its link and document, close it or cancel it
@@ -267,30 +176,24 @@
     $("open").innerHTML = shown.length ? shown.map(function (x) {
       var o = byId[x.occupancy], late = x.status === I.REQUESTED && x.due && x.due < today();
       var pill = x.status === I.CONTACT || x.status === "Issue found" || late ? "bad" : isOpen(x) ? "warn" : x.status === "Approved" ? "ok" : "";
-      return '<tr data-row="' + x.id + '"><td>' + esc(o.home || o.name) + "</td><td>" + esc(o.household) + "</td><td>" + esc(x.method || (x.fromForm ? "Yearly form" : "")) + "</td>" +
-        '<td><span class="pill ' + pill + '">' + esc(x.status) + (late ? ", late" : "") + "</span></td><td>" + (x.sent || "") + "</td><td>" + (x.due || "") + "</td><td>" + (x.verified || "") + "</td>" +
+      return '<tr data-row="' + x.id + '"><td>' + esc(o.home || o.name) + "</td><td>" + esc(o.household) + "</td><td>" + esc(x.method === I.PAPER ? "From the household" : x.method || "") + "</td>" +
+        '<td><span class="pill ' + pill + '">' + esc(x.status) + (late ? ", late" : "") + "</span></td><td>" + (x.date || "") + "</td><td>" + (x.due || "") + "</td><td>" + (x.verified || "") + "</td>" +
         '<td><button class="btn small" type="button" data-close="' + x.id + '">' + (closing === x.id ? "Hide" : "Open") + "</button></td></tr>" + (closing === x.id ? detail(x, o) : "");
     }).join("") : '<tr><td colspan="8">' + (all ? "No requests yet." : "No open requests.") + "</td></tr>";
   }
   function detail(x, o) {
     var open = isOpen(x), cancelled = x.status === I.CANCELLED;
-    var facts = [x.sentTo ? "Sent to " + x.sentTo + (x.sent ? " on " + x.sent : "") : "", x.code ? "Code " + x.code : "", x.fromForm ? "Started by the yearly form" : "",
-                 x.date ? "Started " + x.date : ""].filter(Boolean);
+    var facts = [x.date ? "Started " + x.date : ""].filter(Boolean);
     var html = '<tr class="detail"><td colspan="8">';
     if (facts.length) html += '<div class="reqline">' + facts.map(esc).join(" &middot; ") + "</div>";
     if (x.contact) html += '<div class="reqline"><span class="pill bad">Asked to be contacted</span> The household couldn\'t find the document or has questions.</div>';
-    if (x.sentLink) html += '<div class="reqline"><span class="mutedtext">Link sent</span><input id="c-link" type="text" readonly value="' + esc(x.sentLink) + '">' +
-      '<button class="btn small" type="button" id="c-copy">Copy</button><a class="btn small" target="_blank" rel="noopener" href="' + esc(x.sentLink) + '">Open the form</a></div>';
-    if (x.link) html += '<div class="reqline"><span class="mutedtext">What they sent</span><a class="btn small" target="_blank" rel="noopener" href="' + esc(x.link) +
-      '">Open the uploaded documents</a><span class="mutedtext">everything the household attached, in SharePoint</span></div>';
-    else if (x.fromForm) html += '<div class="reqline"><span class="mutedtext">What they sent</span><span class="mutedtext">nothing was attached to the form</span></div>';
     html += '<div class="reqline"><span class="mutedtext">Insurance document</span>' +
       (x.file ? "<b>" + esc(x.file) + '</b><button class="btn small" type="button" id="c-view">View</button>' : '<span class="mutedtext">none yet</span>') +
       (cancelled ? "" : "<label>" + (x.file ? "Replace it" : "Add proof of insurance") + ' (PDF, or a photo) <input id="c-file" type="file" accept=".pdf,.jpg,.jpeg,.png"></label>' +
         (open ? "" : '<button class="btn small" type="button" id="c-upload">Save the file</button>')) + '</div><div id="c-preview"></div>';
     if (open) html += '<div class="closeform">' +
       '<label>Reviewed on <input id="c-verified" type="date" max="' + today() + '" value="' + today() + '"></label>' +
-      '<label>Came back as <select id="c-method">' + [I.ONLINE, I.PAPER].map(function (m) { return "<option" + (m === (x.method || I.ONLINE) ? " selected" : "") + ">" + m + "</option>"; }).join("") + "</select></label>" +
+      '<label>Proof is <select id="c-method">' + [I.PAPER, I.CARD].map(function (m) { return "<option" + (m === x.method ? " selected" : "") + ">" + (m === I.PAPER ? "From the household" : m) + "</option>"; }).join("") + "</select></label>" +
       '<label>Replacement coverage limit ($) <input id="c-coverage" type="text" inputmode="decimal" placeholder="From the proof of insurance" value="' + (x.coverage == null ? "" : esc(x.coverage)) + '"></label>' +
       '<label>Outcome <select id="c-outcome"><option value="">Choose</option>' + I.OUTCOMES.map(function (s) { return "<option" + (s === x.status ? " selected" : "") + ">" + s + "</option>"; }).join("") + "</select></label>" +
       '<label class="wide">Notes <textarea id="c-notes" placeholder="What you checked, anything to follow up, or what the issue is">' + esc(x.notes) + "</textarea></label>" +
@@ -313,7 +216,7 @@
     var bad = I.closeProblems(inp, today()), fp = V.fileProblem(file);
     if (fp) bad.push(fp);
     if (bad.length) { $("c-err").textContent = bad.join(" "); return; }
-    var ops = [{ method: "PATCH", path: c.path, body: { clt_status: ch.status[inp.outcome], clt_method: ch.method[$("c-method").value], clt_verifieddate: inp.verified, clt_replacementcoverage: I.money(inp.coverage), clt_notes: inp.notes.trim() || null } }];
+    var ops = [{ method: "PATCH", path: c.path, body: { clt_status: ch.status[inp.outcome], clt_method: ch.method[$("c-method").value === I.CARD ? I.CARD : I.PAPER], clt_verifieddate: inp.verified, clt_replacementcoverage: I.money(inp.coverage), clt_notes: inp.notes.trim() || null } }];
     // only an approval counts as the insurance being verified
     if (I.counts(inp.outcome) && inp.verified > day(o.lastVerified)) ops.push({ method: "PATCH", path: sets.clt_occupancy + "(" + o.id + ")", body: { clt_lastinsuranceverified: inp.verified } });
     $("c-save").disabled = true;
@@ -352,37 +255,58 @@
     }).catch(function (e) { $("c-err").textContent = "Couldn't cancel it: " + e.message; });
   }
 
+  // ---- the insurer's card
+  function showCard(id) {
+    $("k-home").innerHTML = '<option value="">Choose the home</option>' + occ.map(function (o) {
+      return '<option value="' + o.id + '"' + (id && o.id.toLowerCase() === id.toLowerCase() ? " selected" : "") + ">" + esc((o.home || o.name) + (o.household ? ", " + o.household : "")) + "</option>"; }).join("");
+    $("k-date").max = today(); if (!$("k-date").value) $("k-date").value = today();
+    $("k-form").hidden = false; $("k-closed").hidden = true; $("k-err").textContent = ""; cardNote();
+  }
+  function hideCard() { $("k-form").hidden = true; $("k-closed").hidden = false; }
+  function cardNote() {
+    var id = $("k-home").value, open = id && list.filter(function (x) { return x.id === I.cardTarget(id, list); })[0];
+    $("k-note").textContent = open ? "This home has an insurance verification open (" + open.status + "). The card will close it as approved." : "";
+  }
+  function saveCard() {
+    var file = $("k-file").files && $("k-file").files[0] ? $("k-file").files[0] : null;
+    var inp = { occupancy: $("k-home").value, verified: $("k-date").value, coverage: $("k-coverage").value };
+    var bad = I.cardProblems(inp, today()), fp = V.fileProblem(file);
+    if (fp) bad.push(fp);
+    if (bad.length) { $("k-err").textContent = bad.join(" "); return; }
+    var o = occ.filter(function (q) { return q.id === inp.occupancy; })[0], target = I.cardTarget(o.id, list), notes = $("k-notes").value.trim();
+    var was = target ? list.filter(function (x) { return x.id === target; })[0] : null;
+    var body = { clt_status: ch.status.Approved, clt_method: ch.method[I.CARD], clt_verifieddate: inp.verified, clt_notes: [was && was.notes, notes].filter(Boolean).join("\n") || null };
+    if (I.money(inp.coverage) !== null) body.clt_replacementcoverage = I.money(inp.coverage);
+    var saved;
+    if (target) saved = P.patch(sets.clt_insuranceverification + "(" + target + ")", body).then(function () { return target; });
+    else {
+      body.clt_name = I.recordName(inp.verified, o.name); body.clt_date = today(); body.clt_contactrequested = false;
+      body["clt_occupancy@odata.bind"] = "/" + sets.clt_occupancy + "(" + o.id + ")";
+      saved = P.create(sets.clt_insuranceverification, body).then(function (rec) { return rec.clt_insuranceverificationid; });
+    }
+    $("k-save").disabled = true; $("k-err").textContent = "";
+    saved.then(function (id) { return file && id ? P.upload(sets.clt_insuranceverification + "(" + id + ")/clt_document", file) : null; })
+      .then(function () { return inp.verified > day(o.lastVerified) ? P.patch(sets.clt_occupancy + "(" + o.id + ")", { clt_lastinsuranceverified: inp.verified }) : null; })
+      .then(function () {
+        $("k-save").disabled = false; $("k-home").value = ""; $("k-coverage").value = ""; $("k-notes").value = ""; $("k-file").value = ""; $("k-date").value = today();
+        picks = {};
+        return load().then(function () { $("k-note").textContent = "Card saved: insurance verified for " + (o.home || o.name) + " on " + inp.verified + ". Choose another home to enter the next card."; });
+      }).catch(function (e) { $("k-save").disabled = false; $("k-err").textContent = "Couldn't save the card: " + e.message + " Check the Requests list below before trying again."; });
+  }
+
   // ---- events
+  $("k-open").addEventListener("click", function () { showCard(""); });
+  $("k-cancel").addEventListener("click", hideCard);
+  $("k-save").addEventListener("click", saveCard);
+  $("k-home").addEventListener("change", cardNote);
   $("rows").addEventListener("change", function (e) {
     var t = e.target;
     if (t.dataset.tick) picks[t.dataset.tick].tick = t.checked;
-    if (t.dataset.method) picks[t.dataset.method].method = t.value;
-    renderRows(); showStep(1);
+    problems([]); renderRows();
   });
-  $("all").addEventListener("change", function () { rows.forEach(function (r) { if (!r.request) picks[r.id].tick = $("all").checked; }); renderRows(); showStep(1); });
-  $("next").addEventListener("click", function () {
-    var online = chosen().filter(function (c) { return c.method === I.ONLINE; }).length;
-    if (step === 1 && online) { if (!problems(I.startProblems(chosen(), { due: $("due").value, link: "https://x", subject: "x", body: "{link}" }, today()))) showStep(2); }
-    else start();
-  });
-  $("back").addEventListener("click", function () { showStep(1); });
+  $("all").addEventListener("change", function () { rows.forEach(function (r) { if (!r.request) picks[r.id].tick = $("all").checked; }); problems([]); renderRows(); });
+  $("next").addEventListener("click", start);
   $("dash").addEventListener("click", function () { P.go({ pageType: "webresource", webresourceName: "clt_/pages/stewardship.html" }); });
-  $("card").addEventListener("click", function (e) {
-    var t = e.target, m = queue[at] && queue[at].mail;
-    if (t.dataset.copy) {
-      try {
-        var plain = m[t.dataset.copy], done = function () { t.textContent = "Copied"; };
-        // the message is copied with its button (and as plain words, for a program that only takes those)
-        if (t.dataset.copy === "body" && window.ClipboardItem && navigator.clipboard.write) {
-          navigator.clipboard.write([new ClipboardItem({ "text/html": new Blob([V.emailHtml(m, org.BrandAccentColor, I.BUTTON)], { type: "text/html" }), "text/plain": new Blob([plain], { type: "text/plain" }) })])
-            .then(done, function () { return navigator.clipboard.writeText(plain).then(done); });
-        } else navigator.clipboard.writeText(plain).then(done);
-      } catch (err) { say("Select the text and copy it by hand.", true); }
-    }
-    else if (t.id === "sentit") sent();
-    else if (t.id === "skipit") { at++; renderCard(); }
-    else if (t.id === "again") { queue = []; showStep(1); say(""); }
-  });
   $("open").addEventListener("click", function (e) {
     var t = e.target;
     if (t.dataset.close) { closing = closing === t.dataset.close ? "" : t.dataset.close; renderOpen(); }
@@ -391,38 +315,25 @@
     else if (t.id === "c-view") viewIt();
     else if (t.id === "c-void") voidIt();
     else if (t.id === "c-occ") P.openRecord("clt_occupancy", current().o.id);
-    else if (t.id === "c-copy") { try { navigator.clipboard.writeText($("c-link").value).then(function () { t.textContent = "Copied"; }); } catch (err) { $("c-link").select(); } }
   });
   $("showall").addEventListener("change", renderOpen);
 
-  if (only.length) $("lead").textContent = "The households you chose on the Verification hub are ticked. Tick or untick any others, and choose an online form or a paper copy for each one.";
+  if (only.length) $("lead").textContent = "The households you chose on the Verification hub are ticked. Tick or untick any others. Starting a request records that you asked: ask the household the way you usually do, then add the proof when it arrives.";
   $("due").value = V.defaultDue(today()); $("due").min = today();
-  $("subject").value = I.DEFAULT.subject; $("body").value = I.DEFAULT.body;
-  $("fields").textContent = V.FIELDS.map(function (f) { return "{" + f[0] + "}"; }).join(", ");
-  $("linkfields").textContent = V.LINK_FIELDS.map(function (f) { return "{" + f[0] + "}"; }).join(", ");
-  showStep(1);
 
-  Promise.all([P.brand(), P.choice("clt_occupancystatus"), P.choice("clt_insurancereviewstatus"), P.choice("clt_verificationmethod"),
-               P.choice("clt_applicantrole"), P.choice("clt_noticetype")].concat(TABLES.map(P.entitySet)))
+  Promise.all([P.brand(), P.choice("clt_occupancystatus"), P.choice("clt_insurancereviewstatus"), P.choice("clt_verificationmethod")].concat(TABLES.map(P.entitySet)))
     .then(function (r) {
-      org = r[0] || {}; ch = { occupancystatus: r[1], status: r[2], method: r[3], applicantrole: r[4], noticetype: r[5] };
-      TABLES.forEach(function (t, i) { sets[t] = r[6 + i]; });
-      $("link").value = org.InsuranceFormLink || ""; linkNote();
-      // the organization's saved wording, where the message template list is installed
-      return P.entitySet("clt_messagetemplate").then(function (set) {
-        sets.clt_messagetemplate = set;
-        return P.getAll(set + "?$select=clt_messagetemplateid,clt_subject,clt_body&$filter=statecode eq 0 and clt_noticetype eq " + ch.noticetype["Insurance verification"] + "&$orderby=createdon asc");
-      }).then(function (t) {
-        if (t[0]) { template = { id: t[0].clt_messagetemplateid }; $("subject").value = t[0].clt_subject || I.DEFAULT.subject; $("body").value = t[0].clt_body || I.DEFAULT.body; }
-      }).catch(function () { /* no template list: the built-in words are used */ });
+      org = r[0] || {}; ch = { occupancystatus: r[1], status: r[2], method: r[3] };
+      TABLES.forEach(function (t, i) { sets[t] = r[4 + i]; });
     }).then(load).then(function () {
+      if (wantCard) showCard(wantCard[1]);
       // opened for one particular verification: show it, even if it is closed
       var x = wantOpen && list.filter(function (q) { return q.id.toLowerCase() === wantOpen; })[0];
       if (x) {
         closing = x.id; if (!isOpen(x)) $("showall").checked = true; renderOpen();
         var row = document.querySelector('[data-row="' + x.id + '"]'); if (row && row.scrollIntoView) row.scrollIntoView();
       }
-    }).catch(function (e) { $("rows").innerHTML = '<tr><td colspan="7">Couldn\'t load: ' + esc(e.message) + "</td></tr>"; });
+    }).catch(function (e) { $("rows").innerHTML = '<tr><td colspan="5">Couldn\'t load: ' + esc(e.message) + "</td></tr>"; });
 })();
 </script>
 </body>

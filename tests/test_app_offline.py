@@ -209,8 +209,9 @@ def main():
     # Start here comes first: the Dashboard (where the app opens), the Verification hub and the guides; then Activities: Occupancy verification, Insurance verification, Resale
     smx = ET.fromstring(next(iter(fake.sitemaps.values()))["sitemapxml"])
     urls = [sa.get("Url") or sa.get("Entity") for sa in smx.iter("SubArea")]
-    assert urls[:6] == ["$webresource:clt_/pages/overview.html", "$webresource:clt_/pages/stewardship.html", "$webresource:clt_/pages/guides.html",
-                        "$webresource:clt_/pages/verify.html", "$webresource:clt_/pages/insurance.html", "$webresource:clt_/pages/resale.html"], urls[:7]
+    assert urls[:7] == ["$webresource:clt_/pages/overview.html", "$webresource:clt_/pages/stewardship.html", "$webresource:clt_/pages/field.html",
+                        "$webresource:clt_/pages/guides.html",
+                        "$webresource:clt_/pages/verify.html", "$webresource:clt_/pages/insurance.html", "$webresource:clt_/pages/resale.html"], urls[:8]
     assert [g.get("Title") or g.find("Titles/Title").get("Title") for g in smx.iter("Group")][:2] == ["Start here", "Activities"]
     import app_spec
     assert app_spec.PAGES["overview"][0] == "Stewardship Dashboard"
@@ -235,6 +236,10 @@ def main():
     assert hh["Potential purchasers"].count("<value>") == 2 and 'operator="in"' in hh["Potential purchasers"]
     # Neighborhood: on the property form, filtered to its own list, and a column in the property views
     assert 'datafieldname="clt_neighborhood"' in prop_form["formxml"]
+    # a page on a form: the web resource control, handed the record's id
+    pages = [c for c in ET.fromstring(prop_form["formxml"]).iter("control") if c.get("classid") == "{9FDF5F91-88B1-47f4-AD53-C11EFC01A01D}"]
+    assert len(pages) == 1 and pages[0].get("id").startswith("WebResource_") and pages[0].get("datafieldname") is None
+    assert pages[0].find("parameters/Url").text == "clt_/pages/walkbys.html" and pages[0].find("parameters/PassParameters").text == "true"
     assert any(v.get("name") == "List: Neighborhood" for v in fake.views.values())
     assert 'name="clt_neighborhood"' in next(v for v in fake.views.values() if v.get("name") == "Properties by neighborhood")["layoutxml"]
     # Documents tab shows the SharePoint folder on Property, Household and Occupancy

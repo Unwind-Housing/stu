@@ -8,7 +8,7 @@ Start a TEST environment from scratch, in one go:
      --sharepoint-folder: the folders inside that parent folder in each document library, nothing else).
   3. Load the made-up portfolio of 20 homes (tools/make_test_data.py, tools/import_records.py).
   4. Add made-up history to it: sales, insurance, loans, improvements, requests, follow-ups, notes, ERRR entries
-     and past verifications.
+     past verifications and a few staff walk-bys.
 
 NEVER run this on an environment that holds real records. It can't be undone.
 Without --confirm it only counts what would go and changes nothing.
@@ -20,6 +20,8 @@ Usage:
   --confirm        the first part of the environment's address, so a slip can't clear the wrong one
   --keep-projects  leave projects and their priorities, income bands and lottery factors in place
   --no-test-data   stop after clearing: an empty environment
+  --email          a test inbox (Gmail): every test household gets it with a dot in a different place, which Gmail
+                   delivers to the one inbox. Without it the addresses are at example.com and go nowhere.
 """
 import argparse
 import os
@@ -80,7 +82,7 @@ def load_history(dv, today, log=print):
         c.sort(key=lambda o: o.get(ln("startdate")) or "")
 
     def parent(t):   # the link a row is told apart by
-        return "occupancy" if t not in ("sale", "errrtransaction") else "property"
+        return "occupancy" if t not in ("sale", "errrtransaction", "walkby") else "property"
 
     have = {}
     for t in tables:
@@ -120,7 +122,7 @@ def load_history(dv, today, log=print):
     return made
 
 
-def run(dv, sp=None, folder=None, delete=False, keep_projects=False, test_data=True, today=None, log=print):
+def run(dv, sp=None, folder=None, delete=False, keep_projects=False, test_data=True, today=None, email=None, log=print):
     today = today or date.today()
     reach = True
     if sp and folder:   # find out before anything is deleted whether this sign-in can reach SharePoint
@@ -146,7 +148,7 @@ def run(dv, sp=None, folder=None, delete=False, keep_projects=False, test_data=T
         return
     log("\nLoading the test portfolio:")
     with tempfile.TemporaryDirectory() as tmp:
-        mk.write(tmp, today)
+        mk.write(tmp, today, email)
         counts = ir.run(dv, tmp, log=lambda s: None, add_list_values=True)
     log("  " + ", ".join(f"{v} {k}" for k, v in counts.items()))
     load_history(dv, today, log=lambda s: log("  " + s))
@@ -158,6 +160,7 @@ def main():
     ap.add_argument("--confirm", help="The first part of the environment's address. Without it, nothing is changed.")
     ap.add_argument("--keep-projects", action="store_true")
     ap.add_argument("--no-test-data", action="store_true")
+    ap.add_argument("--email", help="A test inbox (Gmail) for every test household, with a dot in a different place each")
     ap.add_argument("--sharepoint-site", help="Also clear the old record folders in this site's document libraries")
     ap.add_argument("--sharepoint-folder", help="The parent folder this environment's record folders are in (DEV)")
     ap.add_argument("--tenant", default="organizations")
@@ -175,7 +178,7 @@ def main():
         args.sharepoint_site, args.client_id, args.tenant, args.device_code)) if args.sharepoint_site else None
     try:
         run(dv, sp, args.sharepoint_folder, delete=bool(args.confirm), keep_projects=args.keep_projects,
-            test_data=not args.no_test_data)
+            test_data=not args.no_test_data, email=args.email)
     except (DataverseError, SharePointError) as e:
         sys.exit(f"\nSTOPPED: {e}")
 

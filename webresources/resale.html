@@ -45,15 +45,17 @@
   var P = CLTPage, R = CLTResale, $ = function (id) { return document.getElementById(id); };
   var fv = P.fv, sets = {}, ch = {}, sales = [], D = null, open = "", starting = false;
   // D: the resale on screen { sale, seller, loans, owed, buyers, candidates }
-  var TABLES = ["clt_sale", "clt_occupancy", "clt_property", "clt_household", "clt_loan", "clt_homeownerrequest", "clt_improvementcredit"];
+  var TABLES = ["clt_sale", "clt_occupancy", "clt_property", "clt_household", "clt_loan", "clt_homeownerrequest", "clt_improvementcredit", "clt_salefunding"];
   var SALE = "clt_saleid,clt_name,clt_status,clt_noticedate,clt_contractdate,clt_closingdate,clt_appraisedvalue,clt_formulapriceatsale,clt_creditsatsale," +
              "clt_maxpriceatsale,clt_purchaseprice,clt_subsidyrecapture,clt_lender,clt_titlecompany,clt_loanpayoff,clt_othercredits,clt_othercreditsnote,clt_otherdebits," +
-             "clt_otherdebitsnote,_clt_property_value,_clt_selleroccupancy_value,_clt_buyerhousehold_value,_clt_buyeroccupancy_value";
+             "clt_otherdebitsnote,clt_closingcosts,clt_settlementstatement_name,_clt_property_value,_clt_selleroccupancy_value,_clt_buyerhousehold_value,_clt_buyeroccupancy_value";
 
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
   function today() { var d = new Date(); return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2); }
   function money(v) { return v == null || v === "" || isNaN(v) ? "" : "$" + Number(v).toLocaleString("en-US", { maximumFractionDigits: 2 }); }
   function plain(v) { return v == null ? "" : String(v); }
+  // A price as it goes in a box: "$227,160.94". The rules read it back with or without the sign and commas.
+  function dollars(v) { return v == null || v === "" || isNaN(v) ? "" : "$" + Number(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
   function day(v) { return v ? String(v).slice(0, 10) : ""; }
   function val(id) { return $(id) ? $(id).value.trim() : ""; }
   function say(text, err) { $("msg").textContent = text || ""; $("msg").className = "msg" + (err ? " err" : ""); }
@@ -91,7 +93,8 @@
                      " and clt_approvedcredit gt 0") : [],
       projectFor(sale._clt_property_value),
       occ ? P.getAll(sets.clt_improvementcredit + "?$select=clt_name,clt_originalvalue,clt_valuedate,clt_depreciationyears,_clt_homeownerrequest_value&$filter=statecode eq 0 and _clt_occupancy_value eq " + occ)
-              .catch(function () { return []; }) : []
+              .catch(function () { return []; }) : [],
+      P.getAll(sets.clt_salefunding + "?$select=clt_salefundingid,clt_type,clt_amount,clt_interestrate,clt_notes&$filter=statecode eq 0 and _clt_sale_value eq " + id + "&$orderby=createdon asc")
     ]).then(function (r) {
       var loans = r[1].map(function (l) {
         return { name: l.clt_name, balance: l.clt_startingbalance, rate: l.clt_interestrate, start: l.clt_startdate, end: l.clt_enddate,
@@ -101,7 +104,8 @@
       D = { sale: sale, seller: r[0] || {}, loans: loans, owed: R.loansOwed(loans, today()), buyers: buyers,
             improved: R.improvements(r[3].map(function (q) { return { id: q.clt_homeownerrequestid, name: q.clt_name, type: fv(q, "clt_requesttype"), status: fv(q, "clt_status"), credit: q.clt_approvedcredit }; }),
                                      r[5].map(function (c) { return { name: c.clt_name, original: c.clt_originalvalue, date: c.clt_valuedate, years: c.clt_depreciationyears, request: c._clt_homeownerrequest_value }; }), today()),
-            groups: R.buyerGroups(r[4].projects, r[4].certified, buyers) };
+            groups: R.buyerGroups(r[4].projects, r[4].certified, buyers),
+            funding: r[6].map(function (f) { return { id: f.clt_salefundingid, type: fv(f, "clt_type"), amount: f.clt_amount, rate: f.clt_interestrate, notes: f.clt_notes || "" }; }) };
       render();
       // The occupancy's Improvement credits figure follows its list, at today's value (it feeds the maximum resale price).
       var total = R.creditsTotal(r[5].map(function (c) { return { original: c.clt_originalvalue, date: c.clt_valuedate, years: c.clt_depreciationyears }; }), today());
@@ -153,9 +157,11 @@
     if (key === "price") return "Maximum resale price " + money(s.clt_maxpriceatsale) + " (formula " + money(s.clt_formulapriceatsale) + ", added value " + money(s.clt_creditsatsale || 0) +
       "). Loans owed " + money(s.clt_loanpayoff || 0) + ".";
     if (key === "buyer") return "Buyer: " + esc(fv(s, "_clt_buyerhousehold_value")) + ".";
-    if (key === "contract") return "Purchase price " + money(s.clt_purchaseprice) + ", contract dated " + day(s.clt_contractdate) + "." +
-      (s.clt_subsidyrecapture > 0 ? " Subsidy recaptured: " + money(s.clt_subsidyrecapture) + "." : "");
-    return "Closed " + day(s.clt_closingdate) + ". " + esc(fv(s, "_clt_buyeroccupancy_value")) + " is the current occupancy.";
+    if (key === "contract") return "Purchase price " + money(s.clt_purchaseprice) + ", purchase and sale agreement signed " + day(s.clt_contractdate) + "." +
+      (s.clt_subsidyrecapture > 0 ? " Subsidy recaptured: " + money(s.clt_subsidyrecapture) + "." : "") +
+      (D.funding.length ? " Funding: " + esc(R.fundingSummary(D.funding)) + "." : "");
+    return "Closed " + day(s.clt_closingdate) + ". " + esc(fv(s, "_clt_buyeroccupancy_value")) + " is the current occupancy." +
+      (s.clt_closingcosts != null ? " Closing costs " + dollars(s.clt_closingcosts) + "." : "");
   }
   function line(text, input, small) { return '<div class="costline"><span>' + text + (small ? " <small>" + small + "</small>" : "") + "</span>" + input + "</div>"; }
   function box(id, value, cls) { return '<input id="' + id + '" type="text" inputmode="decimal" value="' + esc(plain(value)) + '"' + (cls ? ' class="' + cls + '"' : "") + ">"; }
@@ -205,15 +211,21 @@
     }
     if (key === "contract") {
       return '<div class="fields">' +
-        '<label class="field">Purchase price' + box("c-price", s.clt_purchaseprice != null ? s.clt_purchaseprice : s.clt_maxpriceatsale, "mid") + "<small>Maximum resale price: " + money(s.clt_maxpriceatsale) + ". A price above it is allowed: the difference is subsidy recaptured by the organization.</small></label>" +
-        '<label class="field">Contract date<input id="c-date" type="date" max="' + today() + '" value="' + day(s.clt_contractdate) + '"></label>' +
+        '<label class="field">Purchase price' + box("c-price", dollars(s.clt_purchaseprice != null ? s.clt_purchaseprice : s.clt_maxpriceatsale), "mid") + "<small>The sale price to the selling homeowner is this amount, up to the maximum resale price of " + dollars(s.clt_maxpriceatsale) + ". A price above the maximum is allowed: the difference is subsidy recaptured by the organization.</small></label>" +
+        '<label class="field">Purchase and sale agreement signed<input id="c-date" type="date" max="' + today() + '" value="' + day(s.clt_contractdate) + '"></label>' +
         '<label class="field">Lender<input id="c-lender" type="text" maxlength="200" value="' + esc(plain(s.clt_lender)) + '"></label>' +
         '<label class="field">Title or escrow company<input id="c-title" type="text" maxlength="200" value="' + esc(plain(s.clt_titlecompany)) + '"></label></div>' +
+        '<div class="fundingbox"><h4>How the purchase price is made up</h4><small>One line for each part: the buyer\'s cash, each loan, each subsidy. A loan needs its interest rate (0 for none). The lines should add up to the purchase price.</small>' +
+        '<table class="funding"><thead><tr><th>Type</th><th>Amount</th><th>Interest rate (%)</th><th>Notes</th><th></th></tr></thead><tbody id="f-rows">' +
+        D.funding.concat(D.funding.length ? [] : [{}]).map(fundingRow).join("") + '</tbody></table>' +
+        '<div class="actions" style="margin-top:8px;align-items:center"><button class="btn small" type="button" id="f-add">Add a line</button><span id="f-total" class="mutedtext"></span></div></div>' +
         "<p>Saving also marks the home <b>Sale pending</b>.</p>";
     }
     if (key === "closing") {
       var buyer = fv(s, "_clt_buyerhousehold_value"), home = fv(s, "_clt_property_value");
-      return '<div class="fields"><label class="field">Closing date<input id="x-date" type="date" max="' + today() + '" value="' + today() + '"></label></div>' +
+      return '<div class="fields"><label class="field">Closing date<input id="x-date" type="date" max="' + today() + '" value="' + today() + '"></label>' +
+        '<label class="field">Closing costs' + box("x-costs", dollars(s.clt_closingcosts), "mid") + "<small>The buyer's closing costs, from the final settlement statement. Leave it blank if you don't have it yet.</small></label>" +
+        '<label class="field">Final settlement statement<input id="x-file" type="file" accept=".pdf,.jpg,.jpeg,.png"><small>A PDF, or a photo. You can also add it after the closing is recorded.</small></label></div>' +
         "<p>Recording the closing does all of this at once:</p><ul>" +
         "<li>Marks the sale <b>Closed</b>.</li>" +
         "<li>Ends " + esc(fv(s, "_clt_selleroccupancy_value")) + " on the closing date.</li>" +
@@ -222,6 +234,28 @@
         "<p>Check the new occupancy's terms afterwards if this buyer's lease differs.</p>";
     }
     return "";
+  }
+
+  // One line of how the purchase price is made up. The interest rate is only for a loan.
+  function fundingRow(f) {
+    f = f || {};
+    return '<tr data-id="' + esc(f.id || "") + '"><td><select data-f="type"><option value="">Choose</option>' + R.FUNDING_TYPES.map(function (t) {
+        return "<option" + (t === f.type ? " selected" : "") + ">" + t + "</option>"; }).join("") + "</select></td>" +
+      '<td class="narrow"><input data-f="amount" type="text" inputmode="decimal" value="' + esc(f.amount == null ? "" : dollars(f.amount)) + '"></td>' +
+      '<td class="narrow"><input data-f="rate" type="text" inputmode="decimal" placeholder="' + (f.type === R.LOAN ? "Required" : "Loans only") + '" value="' + esc(f.rate == null ? "" : f.rate) + '"' + (f.type === R.LOAN ? "" : " disabled") + "></td>" +
+      '<td><input data-f="notes" type="text" maxlength="500" placeholder="Who it is from, or what it is" value="' + esc(f.notes || "") + '"></td>' +
+      '<td class="x"><button class="btn small" type="button" data-f="drop" title="Take this line off">&times;</button></td></tr>';
+  }
+  function readFunding() {
+    return Array.prototype.map.call(document.querySelectorAll("#f-rows tr"), function (tr) {
+      var get = function (k) { var el = tr.querySelector('[data-f="' + k + '"]'); return el ? el.value.trim() : ""; };
+      return { id: tr.dataset.id || "", type: get("type"), amount: get("amount"), rate: get("rate"), notes: get("notes") };
+    });
+  }
+  function fundingTotalLine() {
+    if (!$("f-total")) return;
+    var lines = R.fundingLines(readFunding()), price = n(val("c-price"));
+    $("f-total").textContent = lines.length ? "Total " + dollars(R.fundingTotal(readFunding())) + (price > 0 ? " of " + dollars(price) : "") : "";
   }
 
   function startForm() {
@@ -256,8 +290,17 @@
         "</div></li>";
     }).join("") + (locked ? "" : '<li style="list-style:none;margin:6px 0 0 50px"><button class="btn small" type="button" id="cancelsale">Cancel this resale</button></li>');
     if (showing === "price") figures();
+    if (showing === "contract") fundingTotalLine();
+    if (pr.closed) {   // the final statement often arrives after the closing: it can be added, replaced and viewed here
+      var name = D.sale.clt_settlementstatement_name;
+      $("track").insertAdjacentHTML("beforeend", '<li style="list-style:none;margin:10px 0 0 50px"><div class="reqline"><span class="mutedtext">Final settlement statement</span>' +
+        (name ? "<b>" + esc(name) + '</b><button class="btn small" type="button" id="viewstatement">View</button>' : '<span class="mutedtext">none yet</span>') +
+        "<label>" + (name ? "Replace it" : "Add it") + ' (PDF, or a photo) <input id="statementfile" type="file" accept=".pdf,.jpg,.jpeg,.png"></label>' +
+        '<button class="btn small" type="button" id="addstatement">Save the file</button><span class="errtext" id="statementerr"></span></div></li>');
+    }
     if (pr.closed && D.sale._clt_buyeroccupancy_value) {
-      $("track").insertAdjacentHTML("beforeend", '<li style="list-style:none;margin:6px 0 0 50px"><button class="btn" type="button" id="openocc">Open the new occupancy</button></li>');
+      $("track").insertAdjacentHTML("beforeend", '<li style="list-style:none;margin:6px 0 0 50px"><div class="actions"><button class="btn primary" type="button" id="aftersale">After the sale: what to do next</button>' +
+        '<button class="btn" type="button" id="openocc">Open the new occupancy</button></div></li>');
     }
   }
 
@@ -310,29 +353,46 @@
       ops = [{ method: "PATCH", path: sets.clt_sale + "(" + id + ")", body: { "clt_buyerhousehold@odata.bind": bind("clt_household", input.household) } }];
     } else if (key === "contract") {
       input = { price: val("c-price"), maxPrice: s.clt_maxpriceatsale, contractDate: val("c-date") };
-      if (problems(R.check("contract", input, today()))) return;
-      var cw = R.warnings("contract", input, today());
-      if (cw.length && $("errs").dataset.warned !== input.price) { problems(cw.concat("Save again to keep this price."), "warn"); $("errs").dataset.warned = input.price; return; }
+      var typed = readFunding(), lines = R.fundingLines(typed);
+      if (problems(R.check("contract", input, today()).concat(R.fundingProblems(typed)))) return;
+      var cw = R.warnings("contract", input, today()).concat(R.fundingWarnings(typed, input.price)), asked = input.price + "|" + R.fundingTotal(typed);
+      if (cw.length && $("errs").dataset.warned !== asked) { problems(cw.concat("Save again to keep it this way."), "warn"); $("errs").dataset.warned = asked; return; }
       ops = [{ method: "PATCH", path: sets.clt_sale + "(" + id + ")", body: { clt_purchaseprice: n(input.price), clt_contractdate: input.contractDate,
                clt_subsidyrecapture: R.figures({ formula: s.clt_maxpriceatsale, price: input.price }).recapture,
                clt_lender: val("c-lender") || null, clt_titlecompany: val("c-title") || null } },
              { method: "PATCH", path: sets.clt_property + "(" + s._clt_property_value + ")", body: { clt_status: ch.propertystatus["Sale pending"] } }];
+      // the funding lines: ones taken off are deleted, the rest saved, all in the same change set as the price
+      var kept = {}; lines.forEach(function (l) { if (l.id) kept[l.id] = 1; });
+      D.funding.forEach(function (f) { if (!kept[f.id]) ops.push({ method: "DELETE", path: sets.clt_salefunding + "(" + f.id + ")" }); });
+      lines.forEach(function (l) {
+        var body = { clt_name: R.fundingName(l), clt_type: ch.fundingtype[l.type], clt_amount: l.amount, clt_interestrate: l.rate, clt_notes: l.notes || null };
+        if (l.id) ops.push({ method: "PATCH", path: sets.clt_salefunding + "(" + l.id + ")", body: body });
+        else { body["clt_sale@odata.bind"] = bind("clt_sale", id); ops.push({ method: "POST", path: sets.clt_salefunding, body: body }); }
+      });
     } else if (key === "closing") {
-      input = { closingDate: val("x-date"), contractDate: s.clt_contractdate };
-      if (problems(R.check("closing", input, today()))) return;
+      input = { closingDate: val("x-date"), contractDate: s.clt_contractdate, closingCosts: val("x-costs") };
+      var statement = $("x-file") && $("x-file").files && $("x-file").files[0] ? $("x-file").files[0] : null, sp = R.statementProblem(statement);
+      if (problems(R.check("closing", input, today()).concat(sp ? [sp] : []))) return;
       var sellerHh = D.seller._clt_household_value;
       return busy(P.confirm("Record the closing?", "This ends the seller's occupancy and starts the buyer's. It can't be undone from this page.").then(function (yes) {
         if (!yes) { render(); return; }
         // does the seller own another home in the program?
         return (sellerHh ? P.getAll(sets.clt_occupancy + "?$select=clt_occupancyid&$filter=statecode eq 0 and clt_status eq " + ch.occupancystatus.Current +
                                     " and _clt_household_value eq " + sellerHh + " and clt_occupancyid ne " + D.seller.clt_occupancyid) : Promise.resolve([]))
+          .then(function (others) { return (statement ? P.upload(sets.clt_sale + "(" + id + ")/clt_settlementstatement", statement) : Promise.resolve()).then(function () { return others; }); })
           .then(function (others) {
+            // the closing's own changes come first: the new occupancy is referred to by its place in the list
             return P.batch(R.closing({ saleId: id, closingDate: input.closingDate, price: s.clt_purchaseprice, appraised: s.clt_appraisedvalue, seller: D.seller,
               sellerHouseholdId: sellerHh, sellerHasOtherHome: others.length > 0, buyerHouseholdId: s._clt_buyerhousehold_value,
               buyerHouseholdName: fv(s, "_clt_buyerhousehold_value"), propertyId: s._clt_property_value, propertyName: fv(s, "_clt_property_value"), sets: sets,
               values: { current: ch.occupancystatus.Current, past: ch.occupancystatus.Past, owner: ch.occupancyrole.Owner, closed: ch.salestatus.Closed,
-                        homeowner: ch.householdstatus.Homeowner, pastHomeowner: ch.householdstatus["Past homeowner"], ownerOccupied: ch.propertystatus["Owner-occupied"] } }));
-          }).then(function () { say("Closing recorded."); return loadSales(id); });
+                        homeowner: ch.householdstatus.Homeowner, pastHomeowner: ch.householdstatus["Past homeowner"], ownerOccupied: ch.propertystatus["Owner-occupied"] } })
+              .concat([{ method: "PATCH", path: sets.clt_sale + "(" + id + ")", body: { clt_closingcosts: n(input.closingCosts) } }]));
+          }).then(function () {
+            // straight on to the work that follows a closing
+            say("Closing recorded.");
+            return P.go({ pageType: "webresource", webresourceName: "clt_/pages/aftersale.html", data: "sale=" + id });
+          });
       }));
     }
     return busy(P.batch(ops).then(function () { say("Saved."); return loadSales(id); }));
@@ -353,6 +413,21 @@
     else if (t.id === "b-project") newProject();
     else if (t.id === "b-refresh") show(D.sale.clt_saleid).then(function () { say("Checked just now."); });
     else if (t.id === "openocc") P.openRecord("clt_occupancy", D.sale._clt_buyeroccupancy_value);
+    else if (t.id === "aftersale") P.go({ pageType: "webresource", webresourceName: "clt_/pages/aftersale.html", data: "sale=" + D.sale.clt_saleid });
+    else if (t.id === "f-add") { $("f-rows").insertAdjacentHTML("beforeend", fundingRow({})); }
+    else if (t.dataset.f === "drop") { t.closest("tr").remove(); fundingTotalLine(); }
+    else if (t.id === "viewstatement") {
+      var nm = D.sale.clt_settlementstatement_name || "", type = /\.pdf$/i.test(nm) ? "application/pdf" : /\.png$/i.test(nm) ? "image/png" : "image/jpeg";
+      P.download(sets.clt_sale + "(" + D.sale.clt_saleid + ")/clt_settlementstatement").then(function (blob) { window.open(URL.createObjectURL(new Blob([blob], { type: type })), "_blank"); })
+        .catch(function (err) { $("statementerr").textContent = "Couldn't open the file: " + err.message; });
+    }
+    else if (t.id === "addstatement") {
+      var file = $("statementfile").files && $("statementfile").files[0], bad = file ? R.statementProblem(file) : "Choose the file first.";
+      if (bad) { $("statementerr").textContent = bad; return; }
+      t.disabled = true;
+      P.upload(sets.clt_sale + "(" + D.sale.clt_saleid + ")/clt_settlementstatement", file).then(function () { say("Settlement statement saved."); return loadSales(D.sale.clt_saleid); })
+        .catch(function (err) { t.disabled = false; $("statementerr").textContent = "Couldn't save the file: " + err.message; });
+    }
     else if (t.id === "cancelsale") {
       P.confirm("Cancel this resale?", "The sale is marked Cancelled. Nothing else changes.").then(function (yes) {
         if (!yes) return;
@@ -370,17 +445,27 @@
     if (!window.open(url, "_blank")) P.go({ pageType: "webresource", webresourceName: "clt_/pages/newproject.html", data: data });
   }
 
-  $("track").addEventListener("input", function (e) { if (/^p-/.test(e.target.id)) figures(); });
+  $("track").addEventListener("input", function (e) {
+    if (/^p-/.test(e.target.id)) figures();
+    if (e.target.dataset.f || e.target.id === "c-price") fundingTotalLine();
+  });
+  // the interest rate is only for a loan
+  $("track").addEventListener("change", function (e) {
+    if (e.target.dataset.f !== "type") return;
+    var rate = e.target.closest("tr").querySelector('[data-f="rate"]'), loan = e.target.value === R.LOAN;
+    rate.disabled = !loan; rate.placeholder = loan ? "Required" : "Loans only"; if (!loan) rate.value = "";
+    fundingTotalLine();
+  });
   $("sale").addEventListener("change", function () { show($("sale").value); });
   $("new").addEventListener("click", function () {
     loadCandidates().then(function (c) { starting = true; D = { candidates: c }; $("sale").value = ""; say(""); render(); });
   });
 
   Promise.all([P.brand(), P.choice("clt_saletype"), P.choice("clt_salestatus"), P.choice("clt_occupancystatus"), P.choice("clt_occupancyrole"),
-               P.choice("clt_householdstatus"), P.choice("clt_propertystatus")].concat(TABLES.map(P.entitySet)))
+               P.choice("clt_householdstatus"), P.choice("clt_propertystatus"), P.choice("clt_purchasefundingtype")].concat(TABLES.map(P.entitySet)))
     .then(function (r) {
-      ch = { saletype: r[1], salestatus: r[2], occupancystatus: r[3], occupancyrole: r[4], householdstatus: r[5], propertystatus: r[6] };
-      TABLES.forEach(function (t, i) { sets[t] = r[7 + i]; });
+      ch = { saletype: r[1], salestatus: r[2], occupancystatus: r[3], occupancyrole: r[4], householdstatus: r[5], propertystatus: r[6], fundingtype: r[7] };
+      TABLES.forEach(function (t, i) { sets[t] = r[8 + i]; });
       return loadSales();
     }).catch(function (e) { say("Couldn't load: " + e.message, true); });
 })();
