@@ -937,8 +937,9 @@ TABLES = [
                   "Only if this project's documents are somewhere other than your organization's usual folder: the web address "
                   "of the folder the form saves this project's documents into.", max=500),
              text("fullappformlink", "Full application link",
-                  "The web address of the full application form. Each invited household gets its own link made from this, "
-                  "with its application number added (Projects > Invite).", max=500),
+                  "Only if this project uses a different full application form from your organization's usual one (a setting): "
+                  "its web address. Each invited household gets its own link made from this, with its application number "
+                  "added (Projects > Invite).", max=500),
              memo("notes", "Notes"),
          ]),
     dict(name="projectpriority", solution="intake", label="Project priority", plural="Project priorities",
@@ -1116,7 +1117,7 @@ TABLES = [
              choice("noticetype", "Used for", "noticetype"),
              text("subject", "Subject line", max=200),
              memo("body", "Message", "Words in curly brackets are filled in for each household: {first name}, {household}, {project}, "
-                  "{application number}, {link}, {deadline}, {organization}.", max=10000),
+                  "{application number}, {link}, {deadline}, {organization}. The insurance request also takes {home} and {due date}.", max=10000),
          ]),
     dict(name="notice", solution="intake", label="Notice", plural="Notices",
          desc="A message sent to an applicant: screened out, not selected, invited, reminders, offers.",
@@ -1408,7 +1409,17 @@ SEED_ROWS = {
              "bank statements and tax returns. You can save it and come back.\n\n"
              "Being invited is not yet an offer of a home. We check each full application against the program's rules first.\n\n"
              "If you have questions, or need help or an accommodation to complete the application, reply to this email.\n\n"
-             "{organization}")],
+             "{organization}"),
+        # The email the Insurance verification page hands staff to copy. Falls back to the same words
+        # (webresources/insurancecheck.js) if this row is deleted.
+        dict(name="Request for proof of insurance", noticetype="Insurance verification",
+             subject="Proof of homeowner's insurance for {home}",
+             body="Hello {first name},\n\n"
+                  "Each year we check that every home has homeowner's insurance in place. Please send us proof of your current policy by {due date}.\n\n"
+                  "The declarations page is what we need: it shows the insurer, the policy dates and the coverage amounts. "
+                  "You can reply to this email with a PDF or a photo of it.\n\n"
+                  "If you have any questions, or can't find the document, just reply to this email.\n\n"
+                  "Thank you,\n{organization}")],
 }
 
 ENVIRONMENT_VARIABLES = [
@@ -1428,6 +1439,10 @@ ENVIRONMENT_VARIABLES = [
     dict(name="FullAppNumberField", label="Full application: Application Number question",
          desc="Cognito Forms only: the form's Application Number question as Section.Question. Blank uses "
               "PrimaryApplicant.ApplicationNumber. The Invite page uses it to put each household's number on its link."),
+    dict(name="FullAppFormLink", label="Full application: form link",
+         desc="The web address of your full application form. The Invite page makes each invited household its own link from "
+              "this, with its application number added. A project that uses a different form has its own link on the "
+              "project record (Full application link), which is used in place of this one."),
     dict(name="VerificationFormLink", label="Annual verification: form link",
          desc="The web address of your annual occupancy verification form. Stu adds the year, the household ID and a code to each household's "
               "link so the reply can be matched. To fill in your form's own questions, put {year}, {household id}, {code}, {first name}, "

@@ -2,7 +2,7 @@
 
 How to run CLT Stewardship day to day: the jobs that come round every year, the ones you do when something new starts, and what to do when something doesn't work.
 
-This is for whoever looks after the system at a CLT (a staff person, or a consultant working with them). Menu paths are for the **Intake & Selection** area of Stu unless they say otherwise (switch areas at the bottom left of the sidebar; where a step says **CLT Intake & Selection**, that is this area). Where a step needs a command, it's run from the project folder in Terminal; each command is explained, with the Windows PowerShell equivalent where it helps.
+This is for whoever looks after the system at a CLT (a staff person, or a consultant working with them). Menu paths are for the **Applications and Sales** area of Stu unless they say otherwise (switch areas at the bottom left of the sidebar; where a step says **CLT Applications and Sales**, that is this area). Where a step needs a command, it's run from the project folder in Terminal; each command is explained, with the Windows PowerShell equivalent where it helps.
 
 Add to this whenever you work out how to do something that will come up again.
 
@@ -47,7 +47,7 @@ For example, Jefferson County 2026: 4 people = $53,500, so 1 person = 70% of 53,
 
 ### 2. Add one record per county
 
-In **CLT Intake & Selection**:
+In **CLT Applications and Sales**:
 
 1. Go to **Settings › HUD AMI Limits** and select **+ New**.
 2. Fill in:
@@ -216,7 +216,7 @@ Good to know:
 
 One made-up household through the whole path, before a release goes to a new environment. Use the sandbox forms and an email address you can tell apart (for example `test.rivera@example.com`). Steps marked **by hand** aren't automated yet: note anything that's slow or confusing, it decides what gets automated next.
 
-**1. Screener.** Submit the sandbox screener. In **CLT Intake & Selection › Applicants › Applications**, the new application appears as `Last - A-000xx`, with **Stated income (% of AMI)** and **Organization eligibility** filled in.
+**1. Screener.** Submit the sandbox screener. In **CLT Applications and Sales › Applicants › Applications**, the new application appears as `Last - A-000xx`, with **Stated income (% of AMI)** and **Organization eligibility** filled in.
 
 **2. Add to the project.** **Projects › Add to a project**: tick the applicant, pick the project, **Add**.
 

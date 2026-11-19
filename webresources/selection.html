@@ -6,6 +6,7 @@
 <title>Buyer Selection</title>
 <link rel="stylesheet" href="pages.css">
 <script src="pages.js"></script>
+<script src="journey.js"></script>
 <script src="selection.js"></script>
 <script src="pdf.js"></script>
 </head>
@@ -19,6 +20,9 @@
       <p>Where a project stands, from set-up to full applications coming in, and the next thing to do. The lists show Unique IDs only, never names.</p>
     </div>
   </div>
+
+  <ol class="steps" id="journey"></ol>
+  <script>CLTJourney.bar(document.getElementById("journey"), "selection", function () { return document.getElementById("project").value; });</script>
 
   <div class="toolbar" style="margin-top: 18px">
     <label>Project

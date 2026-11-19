@@ -37,6 +37,21 @@ const tasks = [{ sale: "s1", status: "Done" }, { sale: "s1", status: "To do" }, 
 assert.deepStrictEqual(A.sales(sales, tasks).map(s => [s.id, s.state, s.open, s.total]), [["s2", "new", 0, 0], ["s1", "open", 1, 2], ["s3", "done", 0, 2]]);
 assert.strictEqual(A.unfinished(sales, tasks), 2, "one with a task open and one not set up yet"); assert.strictEqual(A.unfinished([], []), 0);
 
+// ---- the landing list: sales closed in the last 30 days, newest first, each with its status; older ones with work left are counted
+const more = [...sales, { id: "s5", name: "7 Ash Ln resale 2026", closed: true, closingDate: "2026-10-18" }, { id: "s6", name: "8 Ash Ln resale 2026", closed: true, closingDate: "2026-10-19" },
+              { id: "s7", name: "1 Yew Rd resale 2026", closed: true, closingDate: "2026-11-17" }];
+const land = A.recent(A.sales(more, [...tasks, { sale: "s7", status: "Done" }]), today);
+assert.deepStrictEqual(land.recent.map(s => [s.id, s.status]), [["s7", "All done"], ["s2", "Not started"], ["s1", "1 of 2 done"], ["s6", "Not started"]],
+                       "30 days back from today: 2026-10-19 is in, 2026-10-18 is not; a finished one still shows");
+assert.strictEqual(land.older, 1, "s5 is older and not set up; s3 is older and done");
+assert.deepStrictEqual(A.recent([], today), { recent: [], older: 0 }); assert.strictEqual(A.RECENT_DAYS, 30);
+assert.strictEqual(A.recent(A.sales([{ id: "x", closed: true, closingDate: "" }], []), today).older, 1, "a closed sale with no date is not recent, but still counts as work left");
+assert.strictEqual(A.recent(A.sales(more, tasks), today, 7).recent.length, 2, "another window can be asked for");
+// ---- the second list: every sale with work left, whenever it closed, newest first
+assert.deepStrictEqual(A.pending(A.sales(more, [...tasks, { sale: "s7", status: "Done" }])).map(s => [s.id, s.status]),
+                       [["s2", "Not started"], ["s1", "1 of 2 done"], ["s6", "Not started"], ["s5", "Not started"]], "finished ones (s7, s3) are left out; an old one (s5) is in");
+assert.deepStrictEqual(A.pending([]), []);
+
 // ---- the buyer's insurance
 const ins = { carrier: "State Farm", policyNumber: "HO-123", coverage: "$410,000", effective: "2026-11-17", renewal: "2027-11-17" };
 assert.deepStrictEqual(A.insuranceProblems(ins, today), []); assert.deepStrictEqual(A.insuranceProblems({ ...ins, policyNumber: "", renewal: "" }, today), [], "the policy number and renewal date can come later");
@@ -98,7 +113,8 @@ def main():
     for src in (script, rules):
         p = subprocess.run([node, "-e", "new Function(require('fs').readFileSync(0, 'utf8'))"], input=src, capture_output=True, text=True)
         assert p.returncode == 0, p.stderr[-600:]
-    for piece in ("A.tasksFor(", "A.sales(", "A.insuranceProblems(", "A.verifiedOn(", "A.policyName(", "ch.review.Approved", "clt_lastinsuranceverified", "clt_settlementstatement"):
+    assert 'id="landing"' in page and 'id="recent"' in page and 'id="pendingrows"' in page and "A.pending(" in script and "All sales with pending actions" in page and "if (!pick && todo.length === 1)" not in script, "the page opens on the list of recent sales"
+    for piece in ("A.recent(", "data-pick=", "A.tasksFor(", "A.sales(", "A.insuranceProblems(", "A.verifiedOn(", "A.policyName(", "ch.review.Approved", "clt_lastinsuranceverified", "clt_settlementstatement"):
         assert piece in script, piece
     # every clt_ name is real
     used_tables = ("sale", "saletask", "aftersaletask", "occupancy", "insurancepolicy", "insuranceverification", "property")

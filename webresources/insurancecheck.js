@@ -27,13 +27,54 @@ var CLTInsuranceCheck = (function () {
   }
 
   // What's wrong with the requests about to start. picks: the households ticked; input: { due } -> [messages]
-  // Stu sends nothing: a request records that the household was asked, and when the proof is due.
+  // Stu sends nothing: a request records that the household was asked, and when the proof is due. The page then hands over an email to copy.
   function startProblems(picks, input, today) {
     var e = [];
     if (!(picks || []).length) e.push("Tick at least one household.");
     if (!iso(input.due)) e.push("Enter the date the proof is due.");
     else if (iso(input.due) < today) e.push("The due date is in the past.");
     return e;
+  }
+
+  // The email asking a household for proof. Stu does not send it: the page hands the finished email to staff to copy.
+  // The organization's own wording is a message template used for Insurance verification (Settings > Message templates);
+  // these words are the starting point, and what is used when there is none.
+  var DEFAULT = {
+    subject: "Proof of homeowner's insurance for {home}",
+    body: "Hello {first name},\n\nEach year we check that every home has homeowner's insurance in place. Please send us proof of your current policy by {due date}.\n\n" +
+          "The declarations page is what we need: it shows the insurer, the policy dates and the coverage amounts. You can reply to this email with a PDF or a photo of it.\n\n" +
+          "If you have any questions, or can't find the document, just reply to this email.\n\nThank you,\n{organization}"
+  };
+  // The words in curly brackets the page fills in: [field, what it is]
+  var FIELDS = [["first name", "The primary applicant's first name"], ["household", "The household's name"], ["home", "The home's address"],
+                ["due date", "The date the proof is due"], ["organization", "Your organization's name"]];
+  var MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  // "2026-12-18" -> "December 18, 2026"
+  function longDate(d) { var p = iso(d).split("-"); return p.length === 3 ? MONTHS[+p[1] - 1] + " " + (+p[2]) + ", " + p[0] : ""; }
+  // "Hello {first name}" -> "Hello Maria". A field with no value, or one the page doesn't know, is left showing so the gap is obvious.
+  function fill(text, values) {
+    var v = {};
+    Object.keys(values || {}).forEach(function (k) { v[k.toLowerCase()] = values[k]; });
+    return String(text || "").replace(/\{([^{}]+)\}/g, function (all, name) {
+      var val = v[name.trim().toLowerCase().replace(/\s+/g, " ")];
+      return blank(val) ? all : String(val);
+    });
+  }
+  // One household's email.   row: { email, firstName, household, home }; template: { subject, body } or nothing
+  // -> { to, subject, body }
+  function email(row, due, organization, template) {
+    var t = template && String(template.body || "").trim() ? template : DEFAULT;
+    var v = { "first name": row.firstName || row.household, household: row.household, home: row.home || row.name, "due date": longDate(due), organization: organization };
+    return { to: row.email || "", subject: fill(String(t.subject || "").trim() || DEFAULT.subject, v), body: fill(t.body, v) };
+  }
+  // The emails to hand over, one for each household that has an address, and the households that have none.
+  //   rows: the households just asked -> { mails: [{ row, mail }], noEmail: [row] }
+  function emails(rows, due, organization, template) {
+    var out = { mails: [], noEmail: [] };
+    (rows || []).forEach(function (r) {
+      if (String(r.email || "").trim()) out.mails.push({ row: r, mail: email(r, due, organization, template) }); else out.noEmail.push(r);
+    });
+    return out;
   }
 
   // "$350,000" -> 350000; blank -> null; not a number -> NaN
@@ -89,7 +130,7 @@ var CLTInsuranceCheck = (function () {
   function recordName(date, occupancyName) { return (iso(date) + (occupancyName ? ", " + occupancyName : "")).slice(0, 100); }
 
   var api = { REQUESTED: REQUESTED, REVIEW: REVIEW, CONTACT: CONTACT, ONLINE: ONLINE, PAPER: PAPER, CARD: CARD, OPEN: OPEN, CLOSED: CLOSED, CANCELLED: CANCELLED, OUTCOMES: OUTCOMES, money: money,
-              choose: choose, startProblems: startProblems,
+              choose: choose, startProblems: startProblems, DEFAULT: DEFAULT, FIELDS: FIELDS, longDate: longDate, fill: fill, email: email, emails: emails,
               closeProblems: closeProblems, cardProblems: cardProblems, cardTarget: cardTarget, counts: counts, afterCancel: afterCancel, recordName: recordName };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   return api;

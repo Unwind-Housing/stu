@@ -6,6 +6,8 @@
 <title>Hub</title>
 <link rel="stylesheet" href="pages.css">
 <script src="pages.js"></script>
+<script src="journey.js"></script>
+<script src="assign.js"></script>
 </head>
 <body>
 <div class="page">
@@ -13,11 +15,14 @@
   <div class="banner">
     <img data-logo alt="">
     <div>
-      <h1>Intake &amp; Selection hub</h1>
+      <h1>Applications and Sales hub</h1>
       <p>From screener to certified buyer at <span data-org>your land trust</span>.
         New here? See <a href="#" id="go-guide">How it works</a>.</p>
     </div>
   </div>
+
+  <h2>Projects in progress <small>every project that isn't closed, and the step it is waiting on</small></h2>
+  <div class="projs" id="inprogress"><div class="stat"><div class="d">Loading...</div></div></div>
 
   <h2>Applications <small>click a tile to open the list</small></h2>
   <div class="tiles" id="pipeline"></div>
@@ -43,7 +48,8 @@
 (function () {
   // Tiles run saved views by name (app_spec_intake.py and app_spec.py VIEWS). A view that doesn't exist is skipped.
   var PIPELINE = [
-    { e: "clt_application", v: "Screeners", t: "Screeners", d: "Every screener received" },
+    // counts households: one that is in two projects has two applications, and is one household
+    { e: "clt_application", v: "Screeners", t: "Households screened", d: "Every household that sent a screener", n: function (apps) { return people(apps).length; } },
     { e: "clt_application", v: "Full applications in progress", t: "Full applications in progress", d: "Invited or started, not submitted" },
     { e: "clt_application", v: "Full applications submitted", t: "Full applications submitted", d: "Completed full applications" },
     { e: "clt_project", v: "Open projects", t: "Open projects", d: "Projects that aren't closed" }
@@ -57,6 +63,13 @@
     { e: "clt_formsubmission", v: "Submissions needing attention", t: "Form problems", d: "Entries that couldn't be processed", hot: true }
   ];
 
+  // The screeners, once they are read (for a tile that counts households), and one application per household.
+  var ready, loaded = new Promise(function (res) { ready = res; });
+  function people(apps) {
+    var pick = CLTAssign.onePerHousehold(apps.map(function (a) { return { household: a._clt_household_value, entryId: a.clt_screenerentryid, app: a }; }));
+    return pick.map(function (x) { return x.app; });
+  }
+
   function tile(box, cfg) {
     var el = document.createElement("button");
     el.className = "tile";
@@ -69,6 +82,7 @@
       el.querySelector(".n").textContent = r.count + (r.more ? "+" : "");
       if (!r.count) el.classList.add("zero");
       else if (cfg.hot) el.classList.add("hot");
+      if (cfg.n) loaded.then(function (apps) { var n = cfg.n(apps); el.querySelector(".n").textContent = n; el.classList.toggle("zero", !n); });
       el.title = "Open " + cfg.v;
       el.addEventListener("click", function () { CLTPage.openList(cfg.e, r.id); });
     });
@@ -123,9 +137,8 @@ function stats() {
 
   function draw() {
     var v = scope.value;
-    var list = apps.filter(function (a) {
-      return v === "all" ? true : v === "none" ? !a._clt_project_value : a._clt_project_value === v;
-    });
+    // every screener: one per household, so a household in two projects isn't counted twice
+    var list = v === "all" ? people(apps) : apps.filter(function (a) { return v === "none" ? !a._clt_project_value : a._clt_project_value === v; });
     box.innerHTML = "";
     if (!list.length) { card("", "No screeners in this group yet", ""); return; }
     var n = list.length;
@@ -160,7 +173,7 @@ function stats() {
   }
 
   var cols = "clt_adults,clt_children,clt_statedannualincome,clt_homesizes,clt_firsttimebuyer,clt_preapproval," +
-             "clt_hbeducation,clt_amipct,clt_iseligible,clt_firstsubmittedon,_clt_project_value,_clt_county_value";
+             "clt_hbeducation,clt_amipct,clt_iseligible,clt_firstsubmittedon,clt_prescreenresult,clt_screenerentryid,_clt_project_value,_clt_county_value,_clt_household_value";
   Promise.all([
     P.getAll("clt_applications?$select=" + cols + "&$filter=statecode eq 0 and clt_screenerentryid ne null"),
     P.getAll("clt_projects?$select=clt_projectid,clt_name,clt_status,clt_selectionmethod,clt_applicationopens," +
@@ -168,8 +181,9 @@ function stats() {
     P.getAll("clt_projecthomes?$select=_clt_project_value,clt_bedrooms&$filter=statecode eq 0")
       .catch(function () { return []; })
   ]).then(function (r) {
-    apps = r[0];
+    apps = r[0]; ready(apps);
     projects(apps, r[1], r[2]);
+    inProgress(apps, r[1]);
     r[1].forEach(function (p) {
       var o = document.createElement("option"); o.value = p.clt_projectid;
       o.textContent = p.clt_name + (fv(p, "clt_status") === "Closed" ? " (closed)" : ""); scope.appendChild(o);
@@ -180,6 +194,38 @@ function stats() {
   scope.addEventListener("change", draw);
 }
 stats();
+
+// Projects in progress: one card per project that isn't closed, with the step it is waiting on and a button that
+// carries on from there. Every step is one click away too, so a project can be left and picked up again.
+function inProgress(apps, list) {
+  var P = CLTPage, J = CLTJourney, fv = P.fv, box = document.getElementById("inprogress");
+  var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); };
+  var draw = function (rounds, invited) {
+    var rows = J.inProgress(list.map(function (p) { return { id: p.clt_projectid, name: p.clt_name, status: fv(p, "clt_status") }; }),
+                            apps.map(function (a) { return { project: a._clt_project_value, tested: a.clt_prescreenresult != null }; }), rounds, invited);
+    box.innerHTML = rows.length ? rows.map(function (p) {
+      return '<div class="proj"><div class="ph"><a class="pn" data-workflow="' + p.id + '" title="Open this project\'s workflow">' + esc(p.name) + "</a>" +
+        '<button class="btn primary" type="button" data-step="' + p.next.key + '" data-id="' + p.id + '">Continue: ' + esc(p.next.label) + "</button></div>" +
+        '<div class="d">' + esc([p.status, p.next.why].filter(Boolean).join(" · ")) + "</div>" +
+        '<div class="d" style="margin-top:10px">' + J.STEPS.map(function (s) {
+          return '<a href="#" data-step="' + s.key + '" data-id="' + p.id + '"' + (s.key === p.next.key ? ' style="font-weight:600"' : "") + ">" + esc(s.label) + "</a>"; }).join(" &rsaquo; ") +
+        ' &middot; <a href="#" data-workflow="' + p.id + '">Workflow</a></div></div>';
+    }).join("") : '<div class="stat"><div class="t">No projects in progress</div><div class="d">Start one under Projects, New project.</div></div>';
+  };
+  box.addEventListener("click", function (e) {
+    var d = e.target.dataset, s = d.step && J.step(d.step);
+    if (s) { e.preventDefault(); P.go({ pageType: "webresource", webresourceName: s.page, data: d.id }); }
+    else if (d.workflow) { e.preventDefault(); P.go({ pageType: "webresource", webresourceName: J.OVERVIEW, data: d.workflow }); }
+  });
+  Promise.all([P.entitySet("clt_selectionround"), P.entitySet("clt_selectionentry")]).then(function (s) {
+    return Promise.all([P.getAll(s[0] + "?$select=clt_selectionroundid,clt_status,createdon,_clt_project_value&$filter=statecode eq 0"),
+                        P.getAll(s[1] + "?$select=_clt_round_value&$filter=statecode eq 0 and clt_invitedon ne null")]);
+  }).then(function (r) {
+    var project = {}; r[0].forEach(function (x) { project[x.clt_selectionroundid] = x._clt_project_value; });
+    draw(r[0].map(function (x) { return { project: x._clt_project_value, status: fv(x, "clt_status"), created: x.createdon }; }),
+         r[1].map(function (e) { return { project: project[e._clt_round_value] }; }));
+  }).catch(function () { draw([], []); });   // no rounds to read: the cards still show, from the screeners alone
+}
 
 // Projects taking applications: one card per project with status Accepting applications, or whose window is
 // open today. Single-series bars in the brand accent; numbers in text, with hover titles on each bar.

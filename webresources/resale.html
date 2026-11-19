@@ -10,7 +10,8 @@
 <script src="resale.js"></script>
 <style>
   .pricebox { max-width: 560px; }
-  .costline input.note { width: 220px; text-align: left; }
+  .costline .pair { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+  .costline input.whatfor { width: 200px; text-align: left; }
   .costline.total { border-top: 2px solid var(--brand); margin-top: 8px; padding-top: 8px; font-weight: 600; }
   .costline.total b { font-size: 17px; color: var(--brand); font-variant-numeric: tabular-nums; }
   .costline .calc { font-variant-numeric: tabular-nums; font-weight: 600; }
@@ -36,6 +37,16 @@
     <span id="saleinfo" style="color: var(--muted); align-self: center"></span>
   </div>
 
+  <div id="landing" hidden>
+    <h2>Sales in progress</h2>
+    <div class="tablewrap">
+      <table class="data">
+        <thead><tr><th>Home</th><th>Kind</th><th>Seller</th><th>Buyer</th><th>Do this next</th><th></th></tr></thead>
+        <tbody id="pending"></tbody>
+      </table>
+    </div>
+  </div>
+
   <ol class="track" id="track"></ol>
   <div class="bottombar"><span class="msg" id="msg"></span></div>
 </div>
@@ -43,10 +54,10 @@
 <script>
 (function () {
   var P = CLTPage, R = CLTResale, $ = function (id) { return document.getElementById(id); };
-  var fv = P.fv, sets = {}, ch = {}, sales = [], D = null, open = "", starting = false;
+  var fv = P.fv, sets = {}, ch = {}, sales = [], others = [], D = null, open = "", starting = false;
   // D: the resale on screen { sale, seller, loans, owed, buyers, candidates }
   var TABLES = ["clt_sale", "clt_occupancy", "clt_property", "clt_household", "clt_loan", "clt_homeownerrequest", "clt_improvementcredit", "clt_salefunding"];
-  var SALE = "clt_saleid,clt_name,clt_status,clt_noticedate,clt_contractdate,clt_closingdate,clt_appraisedvalue,clt_formulapriceatsale,clt_creditsatsale," +
+  var SALE = "clt_saleid,clt_name,clt_status,clt_saletype,clt_noticedate,clt_contractdate,clt_closingdate,clt_appraisedvalue,clt_formulapriceatsale,clt_creditsatsale," +
              "clt_maxpriceatsale,clt_purchaseprice,clt_subsidyrecapture,clt_lender,clt_titlecompany,clt_loanpayoff,clt_othercredits,clt_othercreditsnote,clt_otherdebits," +
              "clt_otherdebitsnote,clt_closingcosts,clt_settlementstatement_name,_clt_property_value,_clt_selleroccupancy_value,_clt_buyerhousehold_value,_clt_buyeroccupancy_value";
 
@@ -64,14 +75,16 @@
 
   // ---- loading
   function loadSales(pick) {
-    return P.getAll(sets.clt_sale + "?$select=" + SALE + "&$filter=statecode eq 0 and clt_saletype eq " + ch.saletype.Resale + "&$orderby=createdon desc")
-      .then(function (rows) {
+    return P.getAll(sets.clt_sale + "?$select=" + SALE + "&$filter=statecode eq 0&$orderby=createdon desc")
+      .then(function (every) {
+        // this page walks resales; a pending sale of another kind is listed too, and opens as its own record
+        var rows = every.filter(function (s) { return s.clt_saletype === ch.saletype.Resale; });
+        others = every.filter(function (s) { return s.clt_saletype !== ch.saletype.Resale && s.clt_status === ch.salestatus.Pending; });
         sales = rows;
         var pending = rows.filter(function (s) { return s.clt_status === ch.salestatus.Pending; }), rest = rows.filter(function (s) { return s.clt_status !== ch.salestatus.Pending; });
         $("sale").innerHTML = '<option value="">' + (rows.length ? "Choose a resale" : "No resales yet") + "</option>" +
           (pending.length ? '<optgroup label="In progress">' + pending.map(opt).join("") + "</optgroup>" : "") +
           (rest.length ? '<optgroup label="Closed or cancelled">' + rest.map(opt).join("") + "</optgroup>" : "");
-        if (!pick && pending.length === 1) pick = pending[0].clt_saleid;
         $("sale").value = pick || "";
         return pick ? show(pick) : (D = null, render());
       });
@@ -146,8 +159,8 @@
   }
 
   // ---- what each step shows
-  function saleFacts() {
-    var s = D.sale;
+  function saleFacts(sale) {
+    var s = sale || D.sale;
     return { noticeDate: s.clt_noticedate, maxPrice: s.clt_maxpriceatsale, buyer: s._clt_buyerhousehold_value, contractDate: s.clt_contractdate,
              price: s.clt_purchaseprice, status: label(ch.salestatus, s.clt_status) };
   }
@@ -181,10 +194,10 @@
         '<div class="costsub">What the seller owes and is owed</div>' +
         (D.owed.lines.length ? D.owed.lines.map(function (l) { return line(esc(l.name), '<span class="calc">' + money(l.owed) + "</span>", "owed today if payments are up to date"); }).join("") : "") +
         line("Loans owed to the organization", box("p-loans", first ? (D.owed.lines.length ? D.owed.total : "") : s.clt_loanpayoff), D.owed.lines.length ? "the total above; change it to the real payoff" : "no loans on this occupancy") +
-        line("Other credits to the seller", box("p-credits", s.clt_othercredits)) +
-        line("What for", '<input id="p-creditsnote" class="note" type="text" maxlength="200" value="' + esc(plain(s.clt_othercreditsnote)) + '">') +
-        line("Other debits", box("p-debits", s.clt_otherdebits)) +
-        line("What for", '<input id="p-debitsnote" class="note" type="text" maxlength="200" value="' + esc(plain(s.clt_otherdebitsnote)) + '">') +
+        line("Other credits to the seller", '<span class="pair"><input id="p-creditsnote" class="whatfor" type="text" maxlength="200" placeholder="What for" aria-label="What the other credits are for" value="' +
+             esc(plain(s.clt_othercreditsnote)) + '">' + box("p-credits", s.clt_othercredits) + "</span>") +
+        line("Other debits", '<span class="pair"><input id="p-debitsnote" class="whatfor" type="text" maxlength="200" placeholder="What for" aria-label="What the other debits are for" value="' +
+             esc(plain(s.clt_otherdebitsnote)) + '">' + box("p-debits", s.clt_otherdebits) + "</span>") +
         '<div class="costline total"><span>Estimated to the seller <small id="p-basis"></small></span><b id="p-net"></b></div>' +
         '<div class="costline" id="p-recaprow" hidden><span>Subsidy recaptured by the organization <small>the purchase price above the maximum</small></span><span class="calc" id="p-recap"></span></div>' +
         '<p class="mutedtext" style="margin:6px 0 0">Before the seller\'s own mortgage payoff and closing costs.</p></div>';
@@ -203,7 +216,7 @@
         (g.fromProject.length ? '<optgroup label="Certified through ' + esc(pj.name) + '">' + g.fromProject.map(option).join("") + '</optgroup><optgroup label="Other certified households">' +
                                 g.others.map(option).join("") + "</optgroup>" : D.buyers.map(option).join("")) +
         "</select><small>Households with status Eligible.</small></label></div>" +
-        '<div class="actions" style="margin-top:10px">' + (pj ? "" : '<button class="btn" type="button" id="b-project" title="Opens New project in a separate window, with this home already selected. ' +
+        '<div class="actions" style="margin-top:10px">' + (pj ? "" : '<button class="btn" type="button" id="b-project" title="Opens New project in a separate window, with this home and its maximum resale price already filled in. ' +
           'Keep this home selected there: that is how this resale finds the project.">Start a project for this home</button>') +
         '<button class="btn" type="button" id="b-refresh" title="Look again for a project that includes this home, and for newly certified households">Check again</button></div>' +
         (pj ? "" : '<p class="mutedtext" style="margin:8px 0 0">A new project opens in a separate window with <b>' + esc(fv(s, "_clt_property_value")) +
@@ -272,9 +285,23 @@
       }).join("");
   }
 
+  // Nothing chosen: every sale in progress, with the step each is waiting on.
+  function landing() {
+    var rows = R.pending(sales.filter(function (s) { return s.clt_status === ch.salestatus.Pending; }).map(function (s) {
+      var f = saleFacts(s); f.id = s.clt_saleid; f.resale = true; f.created = s.createdon || ""; return f;
+    }).concat(others.map(function (s) { return { id: s.clt_saleid, resale: false }; })));
+    var by = {}; sales.concat(others).forEach(function (s) { by[s.clt_saleid] = s; });
+    $("pending").innerHTML = rows.length ? rows.map(function (r) {
+      var s = by[r.id];
+      return "<tr><td>" + esc(fv(s, "_clt_property_value") || s.clt_name) + "</td><td>" + esc(label(ch.saletype, s.clt_saletype)) + "</td><td>" + esc(fv(s, "_clt_selleroccupancy_value")) + "</td>" +
+        "<td>" + (esc(fv(s, "_clt_buyerhousehold_value")) || '<span class="mutedtext">not chosen yet</span>') + "</td><td>" + esc(r.next) + "</td>" +
+        '<td><button class="btn small primary" type="button" ' + (r.resale ? 'data-pick="' : 'data-record="') + r.id + '">' + (r.resale ? "Continue" : "Open the sale") + "</button></td></tr>";
+    }).join("") : '<tr><td colspan="6">No sales are in progress. Select Start a resale when a homeowner gives notice.</td></tr>';
+  }
   function render() {
+    $("landing").hidden = starting || !!(D && D.sale);
     if (starting) { $("saleinfo").textContent = ""; $("track").innerHTML = startForm(); return; }
-    if (!D || !D.sale) { $("saleinfo").textContent = ""; $("track").innerHTML = ""; return; }
+    if (!D || !D.sale) { $("saleinfo").textContent = ""; $("track").innerHTML = ""; return landing(); }
     var pr = R.progress(saleFacts()), locked = pr.closed || pr.cancelled;
     $("saleinfo").textContent = pr.cancelled ? "Cancelled" : pr.closed ? "Closed" : "In progress";
     var showing = locked ? "" : open || pr.next;
@@ -438,7 +465,7 @@
   });
   // New project opens in its own window, already set to a resale of this home, so the resale stays on screen here.
   function newProject() {
-    var data = "property=" + D.sale._clt_property_value, app = "";
+    var data = "property=" + D.sale._clt_property_value + (D.sale.clt_maxpriceatsale > 0 ? "&price=" + D.sale.clt_maxpriceatsale : ""), app = "";
     try { app = (/[?&]appid=([0-9a-f-]+)/i.exec(window.top.location.search) || [])[1] || ""; } catch (e) { app = ""; }
     var url = location.origin + "/main.aspx?" + (app ? "appid=" + app + "&" : "") + "pagetype=webresource&webresourceName=" +
               encodeURIComponent("clt_/pages/newproject.html") + "&data=" + encodeURIComponent(data);
@@ -457,6 +484,11 @@
     fundingTotalLine();
   });
   $("sale").addEventListener("change", function () { show($("sale").value); });
+  $("pending").addEventListener("click", function (e) {
+    var d = e.target.dataset;
+    if (d.pick) { $("sale").value = d.pick; show(d.pick); }
+    else if (d.record) P.openRecord("clt_sale", d.record);
+  });
   $("new").addEventListener("click", function () {
     loadCandidates().then(function (c) { starting = true; D = { candidates: c }; $("sale").value = ""; say(""); render(); });
   });

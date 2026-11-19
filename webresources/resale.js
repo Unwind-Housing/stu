@@ -199,6 +199,17 @@ var CLTResale = (function () {
     return { done: done, next: next, closed: done.closing, cancelled: !!sale && sale.status === "Cancelled" };
   }
 
+  // The sales in progress for the page's opening list, each with the step it is waiting on.
+  //   rows: [{ id, resale: this page walks it, ...the facts progress() reads }] -> [{ id, resale, next: the step's title }]
+  //   A sale of another kind isn't walked here: it is listed, and opens as its own record.
+  function pending(rows) {
+    return (rows || []).map(function (r) {
+      if (!r.resale) return { id: r.id, resale: false, next: "Open the sale to carry on" };
+      var key = progress(r).next, st = STEPS.filter(function (s) { return s.key === key; })[0];
+      return { id: r.id, resale: true, next: st ? st.title : "" };
+    });
+  }
+
   function saleName(property, date) { return ((property || "Home") + " resale " + iso(date).slice(0, 4)).slice(0, 100); }
   // "Rivera - 12 Pine St" from a household named "Rivera" or "Rivera, Maria"
   function occupancyName(household, property) { return (String(household || "").split(",")[0].trim() + " - " + (property || "")).slice(0, 100); }
@@ -240,7 +251,7 @@ var CLTResale = (function () {
     return ops;
   }
 
-  var api = { FUNDING_TYPES: FUNDING_TYPES, LOAN: LOAN, fundingLines: fundingLines, fundingTotal: fundingTotal, fundingProblems: fundingProblems, fundingWarnings: fundingWarnings,
+  var api = { pending: pending, FUNDING_TYPES: FUNDING_TYPES, LOAN: LOAN, fundingLines: fundingLines, fundingTotal: fundingTotal, fundingProblems: fundingProblems, fundingWarnings: fundingWarnings,
               fundingName: fundingName, fundingSummary: fundingSummary, statementProblem: statementProblem, usd: usd,
               STEPS: STEPS, COPIED: COPIED, num: num, loansOwed: loansOwed, creditValue: creditValue, creditsTotal: creditsTotal, improvements: improvements, buyerGroups: buyerGroups, figures: figures, check: check, warnings: warnings,
               progress: progress, saleName: saleName, occupancyName: occupancyName, newTerms: newTerms, closing: closing };

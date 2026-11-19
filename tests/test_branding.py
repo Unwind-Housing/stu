@@ -156,7 +156,7 @@ def main():
     out3 = []
     ab.run(b.Dataverse("https://fake.crm.dynamics.com", lambda: "t", "", session=fake3), out3.append, client, fetch=fetch)
     assert [v["app"] for v in fake3.appsettings.values()] == ["app-1"]
-    assert any("CLT Intake & Selection isn't there yet" in line for line in out3), out3
+    assert any("CLT Applications and Sales isn't there yet" in line for line in out3), out3
 
     # Stu (both sides in one app) is themed too, under its own setting name.
     fake4 = FakeEnv()

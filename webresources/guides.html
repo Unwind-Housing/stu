@@ -104,15 +104,17 @@
           <li>Enter the <span class="ui">Replacement coverage limit</span> if the card shows it, add a photo or scan of the card, and put the insurer, policy number and anything else worth keeping under <span class="ui">Notes</span>.</li>
           <li>Select <span class="ui">Save the card</span>. It is saved as an approved insurance verification, with <span class="ui">Insurer's card</span> under How. If the home had a request open, the card closes it.</li>
         </ol>
-        <p><b>When no card comes,</b> ask the household for proof. Stu keeps track of who you asked; it doesn't send anything.</p>
+        <p><b>When no card comes,</b> ask the household for proof. There is no online form for this: Stu keeps track of who you asked and writes the email, and you send it.</p>
         <ol>
           <li><b>Choose who to ask.</b> Homes with no insurance verification in the last year are ticked. Set the <span class="ui">Due</span> date and select <span class="ui">Start requests</span>.</li>
-          <li><b>Ask each household</b> the way you usually do: an email, a call, a letter.</li>
+          <li><b>Send the emails.</b> The page shows one finished email at a time under <span class="ui">Emails to send</span>. Copy it into your mail program or select <span class="ui">Open in mail</span>, send it, then select <span class="ui">Sent</span>. A household with no email address is named in the message at the top: call or write to them.</li>
+          <li><b>Send a reminder:</b> open a request that says Requested and select <span class="ui">Email to copy</span> to get its email again.</li>
           <li><b>What is waiting,</b> under <span class="ui">Requests</span>: <span class="ui">Requested</span> means the household has been asked and you are waiting for its proof.</li>
           <li><b>Open one</b> when the proof comes in, and add the document (a PDF or a photo). Select <span class="ui">View</span> to look at one that is already there.</li>
           <li><b>Review it:</b> enter the date, the <span class="ui">Replacement coverage limit</span> from the proof, choose Approved or Issue found, add notes, and <span class="ui">Save</span>. An issue needs a note saying what it is, and the request stays open as Issue found until you open it again and approve it.</li>
           <li><b>Cancel one</b>, open or closed, with <span class="ui">Cancel this verification</span>.</li>
         </ol>
+        <div class="tip">The wording of the email is yours to change: Settings &rsaquo; Message templates, the one used for <span class="ui">Insurance verification</span>. It can use {first name}, {household}, {home}, {due date} and {organization}.</div>
         <div class="tip">Only an approval sets the occupancy's Last insurance verification date. On the Verification hub, a home with one open shows it in the Insurance list: select it to open that verification.</div>
       </section>
 
@@ -168,11 +170,11 @@
       <section class="guide" id="resale" data-title="Run a resale">
         <h3>Run a resale</h3>
         <p class="where">Activities &rsaquo; Resale</p>
-        <p>The Resale page walks a resale through five steps. Each step saves as you go, so you can leave and come back; pick the resale at the top of the page.</p>
+        <p>The Resale page walks a resale through five steps. Each step saves as you go, so you can leave and come back. The page opens on the <b>sales in progress</b>, each with the step it is waiting on: select <span class="ui">Continue</span> on a row. The Dashboard's <span class="ui">Pending sales</span> tile brings you to the same list.</p>
         <ol>
           <li><b>Start the resale:</b> select <span class="ui">Start a resale</span>, choose the home, and enter the date the homeowner gave notice.</li>
           <li><b>Price and what the seller owes:</b> the <span class="ui">Formula price</span> and <span class="ui">Added value</span> (capital improvements) come from the occupancy and add up to the <span class="ui">Maximum resale price</span>. Loans from your organization are worked out for today; change the total to the real payoff. Add any <span class="ui">Other credits</span> and <span class="ui">Other debits</span>, saying what each is for. The page shows what the seller is left with.</li>
-          <li><b>Find the buyer:</b> pick a household that is already certified, or select <span class="ui">Start a project for this home</span> to run an application round, and come back to pick the buyer it produces.</li>
+          <li><b>Find the buyer:</b> pick a household that is already certified, or select <span class="ui">Start a project for this home</span> to run an application round. New project opens with the home and its maximum resale price already filled in, and once the project is created it carries on through adding people, the pre-screen and buyer selection. Come back here to pick the buyer it produces.</li>
           <li><b>Contract:</b> enter the <span class="ui">Purchase price</span>, the date the purchase and sale agreement was signed, lender and title company. Under <span class="ui">How the purchase price is made up</span>, add a line for each part: the buyer's cash, each loan (with its interest rate), each subsidy. The lines should add up to the purchase price. The home is marked Sale pending. If the price is above the maximum resale price, the seller's side stops at the maximum and the difference is recorded as <span class="ui">Subsidy recaptured</span> by your organization.</li>
           <li><b>Closing:</b> once the sale has closed, enter the <span class="ui">Closing date</span>, the buyer's <span class="ui">Closing costs</span> and add the <span class="ui">Final settlement statement</span> if you have them, then select <span class="ui">Record the closing</span>. The statement can also be added, replaced and viewed on this page after the closing. This ends the seller's occupancy, starts the buyer's with the same resale formula from the new price and date, and updates the home and both households.</li>
         </ol>
@@ -185,7 +187,8 @@
         <p class="where">Activities &rsaquo; After the sale</p>
         <p>The work that follows a closing, for a resale or a first sale. Recording a closing on the Resale page brings you straight here.</p>
         <ol>
-          <li>Choose the <span class="ui">Sale</span>. Sales with work left are listed first. The first time a sale is opened it gets its own copy of your organization's task list.</li>
+          <li>The page opens on two lists. <b>Sales in the last 30 days</b> shows each recent closing with its status: Not started, how many tasks are done, or All done. <b>All sales with pending actions</b> shows every sale with tasks still to do, whenever it closed. Select <span class="ui">Start</span> or <span class="ui">Continue</span> on a row.</li>
+          <li>Any sale, finished ones included, is under <span class="ui">Sale</span> at the top. The first time a sale is opened it gets its own copy of your organization's task list.</li>
           <li><b>Enter the buyer's insurance:</b> select <span class="ui">Enter the insurance</span>, fill in the insurer, policy number, dwelling coverage and dates, tick the box if your organization is listed as additional insured, add the proof if you have it, and select <span class="ui">Save the insurance</span>. This creates the home's insurance policy and its first insurance verification, dated the closing, so the next one falls due a year after the purchase.</li>
           <li><b>Add the final settlement statement:</b> choose the file and select <span class="ui">Save the file</span>.</li>
           <li>For the other tasks, use the button to open the place the work is done, then select <span class="ui">Mark done</span>.</li>

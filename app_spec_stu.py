@@ -4,7 +4,7 @@ Stu: one model-driven app holding both sides, as two areas (the switcher at the 
     python3 build_app.py --url ...            (Stu is the default)
     python3 build_app.py --app stu --url ...
 
-Nothing is defined here. The Stewardship area is app_spec.py and the Intake & Selection area is
+Nothing is defined here. The Stewardship area is app_spec.py and the Applications and Sales area is
 app_spec_intake.py, so a view, form or page is still changed in the spec it belongs to. Those two specs
 can still be built as apps of their own (--app core, --app intake) for a client that wants one side only.
 
@@ -24,7 +24,7 @@ APP = {
 # (area title, its navigation groups). The first item of the first area is where the app opens.
 AREAS = [
     ("Stewardship", core.NAVIGATION),
-    ("Intake & Selection", intake.NAVIGATION),
+    ("Applications and Sales", intake.NAVIGATION),
 ]
 NAVIGATION = [group for _, groups in AREAS for group in groups]
 

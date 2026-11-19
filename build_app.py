@@ -730,7 +730,7 @@ def main():
     ap.add_argument("--check", action="store_true", help="Check the app spec. No sign-in.")
     ap.add_argument("--app", choices=sorted(APP_SPECS), default="stu",
                     help="Which app: stu (both sides in one app, the default), core (CLT Stewardship only) "
-                         "or intake (CLT Intake & Selection only)")
+                         "or intake (CLT Applications and Sales only)")
     ap.add_argument("--only", help="Comma list of stages: views, forms, app")
     ap.add_argument("--solution", default=SOLUTION)
     ap.add_argument("--tenant", default="organizations")

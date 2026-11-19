@@ -24,7 +24,7 @@
     <img data-logo alt="">
     <div>
       <h1>Insurance verification</h1>
-      <p>Enter the insurer's card when it arrives, or ask a household for proof, then review it and approve the home's coverage.</p>
+      <p>Enter the insurer's card when it arrives. When no card comes, ask the household for proof: Stu writes the email for you to copy and send.</p>
     </div>
   </div>
 
@@ -49,14 +49,14 @@
   <!-- asking a household: Stu records that it was asked; staff ask in their own way and add the proof when it arrives -->
   <div class="panel">
     <h2>Ask households for proof <small id="count"></small></h2>
-    <p class="lead" id="lead">Every current occupancy. Homes with no insurance verification in the last year (or, for a new owner, in the first year after the purchase) are ticked for you. Starting a request records that you asked: ask the household the way you usually do, then open the request below and add the proof when it arrives.</p>
+    <p class="lead" id="lead">Every current occupancy. Homes with no insurance verification in the last year (or, for a new owner, in the first year after the purchase) are ticked for you. Starting a request records that you asked, then gives you an email for each household to copy into your mail program. Stu does not send email itself. Add the proof to the request below when it arrives.</p>
     <div class="toolbar">
       <label>Due <input id="due" type="date"></label>
     </div>
     <div class="tablewrap" style="margin-top: 12px">
       <table class="data">
-        <thead><tr><th><input type="checkbox" id="all" title="Tick everyone who can be asked"></th><th>Home</th><th>Household</th><th>Last verified</th><th>Now</th></tr></thead>
-        <tbody id="rows"><tr><td colspan="5">Loading...</td></tr></tbody>
+        <thead><tr><th><input type="checkbox" id="all" title="Tick everyone who can be asked"></th><th>Home</th><th>Household</th><th>Email</th><th>Last verified</th><th>Now</th></tr></thead>
+        <tbody id="rows"><tr><td colspan="6">Loading...</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -68,6 +68,13 @@
     <span class="msg" id="msg"></span>
   </div>
 
+  <!-- the emails to copy, one at a time -->
+  <div class="panel" id="mailpanel" hidden>
+    <h2>Emails to send <small id="mailcount"></small></h2>
+    <p class="lead">Copy each email into your mail program (or use Open in mail), send it, then select Sent. Stu does not send email itself.</p>
+    <div id="mailcard"></div>
+  </div>
+
   <h2>Requests <small id="opencount"></small></h2>
   <div class="toolbar"><label class="inline" style="font-weight:400"><input type="checkbox" id="showall" style="width:auto"> Show closed and cancelled ones too</label></div>
   <div class="tablewrap" style="margin-top: 8px">
@@ -76,7 +83,8 @@
       <tbody id="open"><tr><td colspan="8">Loading...</td></tr></tbody>
     </table>
   </div>
-  <p class="note">A card you entered shows here as Approved, with <b>Insurer's card</b> under How (tick the box above to see closed ones). <b>Requested</b> means the household has been asked and you are waiting for its proof.
+  <p class="note">A card you entered shows here as Approved, with <b>Insurer's card</b> under How (tick the box above to see closed ones). <b>Requested</b> means the household has been asked and you are waiting for its proof. Open one and select <b>Email to copy</b> to get its email again, for a reminder.
+    The wording of the email is your organization's own: whoever looks after Stu can change it under Settings, Message templates (the one used for Insurance verification).
     <b>Issue found</b> means you looked and something is wrong: it stays open until the insurance is approved.
     Open a request to add or view the document, save your review or cancel it. Approving one sets the occupancy's Last insurance verification date.
     Cancelling an approved one takes that date back to the approval before it.</p>
@@ -85,8 +93,8 @@
 <script>
 (function () {
   var P = CLTPage, V = CLTVerify, I = CLTInsuranceCheck, R = CLTRegular, $ = function (id) { return document.getElementById(id); };
-  var fv = P.fv, sets = {}, ch = {}, org = {}, occ = [], list = [], rows = [], picks = {}, closing = "";
-  var TABLES = ["clt_occupancy", "clt_insuranceverification"];
+  var fv = P.fv, sets = {}, ch = {}, org = {}, occ = [], list = [], rows = [], picks = {}, closing = "", template = null, queue = [], at = 0;
+  var TABLES = ["clt_occupancy", "clt_insuranceverification", "clt_household", "clt_householdmember"];
   // Opened from the Verification hub: ?data=occupancies=<ids> (those households start ticked), ?data=open=<insurance verification id>
   // or ?data=card=<occupancy id> (the card form opens, on that home when one is given)
   var data = decodeURIComponent((/[?&]data=([^&]*)/.exec(location.search) || [])[1] || "");
@@ -110,17 +118,24 @@
       P.getAll(sets.clt_occupancy + "?$select=clt_occupancyid,clt_name,clt_startdate,clt_lastinsuranceverified,clt_documentsfolder,_clt_property_value,_clt_household_value" +
                "&$filter=statecode eq 0 and clt_status eq " + ch.occupancystatus.Current + "&$orderby=clt_name asc"),
       P.getAll(sets.clt_insuranceverification + "?$select=clt_insuranceverificationid,clt_name,clt_status,clt_method,clt_date,clt_duedate," +
-               "clt_verifieddate,clt_replacementcoverage,clt_contactrequested,clt_document_name,clt_notes,_clt_occupancy_value&$filter=statecode eq 0")
+               "clt_verifieddate,clt_replacementcoverage,clt_contactrequested,clt_document_name,clt_notes,clt_sentdate,clt_sentto,_clt_occupancy_value&$filter=statecode eq 0"),
+      P.getAll(sets.clt_household + "?$select=clt_householdid,clt_name,clt_primaryemail&$filter=statecode eq 0"),
+      P.getAll(sets.clt_householdmember + "?$select=clt_firstname,_clt_household_value&$filter=statecode eq 0 and clt_applicantrole eq " + ch.applicantrole["Primary applicant"])
     ]).then(function (r) {
+      var hh = {}, first = {};
+      r[2].forEach(function (h) { hh[h.clt_householdid] = h; });
+      r[3].forEach(function (m) { if (m.clt_firstname && !first[m._clt_household_value]) first[m._clt_household_value] = m.clt_firstname; });
       var insurance = R.ACTIVITIES.filter(function (a) { return a.key === "insurance"; })[0];
       occ = r[0].map(function (o) {
-        return { id: o.clt_occupancyid, name: o.clt_name, home: fv(o, "_clt_property_value"), household: fv(o, "_clt_household_value"),
-                 lastVerified: day(o.clt_lastinsuranceverified), folder: o.clt_documentsfolder || "",
+        var h = hh[o._clt_household_value] || {};
+        return { id: o.clt_occupancyid, name: o.clt_name, home: fv(o, "_clt_property_value"), household: h.clt_name || fv(o, "_clt_household_value"),
+                 email: h.clt_primaryemail || "", firstName: first[o._clt_household_value] || "", lastVerified: day(o.clt_lastinsuranceverified), folder: o.clt_documentsfolder || "",
                  due: R.stand(insurance, o.clt_startdate, day(o.clt_lastinsuranceverified), org, today()).state !== R.OK };
       });
       list = r[1].map(function (x) {
         return { id: x.clt_insuranceverificationid, occupancy: x._clt_occupancy_value, status: fv(x, "clt_status"), method: fv(x, "clt_method"), date: day(x.clt_date), due: day(x.clt_duedate),
-                 verified: day(x.clt_verifieddate), coverage: x.clt_replacementcoverage, contact: !!x.clt_contactrequested, file: x.clt_document_name || "", notes: x.clt_notes || "" };
+                 verified: day(x.clt_verifieddate), coverage: x.clt_replacementcoverage, contact: !!x.clt_contactrequested, file: x.clt_document_name || "", notes: x.clt_notes || "",
+                 sent: day(x.clt_sentdate), sentTo: x.clt_sentto || "" };
       });
       build(); renderOpen();
     });
@@ -138,14 +153,14 @@
     $("rows").innerHTML = rows.length ? rows.map(function (r) {
       var p = picks[r.id], locked = !!r.request;
       return "<tr" + (locked ? ' class="locked"' : "") + '><td><input type="checkbox" data-tick="' + r.id + '"' + (p.tick ? " checked" : "") + (locked ? " disabled" : "") + "></td>" +
-        "<td>" + esc(r.home || r.name) + "</td><td>" + esc(r.household) + "</td>" +
+        "<td>" + esc(r.home || r.name) + "</td><td>" + esc(r.household) + "</td><td>" + (esc(r.email) || '<span class="mutedtext">none</span>') + "</td>" +
         "<td>" + (r.lastVerified || '<span class="mutedtext">never</span>') + (r.due ? ' <span class="pill bad">due</span>' : "") + "</td>" +
         "<td>" + (locked ? '<span class="pill warn">Open: ' + esc(r.request.status) + "</span>" : '<span class="mutedtext">not asked</span>') + "</td></tr>";
-    }).join("") : '<tr><td colspan="5">There are no current occupancies yet.</td></tr>';
+    }).join("") : '<tr><td colspan="6">There are no current occupancies yet.</td></tr>';
   }
   function chosen() { return rows.filter(function (r) { return picks[r.id].tick && !r.request; }); }
 
-  // Start the requests: each is recorded as Requested. Stu sends nothing: staff ask the household themselves.
+  // Start the requests: each is recorded as Requested, then its email is queued up to copy. Stu sends nothing itself.
   function start() {
     var c = chosen(), inp = { due: $("due").value };
     if (problems(I.startProblems(c, inp, today()))) return;
@@ -159,12 +174,58 @@
       $("next").disabled = false;
       c.forEach(function (x) { picks[x.id].tick = false; });
       return load().then(function () {
-        say(c.length + " request" + (c.length === 1 ? "" : "s") + " started. Ask each household for its proof of insurance, then open the request below and add the document when it comes in.");
+        var e = I.emails(c, inp.due, org.OrgName || "", template);
+        say(c.length + " request" + (c.length === 1 ? "" : "s") + " started. " + (e.mails.length ? "Copy and send each email below. " : "") +
+            (e.noEmail.length ? "No email address for " + e.noEmail.map(function (x) { return x.household || x.home || x.name; }).join(", ") + ": call or write to them. " : "") +
+            "Add the proof to the request when it comes in.");
+        showMail(e.mails);
       });
     }).catch(function (e) { $("next").disabled = false; problems(["Couldn't start: " + e.message]); });
   }
 
-  // ---- requests: each one can be opened to see its link and document, close it or cancel it
+  // ---- the emails to copy, one at a time. Sent notes the date and the address on the request.
+  function showMail(mails) {
+    queue = mails || []; at = 0;
+    $("mailpanel").hidden = !queue.length;
+    if (queue.length) { renderMail(); if ($("mailpanel").scrollIntoView) $("mailpanel").scrollIntoView(); }
+  }
+  function renderMail() {
+    $("mailcount").textContent = at < queue.length ? "email " + (at + 1) + " of " + queue.length : "";
+    if (at >= queue.length) {
+      $("mailcard").innerHTML = '<div class="msgbox ok">That was the last one. Each request is open below until the proof comes in.</div>' +
+        '<div class="actions" style="margin-top:12px"><button class="btn" type="button" id="m-close">Close</button></div>';
+      return;
+    }
+    var q = queue[at], m = q.mail;
+    var mail = "mailto:" + encodeURIComponent(m.to) + "?subject=" + encodeURIComponent(m.subject) + "&body=" + encodeURIComponent(m.body);
+    $("mailcard").innerHTML = '<div class="emailcard"><div class="emailhead"><b>' + esc(q.row.household) + "</b> &middot; " + esc(q.row.home || q.row.name) + "</div>" +
+      [["To", m.to, "to"], ["Subject", m.subject, "subject"]].map(function (x) {
+        return '<div class="emailrow"><span class="mutedtext">' + x[0] + '</span><span class="emailvalue">' + esc(x[1]) + '</span><button class="btn small" type="button" data-copy="' + x[2] + '">Copy</button></div>'; }).join("") +
+      "<pre>" + esc(m.body) + "</pre>" +
+      '<div class="actions emailactions"><button class="btn small" type="button" data-copy="body">Copy the message</button>' +
+      '<a class="btn small" href="' + esc(mail) + '">Open in mail</a></div></div>' +
+      '<div class="actions" style="margin-top:12px"><button class="btn primary" type="button" id="m-sent">Sent</button><button class="btn" type="button" id="m-skip">Skip</button>' +
+      '<span class="errtext" id="m-err"></span></div>';
+  }
+  function copy(text, button) {
+    var done = function () { button.textContent = "Copied"; };
+    var fallback = function () {
+      var t = document.createElement("textarea"); t.value = text; document.body.appendChild(t); t.select();
+      try { document.execCommand("copy"); done(); } catch (e) { $("m-err").textContent = "This browser wouldn't copy. Select the text and copy it yourself."; }
+      document.body.removeChild(t);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, fallback); else fallback();
+  }
+  function sentMail() {
+    var q = queue[at], req = list.filter(function (x) { return x.occupancy === q.row.id && isOpen(x); })[0];
+    if (!req) { at++; renderMail(); return; }
+    $("m-sent").disabled = true;
+    P.patch(sets.clt_insuranceverification + "(" + req.id + ")", { clt_sentdate: today(), clt_sentto: q.mail.to })
+      .then(function () { at++; return load(); }).then(renderMail)
+      .catch(function (e) { $("m-sent").disabled = false; $("m-err").textContent = "Couldn't mark it sent: " + e.message; });
+  }
+
+  // ---- requests: each one can be opened to see its document, get its email again, close it or cancel it
   function renderOpen() {
     var byId = {}; occ.forEach(function (o) { byId[o.id] = o; });
     var mine = list.filter(function (x) { return byId[x.occupancy]; }), all = $("showall").checked;
@@ -183,7 +244,7 @@
   }
   function detail(x, o) {
     var open = isOpen(x), cancelled = x.status === I.CANCELLED;
-    var facts = [x.date ? "Started " + x.date : ""].filter(Boolean);
+    var facts = [x.date ? "Started " + x.date : "", x.sent ? "Emailed " + x.sent + (x.sentTo ? " to " + x.sentTo : "") : ""].filter(Boolean);
     var html = '<tr class="detail"><td colspan="8">';
     if (facts.length) html += '<div class="reqline">' + facts.map(esc).join(" &middot; ") + "</div>";
     if (x.contact) html += '<div class="reqline"><span class="pill bad">Asked to be contacted</span> The household couldn\'t find the document or has questions.</div>';
@@ -199,6 +260,8 @@
       '<label class="wide">Notes <textarea id="c-notes" placeholder="What you checked, anything to follow up, or what the issue is">' + esc(x.notes) + "</textarea></label>" +
       '<button class="btn primary" type="button" id="c-save">Save</button>';
     else html += '<div class="reqline">' + (x.verified ? "Reviewed on " + x.verified : "") + (x.coverage != null ? " &middot; Replacement coverage limit $" + Number(x.coverage).toLocaleString("en-US") : "") + (x.notes ? (x.verified ? " &middot; " : "") + "Notes: " + esc(x.notes) : "") + '</div><div class="closeform">';
+    if (open && x.status === I.REQUESTED) html += o.email ? '<button class="btn" type="button" id="c-mail">Email to copy</button>'
+                                                        : '<span class="mutedtext">No email address on the household: call or write to them.</span>';
     html += '<button class="btn" type="button" id="c-occ">Open the occupancy</button>' +
       (cancelled ? "" : '<button class="btn" type="button" id="c-void">Cancel this verification</button>') +
       (o.folder ? '<a class="btn" target="_blank" rel="noopener" href="' + esc(o.folder) + '">Open the documents folder</a>' : "") +
@@ -315,16 +378,30 @@
     else if (t.id === "c-view") viewIt();
     else if (t.id === "c-void") voidIt();
     else if (t.id === "c-occ") P.openRecord("clt_occupancy", current().o.id);
+    else if (t.id === "c-mail") { var c = current(); showMail(I.emails([c.o], c.x.due, org.OrgName || "", template).mails); }
+  });
+  $("mailcard").addEventListener("click", function (e) {
+    var t = e.target, m = queue[at] && queue[at].mail;
+    if (t.dataset.copy && m) copy(m[t.dataset.copy], t);
+    else if (t.id === "m-sent") sentMail();
+    else if (t.id === "m-skip") { at++; renderMail(); }
+    else if (t.id === "m-close") showMail([]);
   });
   $("showall").addEventListener("change", renderOpen);
 
-  if (only.length) $("lead").textContent = "The households you chose on the Verification hub are ticked. Tick or untick any others. Starting a request records that you asked: ask the household the way you usually do, then add the proof when it arrives.";
+  if (only.length) $("lead").textContent = "The households you chose on the Verification hub are ticked. Tick or untick any others. Starting a request records that you asked, then gives you an email for each household to copy and send. Add the proof when it arrives.";
   $("due").value = V.defaultDue(today()); $("due").min = today();
 
-  Promise.all([P.brand(), P.choice("clt_occupancystatus"), P.choice("clt_insurancereviewstatus"), P.choice("clt_verificationmethod")].concat(TABLES.map(P.entitySet)))
+  Promise.all([P.brand(), P.choice("clt_occupancystatus"), P.choice("clt_insurancereviewstatus"), P.choice("clt_verificationmethod"), P.choice("clt_applicantrole")].concat(TABLES.map(P.entitySet)))
     .then(function (r) {
-      org = r[0] || {}; ch = { occupancystatus: r[1], status: r[2], method: r[3] };
-      TABLES.forEach(function (t, i) { sets[t] = r[4 + i]; });
+      org = r[0] || {}; ch = { occupancystatus: r[1], status: r[2], method: r[3], applicantrole: r[4] };
+      TABLES.forEach(function (t, i) { sets[t] = r[5 + i]; });
+      // the organization's own wording, where it has message templates; the page's own words otherwise
+      return Promise.all([P.entitySet("clt_messagetemplate"), P.choice("clt_noticetype")]).then(function (m) {
+        if (!m[0] || m[1]["Insurance verification"] == null) return;
+        return P.getAll(m[0] + "?$select=clt_subject,clt_body&$filter=statecode eq 0 and clt_noticetype eq " + m[1]["Insurance verification"] + "&$orderby=createdon asc")
+          .then(function (t) { if (t.length) template = { subject: t[0].clt_subject || "", body: t[0].clt_body || "" }; });
+      }).catch(function () { /* no message templates here: the page's own words are used */ });
     }).then(load).then(function () {
       if (wantCard) showCard(wantCard[1]);
       // opened for one particular verification: show it, even if it is closed
@@ -333,7 +410,7 @@
         closing = x.id; if (!isOpen(x)) $("showall").checked = true; renderOpen();
         var row = document.querySelector('[data-row="' + x.id + '"]'); if (row && row.scrollIntoView) row.scrollIntoView();
       }
-    }).catch(function (e) { $("rows").innerHTML = '<tr><td colspan="5">Couldn\'t load: ' + esc(e.message) + "</td></tr>"; });
+    }).catch(function (e) { $("rows").innerHTML = '<tr><td colspan="6">Couldn\'t load: ' + esc(e.message) + "</td></tr>"; });
 })();
 </script>
 </body>

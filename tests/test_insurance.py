@@ -34,7 +34,23 @@ assert.strictEqual(rows[0].household, "Rivera");
 assert.deepStrictEqual(I.startProblems([rows[0], rows[1]], { due: "2026-12-17" }, today), []);
 assert.ok(I.startProblems([], { due: "2026-12-17" }, today)[0].includes("Tick")); assert.ok(I.startProblems([rows[0]], { due: "2026-11-01" }, today)[0].includes("past"));
 assert.ok(I.startProblems([rows[0]], { due: "" }, today)[0].includes("due"));
-assert.strictEqual(I.DEFAULT, undefined); assert.strictEqual(I.BUTTON, undefined);
+assert.strictEqual(I.BUTTON, undefined, "there is no form to link to");
+
+// ---- the email to copy: Stu writes it, staff send it. There is no link in it.
+const maria = { id: "o1", name: "Rivera - 12 Pine St", home: "12 Pine St", household: "Rivera", firstName: "Maria", email: "maria@example.com" };
+const m = I.email(maria, "2026-12-17", "Pine Valley CLT");
+assert.strictEqual(m.to, "maria@example.com"); assert.strictEqual(m.subject, "Proof of homeowner's insurance for 12 Pine St");
+assert.ok(m.body.startsWith("Hello Maria,\n\n") && m.body.includes("by December 17, 2026.") && m.body.endsWith("Thank you,\nPine Valley CLT"));
+assert.ok(!/\{|\}|https?:/.test(m.body), "every field is filled in, and there is no link");
+assert.ok(I.email({ ...maria, firstName: "" }, "2026-12-17", "Pine Valley CLT").body.startsWith("Hello Rivera,"), "no first name on file: the household's name");
+const own = I.email(maria, "2026-12-17", "Pine Valley CLT", { subject: "Insurance, {Home}", body: "Dear {household} household, due {due  date}. {mystery}" });
+assert.deepStrictEqual([own.subject, own.body], ["Insurance, 12 Pine St", "Dear Rivera household, due December 17, 2026. {mystery}"], "the organization's own wording; an unknown field stays showing");
+assert.strictEqual(I.email(maria, "2026-12-17", "X", { subject: "", body: " " }).subject, m.subject, "an empty template falls back to the starting words");
+assert.strictEqual(I.email(maria, "2026-12-17", "X", { subject: "", body: "Hi" }).subject, m.subject, "a template with no subject gets the starting one");
+const q = I.emails([maria, { id: "o2", household: "Chen", home: "4 Oak Ave", email: " " }], "2026-12-17", "Pine Valley CLT");
+assert.deepStrictEqual([q.mails.length, q.mails[0].row.id, q.mails[0].mail.to, q.noEmail.map(r => r.household)], [1, "o1", "maria@example.com", ["Chen"]], "a household with no address is named, not emailed");
+assert.deepStrictEqual(I.emails([], "2026-12-17", "X"), { mails: [], noEmail: [] });
+assert.deepStrictEqual(I.FIELDS.map(f => f[0]), ["first name", "household", "home", "due date", "organization"]);
 
 // ---- closing one
 assert.deepStrictEqual(I.closeProblems({ verified: today, outcome: "Approved", notes: "" }, today), []);
@@ -64,7 +80,7 @@ assert.ok(I.cardProblems({ occupancy: "o1", verified: "2026-11-18" }, today)[0].
 assert.strictEqual(I.cardTarget("o4", list), "i1", "a home with a request open: the card closes that one");
 assert.strictEqual(I.cardTarget("o1", list), "", "an approved one stays as it is: the card is a new verification"); assert.strictEqual(I.cardTarget("o3", list), "");
 assert.strictEqual(I.CARD, "Insurer's card");
-process.stdout.write(JSON.stringify({ card: I.CARD }));
+process.stdout.write(JSON.stringify({ card: I.CARD, mail: I.DEFAULT }));
 """
 
 
@@ -103,11 +119,20 @@ def main():
     assert "insuranceverification" in core.FORMS and "insuranceverification" in dict(core.NAVIGATION)["Stewardship"]
     assert 'data-goto="insurance"' in hub and 'data-goto="verify"' in hub and '"In progress"' in hub and "Asked<" not in hub
     assert page.index('src="pages.js"') < page.index('src="stewardship.js"') < page.index('src="verify.js"') < page.index('src="insurancecheck.js"') < page.index("CLTInsuranceCheck")
-    # no emailed form link: asking a household is one list and one button, and the page never writes a link or a code
-    for gone in ('id="steps"', 'data-step=', 'id="link"', 'id="subject"', 'id="sentit"', "mailto:", "clt_sentlink", "clt_verificationcode", "clt_sentto", "InsuranceFormLink", "saveSetting", "V.email"):
+    # no online form: asking a household is one list and one button, and the page never writes a link or a code
+    for gone in ('id="steps"', 'data-step=', 'id="link"', "clt_sentlink", "clt_verificationcode", "InsuranceFormLink", "saveSetting", "V.email", "emailHtml"):
         assert gone not in page, gone
     for piece in ('id="all"', 'id="due"', 'id="next"', 'id="showall"', 'id="dash"', "I.startProblems(", "ch.method[I.PAPER]"):
         assert piece in page, piece
+    # starting requests queues up an email for each household to copy; Sent notes the date and address on the request
+    for piece in ('id="mailpanel"', 'id="mailcard"', "I.emails(", 'data-copy="body"', "mailto:", 'id="m-sent"', 'id="m-skip"', 'id="c-mail"', "clt_sentdate: today()", "clt_sentto: q.mail.to", "clt_primaryemail"):
+        assert piece in page, piece
+    # the wording has a starting point each organization can change: a message template used for Insurance verification
+    from schema import SEED_ROWS
+    start = [t for t in SEED_ROWS["messagetemplate"] if t["noticetype"] == "Insurance verification"]
+    mail = json.loads(r.stdout.strip().splitlines()[-1])["mail"]
+    assert len(start) == 1 and start[0]["subject"] == mail["subject"] and start[0]["body"] == mail["body"], "the seeded template and the page's fallback say the same thing"
+    assert "Insurance verification" in CHOICES["noticetype"][1] and "clt_noticetype" in page and "{link}" not in mail["body"]
     from schema import ENVIRONMENT_VARIABLES
     assert not any(v["name"] == "InsuranceFormLink" for v in ENVIRONMENT_VARIABLES)
     assert CHOICES["insurancereviewstatus"][1][:5] == ["To review", "Needs contact", "Approved", "Issue found", "Cancelled"], "new statuses go on the end, so existing values keep their meaning"
@@ -123,8 +148,8 @@ def main():
         assert p.returncode == 0, p.stderr[-600:]
     assert "sendEmail" not in script   # the page never sends anything
     # every clt_ name is real
-    used_tables = ("occupancy", "insuranceverification")
-    known = {f"{PREFIX}_name", f"{PREFIX}_document_name"} | {f"{PREFIX}_{c}" for c in ("occupancystatus", "insurancereviewstatus", "verificationmethod")}
+    used_tables = ("occupancy", "insuranceverification", "household", "householdmember", "messagetemplate")
+    known = {f"{PREFIX}_name", f"{PREFIX}_document_name"} | {f"{PREFIX}_{c}" for c in ("occupancystatus", "insurancereviewstatus", "verificationmethod", "applicantrole", "noticetype")}
     for t in used_tables:
         known |= {f"{PREFIX}_{c}" for c in cols[t]} | {f"{PREFIX}_{t}", f"{PREFIX}_{t}id"}
     known |= {f"{PREFIX}_{col}" for child, col, *_ in LOOKUPS if child in used_tables}

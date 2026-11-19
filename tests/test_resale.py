@@ -150,6 +150,11 @@ assert.deepStrictEqual(R.check("closing", { closingDate: today, contractDate: "2
 assert.ok(R.check("closing", { closingDate: today, closingCosts: "some" }, today)[0].includes("closing costs"));
 assert.strictEqual(R.statementProblem(null), ""); assert.strictEqual(R.statementProblem({ name: "Final ALTA.pdf", size: 400000 }), "");
 assert.ok(R.statementProblem({ name: "statement.docx", size: 10 }).includes("PDF")); assert.ok(R.statementProblem({ name: "scan.PNG", size: 30 * 1024 * 1024 }).includes("25 MB"));
+// ---- the page's opening list: every sale in progress with the step it waits on; another kind of sale opens as its own record
+assert.deepStrictEqual(R.pending([{ id: "a", resale: true, noticeDate: "2026-10-01", status: "Pending" }, { id: "b", resale: true, noticeDate: "2026-10-01", maxPrice: 250000, buyer: "h1", status: "Pending" },
+                                  { id: "c", resale: false }]).map(r => [r.id, r.resale, r.next]),
+                       [["a", true, "Price and what the seller owes"], ["b", true, "Contract"], ["c", false, "Open the sale to carry on"]]);
+assert.deepStrictEqual(R.pending([]), []);
 process.stdout.write(JSON.stringify({ copied: R.COPIED, funding: R.FUNDING_TYPES }));
 """
 
@@ -217,6 +222,15 @@ def main():
                          ("projectstatus", ["Closed"])):
         for label in labels:
             assert label in CHOICES[name][1] and label in script + rules, (name, label)
+    # opens on the sales in progress; the Dashboard's Pending sales tile comes here; What for sits beside its amount;
+    # a project started from a resale gets the home and its maximum resale price
+    for piece in ('id="landing"', 'id="pending"', "R.pending(", "data-pick=", "data-record=", 'class="whatfor"', '"&price=" + D.sale.clt_maxpriceatsale'):
+        assert piece in page, piece
+    assert "pending.length === 1" not in page and 'line("What for"' not in page
+    dash = open(os.path.join(web, "overview.html")).read()
+    assert 'page: "clt_/pages/resale.html"' in dash and "if (cfg.page) CLTPage.go(" in dash
+    new = open(os.path.join(web, "newproject.html")).read()
+    assert "price=([0-9.]+)" in new and "c.price = resale.price" in new
     assert "—" not in page and "—" not in rules and "—" not in loan
     assert 'id="regular"' in open(os.path.join(web, "guides.html")).read() and "Resale" in open(os.path.join(web, "guides.html")).read()
     print("OK: loan payments and balances, the resale price figures, each step's checks and the closing's changes match the worked examples; "

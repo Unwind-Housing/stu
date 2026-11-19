@@ -34,9 +34,26 @@
   </div>
   <div class="bottombar"><span class="msg" id="msg"></span></div>
 
+  <div id="landing" hidden>
+    <h2>Sales in the last 30 days</h2>
+    <div class="tablewrap">
+      <table class="data">
+        <thead><tr><th>Home</th><th>Buyer</th><th>Kind</th><th>Closed</th><th>Status</th><th></th></tr></thead>
+        <tbody id="recent"></tbody>
+      </table>
+    </div>
+    <h2>All sales with pending actions <small id="pendingcount"></small></h2>
+    <div class="tablewrap">
+      <table class="data">
+        <thead><tr><th>Home</th><th>Buyer</th><th>Kind</th><th>Closed</th><th>Status</th><th></th></tr></thead>
+        <tbody id="pendingrows"></tbody>
+      </table>
+    </div>
+  </div>
+
   <ol class="track" id="track"></ol>
 
-  <p class="note">Every closed sale is listed, the ones with work left first. The tasks are your organization's own list: whoever looks after Stu can change it under Settings, After-sale tasks.
+  <p class="note">This page opens on two lists: the sales closed in the last 30 days, and every sale with after-sale tasks still to do, whenever it closed. Every closed sale is under Sale, the ones with work left first. The tasks are your organization's own list: whoever looks after Stu can change it under Settings, After-sale tasks.
     A sale gets its copy of the list the first time it is opened here, so a later change to the list doesn't alter sales already under way.
     Entering the buyer's insurance also records the home's first insurance verification, dated the closing, so the next one falls due a year after the purchase.</p>
 </div>
@@ -81,7 +98,6 @@
       $("sale").innerHTML = '<option value="">' + (sales.length ? "Choose a sale" : "No closed sales yet") + "</option>" +
         (todo.length ? '<optgroup label="Work left to do">' + todo.map(opt).join("") + "</optgroup>" : "") +
         (finished.length ? '<optgroup label="All done">' + finished.map(opt).join("") + "</optgroup>" : "");
-      if (!pick && todo.length === 1) pick = todo[0].id;
       if (pick && !sales.some(function (s) { return s.id.toLowerCase() === String(pick).toLowerCase(); })) pick = "";
       pick = pick ? sales.filter(function (s) { return s.id.toLowerCase() === String(pick).toLowerCase(); })[0].id : "";
       $("sale").value = pick;
@@ -139,8 +155,22 @@
     if (t.action !== A.INSURANCE) out += '<button class="btn' + (t.action === A.TICK ? " primary" : "") + '" type="button" data-done="' + t.id + '">Mark done</button>';
     return out + '<button class="btn small" type="button" data-skip="' + t.id + '">Not needed</button>';
   }
+  // Nothing chosen: the sales closed in the last 30 days, each with where it stands.
+  function landing() {
+    var L = A.recent(sales, today()), todo = A.pending(sales);
+    var row = function (s) {
+      var pill = s.state === "done" ? "ok" : s.state === "new" ? "bad" : "warn";
+      return "<tr><td>" + esc(s.home || s.name) + "</td><td>" + esc(s.buyer) + "</td><td>" + esc(s.type) + "</td><td>" + esc(s.closingDate) + "</td>" +
+        '<td><span class="pill ' + pill + '">' + esc(s.status) + '</span></td><td><button class="btn small' + (s.state === "done" ? "" : " primary") + '" type="button" data-pick="' + s.id + '">' +
+        (s.state === "new" ? "Start" : s.state === "done" ? "View" : "Continue") + "</button></td></tr>";
+    };
+    $("recent").innerHTML = L.recent.length ? L.recent.map(row).join("") : '<tr><td colspan="6">No sales have closed in the last 30 days.</td></tr>';
+    $("pendingrows").innerHTML = todo.length ? todo.map(row).join("") : '<tr><td colspan="6">Every closed sale has its after-sale tasks done.</td></tr>';
+    $("pendingcount").textContent = todo.length ? todo.length + (todo.length === 1 ? " sale" : " sales") + ", whenever they closed" : "";
+  }
   function render() {
-    if (!D) { $("saleinfo").textContent = ""; $("track").innerHTML = ""; return; }
+    $("landing").hidden = !!D;
+    if (!D) { $("saleinfo").textContent = ""; $("track").innerHTML = ""; return landing(); }
     var s = D.sale, p = A.progress(D.tasks);
     $("saleinfo").textContent = (s.buyer ? s.buyer + " · " : "") + (s.closingDate ? "closed " + s.closingDate + " · " : "") + (p.total ? p.done + " of " + p.total + " done" : "");
     if (!D.tasks.length) {
@@ -197,6 +227,10 @@
 
   // ---- events
   $("sale").addEventListener("change", function () { open = ""; say(""); show($("sale").value); });
+  $("landing").addEventListener("click", function (e) {
+    var id = e.target.dataset.pick;
+    if (id) { open = ""; say(""); $("sale").value = id; show(id); }
+  });
   $("track").addEventListener("click", function (e) {
     var t = e.target, d = t.dataset;
     if (d.done) setStatus(d.done, A.DONE).then(function () { say("Marked done."); }, fail("save it"));

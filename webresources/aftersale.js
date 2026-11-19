@@ -57,6 +57,30 @@ var CLTAfterSale = (function () {
   // The Dashboard's figure: closed sales with after-sale work still to do (tasks open, or not set up yet).
   function unfinished(list, tasks) { return sales(list, tasks).filter(function (s) { return s.state !== "done"; }).length; }
 
+  // The landing list: the sales closed in the last `days` days (a sale that closed 30 days ago today is still in), newest first, each with where it stands.
+  //   rows: from sales() -> { recent: [row + status], older: how many earlier sales still have work left }
+  var RECENT_DAYS = 30;
+  function daysBefore(today, n) {
+    var p = iso(today).split("-"), d = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2] - n));
+    return d.toISOString().slice(0, 10);
+  }
+  // "Not started", "3 of 8 done", "All done"
+  function status(row) { return row.state === "new" ? "Not started" : row.state === "done" ? "All done" : (row.total - row.open) + " of " + row.total + " done"; }
+  function recent(rows, today, days) {
+    var from = daysBefore(today, days || RECENT_DAYS);
+    var isRecent = function (s) { return iso(s.closingDate) && iso(s.closingDate) >= from && iso(s.closingDate) <= iso(today); };
+    return { recent: (rows || []).filter(isRecent).sort(function (a, b) { return iso(a.closingDate) < iso(b.closingDate) ? 1 : iso(a.closingDate) > iso(b.closingDate) ? -1 : 0; })
+                       .map(function (s) { var row = {}; Object.keys(s).forEach(function (k) { row[k] = s[k]; }); row.status = status(s); return row; }),
+             older: (rows || []).filter(function (s) { return !isRecent(s) && s.state !== "done"; }).length };
+  }
+
+  // Every sale with after-sale work left, whenever it closed: newest closing first, each with its status.
+  function pending(rows) {
+    return (rows || []).filter(function (s) { return s.state !== "done"; })
+      .sort(function (a, b) { return iso(a.closingDate) < iso(b.closingDate) ? 1 : iso(a.closingDate) > iso(b.closingDate) ? -1 : 0; })
+      .map(function (s) { var row = {}; Object.keys(s).forEach(function (k) { row[k] = s[k]; }); row.status = status(s); return row; });
+  }
+
   // What's wrong with the buyer's insurance as typed ("" list when it's fine).
   //   input: { carrier, policyNumber, coverage, effective, renewal }
   function insuranceProblems(input, today) {
@@ -80,7 +104,7 @@ var CLTAfterSale = (function () {
 
   var api = { TODO: TODO, DONE: DONE, SKIPPED: SKIPPED, EVERY: EVERY, RESALES: RESALES, FIRST: FIRST, RESALE: RESALE, ACTIONS: ACTIONS,
               TICK: TICK, INSURANCE: INSURANCE, STATEMENT: STATEMENT, OCCUPANCY: OCCUPANCY, FOLDER: FOLDER, PROPERTY: PROPERTY, WILD: WILD,
-              num: num, tasksFor: tasksFor, progress: progress, sales: sales, unfinished: unfinished, insuranceProblems: insuranceProblems,
+              RECENT_DAYS: RECENT_DAYS, status: status, recent: recent, pending: pending, num: num, tasksFor: tasksFor, progress: progress, sales: sales, unfinished: unfinished, insuranceProblems: insuranceProblems,
               policyName: policyName, verifiedOn: verifiedOn, recordName: recordName };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   return api;

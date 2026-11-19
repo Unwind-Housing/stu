@@ -9,7 +9,7 @@ Give a small community land trust one place to track its homes, the households t
 | User | Uses it to |
 |---|---|
 | CLT staff (stewardship, homeownership) | Manage properties, households, occupancies, verifications, insurance, requests, sales, documents |
-| Intake reviewer (Intake & Selection app) | Set up projects, review screeners and pre-screens, run selection, verify income, assets and debts, certify households, match them to homes |
+| Intake reviewer (Applications and Sales app) | Set up projects, review screeners and pre-screens, run selection, verify income, assets and debts, certify households, match them to homes |
 | Finance (CFO, bookkeeper) | ERRR ledger, fees, monthly reconciliation to QuickBooks |
 | Board or read-only | View portfolio and status |
 | Applicants and homeowners | Never log in. They interact only through online forms and email. |
@@ -17,7 +17,7 @@ Give a small community land trust one place to track its homes, the households t
 ## 3. Scope
 The product is **two apps in one environment**:
 - **CLT Stewardship** (the core solution): properties, households, occupancies and everything after purchase. Every client installs it.
-- **CLT Intake & Selection** (an optional second solution, built on the core): screeners, projects, selection, full applications and certification. A CLT that selects buyers some other way skips it and hands winners over through the same handoff (H-1).
+- **CLT Applications and Sales** (an optional second solution, built on the core): screeners, projects, selection, full applications and certification. A CLT that selects buyers some other way skips it and hands winners over through the same handoff (H-1).
 
 In: properties and their funders' covenants; projects and eligibility rules; households and members; occupancies; intake (screener and full application data); pre-screen, selection and certification; matching households to homes; annual verification; insurance; homeowner requests; resale price calculation; sales (initial and resale); funder reporting; documents; ERRR; fees.
 

@@ -6,6 +6,8 @@
 <title>Add to a project</title>
 <link rel="stylesheet" href="pages.css">
 <script src="pages.js"></script>
+<script src="journey.js"></script>
+<script src="assign.js"></script>
 </head>
 <body>
 <div class="page">
@@ -17,6 +19,9 @@
       <p>Pick the project, filter the screeners, then add the ones you've ticked, or everyone shown.</p>
     </div>
   </div>
+
+  <ol class="steps" id="journey"></ol>
+  <script>CLTJourney.bar(document.getElementById("journey"), "assign", function () { return document.getElementById("project").value; });</script>
 
   <h2>1. Project</h2>
   <div class="toolbar">
@@ -68,7 +73,9 @@
     <span class="msg" id="msg"></span>
   </div>
 
-  <p class="note">Applications that already have a Unique ID are locked to their project and can't be moved here.
+  <p class="note">An application with a Unique ID is locked to its project: its lottery record stays as it was. Its household can still try for another home.
+    If it is on a waitlist and hasn't been invited, isn't on a list, or its project is closed, it joins this project as a copy of its screener answers, and keeps its place where it is.
+    A household that has been invited, or is further along, stays in its project until that is settled. The Project now column says which applies.
     Only screeners you have access to are shown.</p>
 </div>
 
@@ -80,24 +87,41 @@
   var money = function (n) { return n == null ? "" : "$" + Math.round(n).toLocaleString(); };
   var day = function (d) { return d ? d.slice(0, 10) : ""; };
   var size = function (a) { return (a.clt_adults || 0) + (a.clt_children || 0); };
-  var locked = function (a) { return !!a.clt_uniqueid; };
+  var A = CLTAssign, allProjects = {}, entries = {}, sets = {}, stage = null;
+  // How this screener can join the project chosen at the top (move, copy, held or here), and why.
+  var stand = function (a) {
+    var p = allProjects[a._clt_project_value] || {}, proj = $("project").value, inTarget = {};
+    apps.forEach(function (x) { if (proj && x._clt_project_value === proj && x._clt_household_value) inTarget[x._clt_household_value] = true; });
+    return A.stand({ id: a.clt_applicationid, project: a._clt_project_value || "", projectName: p.clt_name || "", projectStatus: fv(p, "clt_status"), uniqueId: a.clt_uniqueid || "",
+                     household: a._clt_household_value || "" }, entries[a.clt_applicationid] || [], proj, inTarget);
+  };
 
   function options(sel, values) {
+    var was = sel.value; while (sel.options.length > 1) sel.remove(1);   // a reload fills them again
     values.sort().forEach(function (v) {
       var o = document.createElement("option"); o.value = v; o.textContent = v; sel.appendChild(o);
     });
+    sel.value = was; if (sel.selectedIndex < 0) sel.selectedIndex = 0;
   }
 
-  function load() {
+  function load(keep) {
     var cols = "clt_applicationid,clt_name,clt_adults,clt_children,clt_statedannualincome,clt_homesizes," +
                "clt_firsttimebuyer,clt_firstsubmittedon,clt_uniqueid,clt_amipct,_clt_project_value,_clt_county_value," +
-               "_clt_sourceform_value";
+               "_clt_sourceform_value,_clt_household_value";
     return Promise.all([
+      Promise.all(["clt_selectionentry", "clt_project", "clt_household", "clt_listitem", "clt_sourceform", "clt_incomelimitset", "clt_eligibility"].map(P.entitySet)).then(function (s) {
+        ["clt_selectionentry", "clt_project", "clt_household", "clt_listitem", "clt_sourceform", "clt_incomelimitset", "clt_eligibility"].forEach(function (t, i) { sets[t] = s[i]; });
+        return P.getAll(s[0] + "?$select=clt_status,_clt_application_value&$filter=statecode eq 0");
+      }),
+      P.choice("clt_applicationstage"),
       P.getAll("clt_projects?$select=clt_projectid,clt_name,clt_status,clt_selectionmethod,clt_applicationcloses" +
                "&$filter=statecode eq 0&$orderby=clt_name"),
       P.getAll("clt_applications?$select=" + cols + "&$filter=statecode eq 0 and clt_screenerentryid ne null" +
                "&$orderby=clt_firstsubmittedon asc")
     ]).then(function (r) {
+      entries = {}; r[0].forEach(function (e) { (entries[e._clt_application_value] = entries[e._clt_application_value] || []).push(fv(e, "clt_status")); });
+      stage = r[1]["Screener submitted"]; r = r.slice(2);
+      allProjects = {}; r[0].forEach(function (p) { allProjects[p.clt_projectid] = p; });
       projects = r[0].filter(function (p) { return fv(p, "clt_status") !== "Closed"; });
       apps = r[1];
       var sel = $("project"); sel.innerHTML = "";
@@ -106,7 +130,7 @@
       projects.forEach(function (p) {
         var o = document.createElement("option"); o.value = p.clt_projectid; o.textContent = p.clt_name; sel.appendChild(o);
       });
-      var want = new URLSearchParams(location.search).get("data");
+      var want = keep || new URLSearchParams(location.search).get("data");
       if (want && projects.some(function (p) { return p.clt_projectid === want; })) sel.value = want;
       var uniq = function (f) { var s = {}; apps.forEach(function (a) { f(a).forEach(function (v) { if (v) s[v] = 1; }); }); return Object.keys(s); };
       options($("f-form"), uniq(function (a) { return [fv(a, "_clt_sourceform_value")]; }));
@@ -144,10 +168,9 @@
     return true;
   }
 
-  // Rows that could actually be added: not locked, not already in this project.
+  // Rows that could actually be added: by moving, or as a copy. Not one already here, or one being worked on elsewhere.
   function addable(list) {
-    var proj = $("project").value;
-    return list.filter(function (a) { return !locked(a) && a._clt_project_value !== proj; });
+    return list.filter(function (a) { var h = stand(a).how; return h === A.MOVE || h === A.COPY; });
   }
 
   function render() {
@@ -155,20 +178,20 @@
     var body = $("rows"); body.innerHTML = "";
     if (!shown.length) body.innerHTML = '<tr><td colspan="11">No screeners match these filters.</td></tr>';
     shown.forEach(function (a) {
-      var tr = document.createElement("tr"), id = a.clt_applicationid, lock = locked(a);
+      var tr = document.createElement("tr"), id = a.clt_applicationid, st = stand(a), lock = st.how === A.HELD || st.how === A.HERE;
       if (lock) tr.className = "locked";
       var cells = [
         null, null, day(a.clt_firstsubmittedon), size(a) + " (" + (a.clt_adults || 0) + "+" + (a.clt_children || 0) + ")",
         fv(a, "_clt_county_value"), money(a.clt_statedannualincome),
         a.clt_amipct == null ? "" : a.clt_amipct + "%", fv(a, "clt_homesizes"),
         a.clt_firsttimebuyer === true ? "Yes" : a.clt_firsttimebuyer === false ? "No" : "",
-        fv(a, "_clt_sourceform_value"), fv(a, "_clt_project_value") + (lock ? " (" + a.clt_uniqueid + ")" : "")
+        fv(a, "_clt_sourceform_value"), fv(a, "_clt_project_value") + (a.clt_uniqueid ? " (" + a.clt_uniqueid + ")" : "") + (st.why && (a.clt_uniqueid || st.how === A.HERE) && $("project").value ? ". " + st.why : "")
       ];
       cells.forEach(function (c, i) {
         var td = document.createElement("td");
         if (i === 0) {
           var cb = document.createElement("input"); cb.type = "checkbox"; cb.disabled = lock;
-          cb.checked = !!ticked[id]; cb.title = lock ? "Has a Unique ID: locked to its project" : "";
+          cb.checked = !!ticked[id]; cb.title = st.why || "";
           cb.addEventListener("change", function () { if (cb.checked) ticked[id] = 1; else delete ticked[id]; status(); });
           td.appendChild(cb);
         } else if (i === 1) {
@@ -198,9 +221,14 @@
 
   function add(list) {
     var proj = $("project"), name = proj.options[proj.selectedIndex].text;
-    var moving = list.filter(function (a) { return a._clt_project_value; }).length;
-    var text = "Add " + list.length + " application" + (list.length === 1 ? "" : "s") + " to " + name + "?" +
-      (moving ? " " + moving + " of them are in another project now and will move." : "");
+    var how = {}; list.forEach(function (a) { how[a.clt_applicationid] = stand(a).how; });
+    var text = A.confirmText(list.map(function (a) { return { how: how[a.clt_applicationid], moving: !!a._clt_project_value }; }), name), copied = 0;
+    // a copy: read the screener answers in full, and make a new application for this project from them
+    function copy(a) {
+      var cols = A.COPIED.concat(["clt_screenerentryid"]).concat(A.LINKS.map(function (l) { return "_" + l[0] + "_value"; })).join(",");
+      return P.get("clt_applications(" + a.clt_applicationid + ")?$select=" + cols).then(function (row) {
+        return P.create("clt_applications", A.copyBody(row, proj.value, sets, stage)); }).then(function () { copied++; });
+    }
     return P.confirm("Add to project", text).then(function (ok) {
       if (!ok) return;
       var queue = list.slice(), done = 0, failed = [];
@@ -209,17 +237,20 @@
       function next() {
         var a = queue.shift();
         if (!a) return Promise.resolve();
-        return P.patch("clt_applications(" + a.clt_applicationid + ")", { "clt_project@odata.bind": "/clt_projects(" + proj.value + ")" })
+        return (how[a.clt_applicationid] === A.COPY ? copy(a) : P.patch("clt_applications(" + a.clt_applicationid + ")", { "clt_project@odata.bind": "/clt_projects(" + proj.value + ")" })
           .then(function () { a._clt_project_value = proj.value; a["_clt_project_value@OData.Community.Display.V1.FormattedValue"] = name; },
-                function (e) { failed.push((a.clt_name || "?") + ": " + e.message); })
+                function (e) { failed.push((a.clt_name || "?") + ": " + e.message); }))
+          .catch(function (e) { failed.push((a.clt_name || "?") + ": " + e.message); })
           .then(function () { done++; $("msg").textContent = "Adding... " + done + " of " + list.length; return next(); });
       }
       // four at a time
       return Promise.all([next(), next(), next(), next()]).then(function () {
         ticked = {};
-        $("msg").textContent = (list.length - failed.length) + " added to " + name + "." +
+        $("msg").textContent = (list.length - failed.length) + " added to " + name + (copied ? " (" + copied + " as a copy)" : "") + "." +
           (failed.length ? " " + failed.length + " couldn't be added: " + failed.slice(0, 3).join("; ") : "");
         if (failed.length) $("msg").className = "msg err";
+        // copies are new applications: read the list again so they show, keeping the project and the message
+        if (copied) { var said = $("msg").textContent, cls = $("msg").className; return load(proj.value).then(function () { $("msg").textContent = said; $("msg").className = cls; }); }
         render();
       });
     });

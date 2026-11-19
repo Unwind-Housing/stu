@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Project workflow</title>
+<link rel="stylesheet" href="pages.css">
+<script src="pages.js"></script>
+<script src="journey.js"></script>
+<style>
+  .track .stephead .btn { margin-left: auto; }
+  .facts { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 14px 0 0; color: var(--muted); }
+  .facts b { color: var(--ink); }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="banner">
+    <img data-logo alt="">
+    <div>
+      <h1>Project workflow</h1>
+      <p>One project from start to finish: where it stands, what to do next, and the way into each step. Every step brings you back here.</p>
+    </div>
+  </div>
+
+  <div class="toolbar" style="margin-top: 18px">
+    <label>Project
+      <select id="project"><option value="">Loading projects...</option></select>
+    </label>
+    <button class="btn" id="all" type="button" hidden>All projects</button>
+    <button class="btn" id="new" type="button">New project</button>
+    <button class="btn" id="record" type="button" hidden>Open the project record</button>
+  </div>
+  <div class="bottombar"><span class="msg" id="msg"></span></div>
+
+  <!-- nothing chosen: every project, with the step it is waiting on -->
+  <div id="landing" hidden>
+    <h2>Projects in progress</h2>
+    <div class="tablewrap">
+      <table class="data">
+        <thead><tr><th>Project</th><th>Status</th><th>Screeners</th><th>Waiting on</th><th></th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <p class="note">Select Open to see a project's progress. Closed projects are under Project, at the top.</p>
+  </div>
+
+  <!-- one project: its steps -->
+  <div id="one" hidden>
+    <div class="facts" id="facts"></div>
+    <ol class="track" id="track"></ol>
+    <p class="note">The step marked Do this next is where the project is waiting. Any step can be opened at any time, and the row of steps at the top of each one has a way back here.
+      You can stop whenever you like: everything is saved as you go, and this page picks the project up where it was.</p>
+  </div>
+</div>
+
+<script>
+(function () {
+  var P = CLTPage, J = CLTJourney, fv = P.fv, $ = function (id) { return document.getElementById(id); };
+  var list = [], want = new URLSearchParams(location.search).get("data") || "";
+
+  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+  function say(text, err) { $("msg").textContent = text || ""; $("msg").className = "msg" + (err ? " err" : ""); }
+  function to(page, id) { var t = { pageType: "webresource", webresourceName: page }; if (id) t.data = id; P.go(t); }
+
+  function load() {
+    return Promise.all(["clt_selectionround", "clt_selectionentry", "clt_certification"].map(P.entitySet)).then(function (s) {
+      return Promise.all([
+        P.getAll("clt_projects?$select=clt_projectid,clt_name,clt_status,clt_selectionmethod,clt_applicationcloses&$filter=statecode eq 0"),
+        P.getAll("clt_applications?$select=clt_prescreenresult,_clt_project_value&$filter=statecode eq 0 and clt_screenerentryid ne null and _clt_project_value ne null"),
+        P.getAll(s[0] + "?$select=clt_selectionroundid,clt_status,createdon,_clt_project_value&$filter=statecode eq 0"),
+        P.getAll(s[1] + "?$select=_clt_round_value&$filter=statecode eq 0 and clt_invitedon ne null"),
+        P.getAll(s[2] + "?$select=clt_status,_clt_project_value&$filter=statecode eq 0").catch(function () { return []; }),
+        P.getAll("clt_projecthomes?$select=_clt_project_value&$filter=statecode eq 0").catch(function () { return []; })
+      ]);
+    }).then(function (r) {
+      var project = {}, homes = {}; r[2].forEach(function (x) { project[x.clt_selectionroundid] = x._clt_project_value; });
+      r[5].forEach(function (h) { homes[h._clt_project_value] = (homes[h._clt_project_value] || 0) + 1; });
+      var by = {}; r[0].forEach(function (p) { by[p.clt_projectid] = p; });
+      list = J.standing(r[0].map(function (p) { return { id: p.clt_projectid, name: p.clt_name, status: fv(p, "clt_status") }; }),
+                        r[1].map(function (a) { return { project: a._clt_project_value, tested: a.clt_prescreenresult != null, eligible: fv(a, "clt_prescreenresult") === "Eligible for selection" }; }),
+                        r[2].map(function (x) { return { project: x._clt_project_value, status: fv(x, "clt_status"), created: x.createdon }; }),
+                        r[3].map(function (e) { return { project: project[e._clt_round_value] }; }),
+                        r[4].filter(function (c) { return fv(c, "clt_status") === "Certified"; }).map(function (c) { return { project: c._clt_project_value }; }));
+      list.forEach(function (p) {
+        var row = by[p.id];
+        p.method = fv(row, "clt_selectionmethod"); p.closes = row.clt_applicationcloses ? String(row.clt_applicationcloses).slice(0, 10) : ""; p.homes = homes[p.id] || 0;
+      });
+      var open = list.filter(function (p) { return p.status !== "Closed"; }), closed = list.filter(function (p) { return p.status === "Closed"; });
+      var opt = function (p) { return '<option value="' + p.id + '">' + esc(p.name) + "</option>"; };
+      $("project").innerHTML = '<option value="">' + (list.length ? "All projects in progress" : "No projects yet") + "</option>" +
+        (open.length ? '<optgroup label="In progress">' + open.map(opt).join("") + "</optgroup>" : "") +
+        (closed.length ? '<optgroup label="Closed">' + closed.map(opt).join("") + "</optgroup>" : "");
+      if (want && list.some(function (p) { return p.id === want.toLowerCase(); })) $("project").value = want.toLowerCase();
+      render();
+    });
+  }
+
+  function render() {
+    var id = $("project").value, p = list.filter(function (x) { return x.id === id; })[0];
+    $("landing").hidden = !!p; $("one").hidden = !p; $("all").hidden = !p; $("record").hidden = !p;
+    if (!p) {
+      var open = list.filter(function (x) { return x.status !== "Closed"; });
+      $("rows").innerHTML = open.length ? open.map(function (x) {
+        return "<tr><td>" + esc(x.name) + "</td><td>" + esc(x.status) + "</td><td>" + x.applications + "</td><td>" + (x.next ? "<b>" + esc(x.next.label) + "</b>. " + esc(x.next.why) : "") + "</td>" +
+          '<td><button class="btn small primary" type="button" data-open="' + x.id + '">Open</button></td></tr>';
+      }).join("") : '<tr><td colspan="5">No projects are in progress. Select New project to start one.</td></tr>';
+      return;
+    }
+    $("facts").innerHTML = [["Status", p.status], ["Selection", p.method], ["Homes", p.homes], ["Applications close", p.closes || (p.method ? "rolling" : "")]]
+      .filter(function (f) { return f[1] !== "" && f[1] != null; }).map(function (f) { return "<span>" + f[0] + ": <b>" + esc(f[1]) + "</b></span>"; }).join("");
+    $("track").innerHTML = J.track(p.facts).map(function (s, i) {
+      var done = s.state === "done", next = s.state === "next";
+      return '<li class="step ' + s.state + '"><div class="stepnum">' + (done ? "&#10003;" : i + 1) + '</div><div class="stepbody"><div class="stephead"><h3>' + esc(s.label) + "</h3>" +
+        (next ? '<span class="pill warn">Do this next</span>' : done ? '<span class="pill ok">Done</span>' : "") +
+        '<button class="btn' + (next ? " primary" : " small") + '" type="button" data-step="' + s.key + '">' + (next ? "Go to " + esc(s.label) : "Open") + "</button></div>" +
+        '<p class="summaryline">' + esc(next && p.next ? p.next.why : s.line) + "</p></div></li>";
+    }).join("") + (p.status === "Closed" ? '<li style="list-style:none;margin:6px 0 0 50px" class="mutedtext">This project is closed.</li>' : "");
+  }
+
+  $("project").addEventListener("change", render);
+  $("all").addEventListener("click", function () { $("project").value = ""; render(); });
+  $("new").addEventListener("click", function () { to("clt_/pages/newproject.html"); });
+  $("record").addEventListener("click", function () { P.openRecord("clt_project", $("project").value); });
+  $("rows").addEventListener("click", function (e) { var id = e.target.dataset.open; if (id) { $("project").value = id; render(); } });
+  $("track").addEventListener("click", function (e) {
+    var s = e.target.dataset.step && J.step(e.target.dataset.step);
+    if (s) to(s.page, $("project").value);
+  });
+
+  P.brand();
+  load().catch(function (e) { $("project").innerHTML = '<option value="">Couldn\'t load</option>'; say("Couldn't load the projects: " + e.message, true); });
+})();
+</script>
+</body>
+</html>

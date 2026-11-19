@@ -6,6 +6,7 @@
 <title>Pre-screen</title>
 <link rel="stylesheet" href="pages.css">
 <script src="pages.js"></script>
+<script src="journey.js"></script>
 <script src="prescreen.js"></script>
 </head>
 <body>
@@ -18,6 +19,9 @@
       <p>Tests each screener against the project's rules, shows the result, and saves it when you're ready.</p>
     </div>
   </div>
+
+  <ol class="steps" id="journey"></ol>
+  <script>CLTJourney.bar(document.getElementById("journey"), "prescreen", function () { return document.getElementById("project").value; });</script>
 
   <h2>1. Project</h2>
   <div class="toolbar">

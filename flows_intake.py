@@ -1,5 +1,5 @@
 """
-Intake & Selection: the screener intake flow (used by build_flows.py).
+Applications and Sales: the screener intake flow (used by build_flows.py).
 
 The forms platform posts each screener entry here (in Cognito Forms: "Post JSON data to a website", on Submit
 and on Update). Which question feeds which field comes from the organization's mapping file (form_mapping.py),

@@ -59,7 +59,7 @@
   var ATTENTION = [
     { e: "clt_homeownerrequest", v: "Open requests", t: "Open homeowner requests", d: "Submitted or under review", hot: true },
     { e: "clt_insurancepolicy", v: "Renewing in the next 60 days", t: "Insurance renewing soon", d: "Renewal in the next 60 days" },
-    { e: "clt_sale", v: "Pending sales", t: "Pending sales", d: "Under contract, not closed" }
+    { e: "clt_sale", v: "Pending sales", t: "Pending sales", d: "Sales in progress, not closed", page: "clt_/pages/resale.html" }
   ];
   // Homes by status. Left program isn't shown, and a property with no status (a common area) isn't counted.
   // zero: "hide" drops the tile when there are none.
@@ -93,8 +93,9 @@
       if (!r.count && cfg.zero === "hide") { el.remove(); return; }
       if (!r.count) el.classList.add("zero");
       else if (cfg.hot) el.classList.add("hot");
-      el.title = "Open " + cfg.v;
-      el.addEventListener("click", function () { CLTPage.openList(cfg.e, r.id); });
+      el.title = cfg.page ? "Open the sales in progress" : "Open " + cfg.v;
+      // a tile with a page opens that page (it lists them, with a way into each); the others open their list
+      el.addEventListener("click", function () { if (cfg.page) CLTPage.go({ pageType: "webresource", webresourceName: cfg.page }); else CLTPage.openList(cfg.e, r.id); });
     });
   }
 

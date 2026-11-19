@@ -1,5 +1,5 @@
 """
-Intake & Selection: the full application intake flow (used by build_flows.py).
+Applications and Sales: the full application intake flow (used by build_flows.py).
 
 The forms platform posts each full application entry here (in Cognito Forms: "Post JSON data to a website", on
 Submit and on Update). Which question feeds which field comes from the organization's mapping file

@@ -369,7 +369,7 @@ def stu_app_test(fake, dv, tmp):
         site = next(x for x in (ET.fromstring(v["sitemapxml"]) for v in fake.sitemaps.values())
                     if len(x.findall("Area")) == 2)
         titles = [ar.find("Titles/Title").get("Title") for ar in site.findall("Area")]
-        assert titles == ["Stewardship", "Intake & Selection"], titles
+        assert titles == ["Stewardship", "Applications and Sales"], titles
         ids = [e.get("Id") for e in site.iter() if e.get("Id")]
         assert len(ids) == len(set(ids)), "navigation ids must be unique across the two areas"
         first, second = site.findall("Area")

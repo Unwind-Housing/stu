@@ -170,7 +170,7 @@ From v0.5 a sale starts when a certified household is matched to a home in a pro
 
 ## Two apps, one environment (decided 2026-11-09)
 
-| | CLT Stewardship | CLT Intake & Selection |
+| | CLT Stewardship | CLT Applications and Sales |
 |---|---|---|
 | Solution | `CLTStewardship` (core, every client) | `CLTIntake` (optional, depends on the core) |
 | Who | Staff, finance, board | Intake reviewers, certifiers |

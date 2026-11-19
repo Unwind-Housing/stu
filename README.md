@@ -12,7 +12,7 @@ It runs on **Microsoft Power Platform** (Dataverse and one model-driven app) in 
 - Annual verifications, insurance policies, homeowner requests
 - Monthly fees and the per-home repair and replacement reserve (ERRR)
 
-**Intake & Selection**
+**Applications and Sales**
 - Online screeners and full applications arrive from your forms platform (Cognito Forms today)
 - Projects with their own eligibility rules, home sizes and monthly housing costs
 - Pre-screen: tests each screener against the project's rules and records every test
