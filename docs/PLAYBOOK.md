@@ -172,6 +172,46 @@ Good to know:
 
 ---
 
+## Start from scratch and load test homes
+
+For a **test** environment only: clear out every record and load a small made-up portfolio, so a round of testing starts from a known place. One command does all of it. Never run it where real records live. It can't be undone.
+
+**What goes:** every property, household, member, application (with income, debts and assets), occupancy and everything recorded on one (verifications, insurance, follow-ups, loans, requests), sale, fee, ERRR entry, certification, selection round, notice and form submission, and every project with its homes, priorities, income bands and lottery factors (add `--keep-projects` to leave the projects; their homes still go, because they point at properties).
+
+**What stays:** **Settings > Lists** (with the counties), HUD AMI Limits, eligibility rules, source forms, message templates, settings, flows.
+
+**What gets loaded:** 20 homes in a made-up town.
+- 10 occupied. 5 of those have been resold 1 to 3 times, so they have past owners and a price history. 2 use the Appraisal share formula.
+- 10 empty: 4 vacant, 4 for sale, 2 under construction.
+- 19 households, each with a last name ending in **-Test** and an email at `example.com`.
+- History: a closed sale for each of the 10 first purchases and 9 resales; insurance policies (two under-insured, two renewing soon, two homes with none); loans; improvements; homeowner requests at different stages; follow-ups (one overdue); notes; ERRR entries; past verifications. Dates are worked out from the day you run it, so the Verification hub and the dashboard show a mix of up to date, due soon, overdue and never done.
+- No applicants and no projects: make a project in the app, and applicants arrive through the sandbox screener form.
+
+Steps, from the repo root with `.venv` active:
+
+1. **If the environment holds anything real, save it first.** There is no general export tool yet; ask the maintainer. Keep the saved files in `export/` with a note on how to load them back.
+2. Count what would go. Changes nothing.
+   ```
+   python3 tools/start_from_scratch.py --url https://yourtest.crm.dynamics.com --sharepoint-site https://yourorg.sharepoint.com/sites/Stewardship --sharepoint-folder DEV
+   ```
+3. Read the list. Then run it for real by adding `--confirm` with the first part of the environment's address, so a slip can't clear the wrong one.
+   ```
+   python3 tools/start_from_scratch.py --url https://yourtest.crm.dynamics.com --sharepoint-site https://yourorg.sharepoint.com/sites/Stewardship --sharepoint-folder DEV --confirm yourtest
+   ```
+   Expect the test portfolio line to say 105 created (20 properties, 19 households, 27 members, 19 occupancies, 20 fees), then the history counts.
+4. In the app: make a test project (**Projects**), and add homes to it from the four *For sale* homes (40 Harbor Row, Units 5 to 8). Point the sandbox screener's source form at the project if new screeners should land in it.
+
+Good to know:
+- **If the sign-in can't reach SharePoint** (in some tenants Microsoft's sign-in app for Dataverse tools isn't allowed into SharePoint), the command says so, clears the records, and stops before loading. That is the moment to empty the folders by hand, because every folder there is an old one: in SharePoint, open each of the four libraries (Property, Household, Occupancy and Project Documents), open the **DEV** folder, tick the circle at the top of the list to select everything, and **Delete**. Then run the command again with `--confirm` and without the two `--sharepoint` options: it finds nothing to delete and loads the test homes.
+- **SharePoint.** With the two `--sharepoint` options, the old record folders go to the site's recycle bin (kept there about 93 days). Only folders inside the named parent folder (`DEV`) of the Property, Household, Occupancy and Project libraries are touched, so an environment that shares a site can't clear another one's folders. Leave the options off and SharePoint isn't touched. Loading makes a new folder per property, household and occupancy when the folder flows are on.
+- **Record numbers carry on.** After a reset the next property is not P-00001; the counter keeps going.
+- **The forms platform isn't touched.** Old sandbox entries stay there; delete them in the forms platform if you want a clean list.
+- **Emails go nowhere.** `example.com` addresses can't receive mail. To try the verification emails for real, change a test household's **Primary email** to an address of your own.
+- **Just the pieces.** `tools/reset_records.py` only clears records (it keeps projects unless given `--with-projects`); `tools/make_test_data.py` only writes the five import files to `export/test-data`; `--no-test-data` on the one command leaves the environment empty.
+- **To change the test portfolio,** edit `tools/make_test_data.py` (a short list of rules: `build` for the homes and people, `history` for the rest) and add a check to `tests/test_reset.py`.
+
+---
+
 ## Test run: screener to occupancy
 
 One made-up household through the whole path, before a release goes to a new environment. Use the sandbox forms and an email address you can tell apart (for example `test.rivera@example.com`). Steps marked **by hand** aren't automated yet: note anything that's slow or confusing, it decides what gets automated next.
