@@ -129,6 +129,11 @@ def main():
         assert res in intake.WEB_RESOURCES and res in stu.WEB_RESOURCES, res
     assert "messagetemplate" in intake.FORMS and "body" in str(intake.FORMS["messagetemplate"])
     assert "fullappformlink" in str(intake.FORMS["project"]) and "invitelink" in str(intake.FORMS["application"])
+    # the form's link is an organization setting, as the annual verification's is; a project can still have its own
+    from schema import ENVIRONMENT_VARIABLES
+    assert any(v["name"] == "FullAppFormLink" for v in ENVIRONMENT_VARIABLES)
+    for piece in ('P.saveSetting("FullAppFormLink", link)', "r[3].FullAppFormLink", "D.project.clt_fullappformlink || orgLink"):
+        assert piece in open(os.path.join(web, "invite.html")).read(), piece
     assert page.index('src="pages.js"') < page.index('src="invite.js"') < page.index("CLTInvite")
     script = re.findall(r"<script>(.*?)</script>", page, re.S)[-1]
     for src in (script, rules):

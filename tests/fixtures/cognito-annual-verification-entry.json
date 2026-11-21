@@ -24,18 +24,6 @@
  "DescribeWhatYouAreRenting": null,
  "HowManyRooms": 1,
  "MonthlyRent": 650,
- "MyInsuranceIsPaidAndCurrent": "Yes",
- "ProofOfInsurance": [
-  {
-   "ContentType": "application/pdf",
-   "Id": "F-abc123",
-   "IsEncrypted": false,
-   "Name": "declarations.pdf",
-   "Size": 182044,
-   "File": "https://www.cognitoforms.com/fu/example/F-abc123?ct=application%2Fpdf"
-  }
- ],
- "ICantFindThisDocumentPleaseContactMe": false,
  "PleaseContactMeAboutMyMortgage": "Yes",
  "Date": "2026-11-17",
  "Phone": "(555) 010-0199",

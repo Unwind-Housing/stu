@@ -6,6 +6,8 @@ Write a small made-up portfolio as import files, for testing: 20 homes, every pe
     Homes 9 and 10 use the Appraisal share formula; the rest use Fixed annual rate.
   - 10 homes with nobody in them: 4 vacant, 4 for sale, 2 under construction.
   - 19 households (10 homeowners, 9 past homeowners), every last name ending in -Test, every email at example.com.
+    With --email you@gmail.com each household gets that address with a dot in a different place (y.ou@, yo.u@):
+    Gmail delivers them all to the one inbox, so the emails Stu prepares can really be received.
   - The 10 current occupancies have verification dates set from today, so the Verification hub shows a mix:
     up to date, due soon, overdue and never done.
   - A ground lease fee and an ERRR fee on each occupied home.
@@ -18,7 +20,7 @@ No applicants: those come in through the screener form.
 
 Usage:
   python3 tools/make_test_data.py                      writes export/test-data
-  python3 tools/make_test_data.py some/folder --today 2026-11-18
+  python3 tools/make_test_data.py some/folder --today 2026-11-18 --email you@gmail.com
 Then load it with tools/import_records.py (see docs/PLAYBOOK.md, "Start from scratch and load test homes").
 """
 import argparse
@@ -54,7 +56,16 @@ EMPTY = {11: "Vacant", 12: "Vacant", 13: "Vacant", 14: "Vacant", 15: "For sale",
 TOWNHOMES = [7, 8, 9, 10, 15, 16, 17, 18]             # 40 Harbor Row, Units 1 to 8; the rest are houses on Maple Ct
 
 
-def build(today):
+def address(email, n, fallback):
+    """The nth household's address: the test inbox with a dot in the nth place (a +n tag once the places run out)."""
+    if not email:
+        return fallback
+    local, domain = email.strip().rsplit("@", 1)
+    gaps = [i for i in range(1, len(local)) if "." not in local[i - 1:i + 1]]
+    return (f"{local[:gaps[n - 1]]}.{local[gaps[n - 1]:]}" if n <= len(gaps) else f"{local}+{n}") + "@" + domain
+
+
+def build(today, email=None):
     props, hhs, mems, occs, fees = [], [], [], [], []
     ago = lambda days: "" if days is None else (today - timedelta(days=days)).isoformat()   # noqa: E731
     people = iter(zip(FIRST, LAST))
@@ -79,10 +90,11 @@ def build(today):
             years = 3 + (i + n) % 3
             end = None if current else date(start.year + years, 1 + (start.month + 4) % 12, 20)
             first, last = next(people)
-            ref, email, phone = f"H{len(hhs) + 1}", f"{first}.{last}-test@example.com".lower(), f"(360) 555-01{len(hhs) + 10}"
-            hhs.append([ref, "Homeowner" if current else "Past homeowner", email, phone] + (
+            ref, phone = f"H{len(hhs) + 1}", f"(360) 555-01{len(hhs) + 10}"
+            mail = address(email, len(hhs) + 1, f"{first}.{last}-test@example.com".lower())
+            hhs.append([ref, "Homeowner" if current else "Past homeowner", mail, phone] + (
                 [street, unit, CITY, STATE, ZIP] if current else ["", "", "", "", ""]) + ["Made-up test household."])
-            mems.append([ref, first, f"{last}-Test", "Primary applicant", "", "", email, phone, "Yes"])
+            mems.append([ref, first, f"{last}-Test", "Primary applicant", "", "", mail, phone, "Yes"])
             if current and i % 2 == 0:
                 mems.append([ref, PARTNER[i // 2 - 1], f"{last}-Test", "Co-applicant", "Spouse or partner", "", "", "", "Yes"])
             if current and i % 3 == 0:
@@ -138,11 +150,11 @@ def history(today):
                                             "Title or escrow company": "Test Title & Escrow", "Notes": "Made-up test sale."}
             if n == 0:
                 add("sale", f"{place} initial sale {day[:4]}", {
-                    "Sale type": "Initial sale", "Contract date": shift(day, -45), "Closing date": day,
+                    "Sale type": "Initial sale", "Purchase and sale agreement signed": shift(day, -45), "Closing date": day,
                     "Purchase price": o["Base price"], **common}, property=True, buyerhousehold=0, buyeroccupancy=0)
             else:
                 add("sale", f"{place} resale {day[:4]}", {
-                    "Sale type": "Resale", "Notice of intent to sell": shift(day, -120), "Contract date": shift(day, -45),
+                    "Sale type": "Resale", "Notice of intent to sell": shift(day, -120), "Purchase and sale agreement signed": shift(day, -45),
                     "Closing date": day, "Formula price at sale": o["Base price"], "Added value at sale": 0,
                     "Maximum resale price at sale": o["Base price"], "Purchase price": o["Base price"], **common},
                     property=True, selleroccupancy=n - 1, buyerhousehold=n, buyeroccupancy=n)
@@ -181,7 +193,11 @@ def history(today):
         note = lambda days, how, text: add("relationshipnote", f"{ago(days)}, {who}", {   # noqa: E731
             "Date": ago(days), "How": how, "Notes": text}, occupancy=cur)
         todo = lambda name, days, done=None: add("followup", name, {                      # noqa: E731
-            "Due date": ago(days), "Status": "Done" if done else "Open", "Done on": ago(done) if done else ""}, occupancy=cur)
+            "Due date": ago(days), "Status": "Done" if done else "Open", "Done on": ago(done) if done else ""}, occupancy=cur, property=True)
+        walk = lambda days, text: add("walkby", f"{ago(days)}, {place}", {                # noqa: E731
+            "Date": ago(days), "Status": "Submitted", "Notes": text}, property=True, occupancy=cur)
+        if i in (1, 2, 4):   # two walked within the year (green on the Stu in the wild page), one longer ago (red again)
+            walk({1: 40, 2: 200, 4: 420}[i], "Made-up test walk-by: yard tidy, nothing to follow up.")
         if i == 1:
             add("homeownerrequest", "Roof replacement", {
                 "Request type": "Capital improvement", "Request date": ago(1170), "Status": "Completed",
@@ -241,8 +257,8 @@ def history(today):
     return out
 
 
-def write(folder, today=None):
-    files = build(today or date.today())
+def write(folder, today=None, email=None):
+    files = build(today or date.today(), email)
     os.makedirs(folder, exist_ok=True)
     for name, (head, rows) in files.items():
         with open(os.path.join(folder, name), "w", encoding="utf-8", newline="") as f:
@@ -256,8 +272,9 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("folder", nargs="?", default=os.path.join("export", "test-data"))
     ap.add_argument("--today", help="Work the verification dates out from this day (YYYY-MM-DD) instead of today")
+    ap.add_argument("--email", help="A test inbox (Gmail): every household gets it with a dot in a different place")
     args = ap.parse_args()
-    counts = write(args.folder, date.fromisoformat(args.today) if args.today else None)
+    counts = write(args.folder, date.fromisoformat(args.today) if args.today else None, args.email)
     print(f"Wrote {args.folder}: " + ", ".join(f"{n} {k[:-4]}" for k, n in counts.items()))
 
 

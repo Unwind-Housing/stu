@@ -209,8 +209,9 @@ def main():
     # Start here comes first: the Dashboard (where the app opens), the Verification hub and the guides; then Activities: Occupancy verification, Insurance verification, Resale
     smx = ET.fromstring(next(iter(fake.sitemaps.values()))["sitemapxml"])
     urls = [sa.get("Url") or sa.get("Entity") for sa in smx.iter("SubArea")]
-    assert urls[:6] == ["$webresource:clt_/pages/overview.html", "$webresource:clt_/pages/stewardship.html", "$webresource:clt_/pages/guides.html",
-                        "$webresource:clt_/pages/verify.html", "$webresource:clt_/pages/insurance.html", "$webresource:clt_/pages/resale.html"], urls[:7]
+    assert urls[:7] == ["$webresource:clt_/pages/overview.html", "$webresource:clt_/pages/stewardship.html", "$webresource:clt_/pages/field.html",
+                        "$webresource:clt_/pages/guides.html",
+                        "$webresource:clt_/pages/verify.html", "$webresource:clt_/pages/insurance.html", "$webresource:clt_/pages/resale.html"], urls[:8]
     assert [g.get("Title") or g.find("Titles/Title").get("Title") for g in smx.iter("Group")][:2] == ["Start here", "Activities"]
     import app_spec
     assert app_spec.PAGES["overview"][0] == "Stewardship Dashboard"
@@ -235,6 +236,12 @@ def main():
     assert hh["Potential purchasers"].count("<value>") == 2 and 'operator="in"' in hh["Potential purchasers"]
     # Neighborhood: on the property form, filtered to its own list, and a column in the property views
     assert 'datafieldname="clt_neighborhood"' in prop_form["formxml"]
+    # a page on a form: the web resource control, handed the record's id
+    pages = [c for c in ET.fromstring(prop_form["formxml"]).iter("control") if c.get("classid") == "{9FDF5F91-88B1-47f4-AD53-C11EFC01A01D}"]
+    # two of them on the property form: the home's photos and its walk-by history, each with its own id
+    assert len(pages) == 2 and len({c.get("id") for c in pages}) == 2 and all(c.get("id").startswith("WebResource_") and c.get("datafieldname") is None for c in pages)
+    assert sorted(c.find("parameters/Url").text for c in pages) == ["clt_/pages/photos.html", "clt_/pages/walkbys.html"]
+    assert all(c.find("parameters/PassParameters").text == "true" for c in pages)
     assert any(v.get("name") == "List: Neighborhood" for v in fake.views.values())
     assert 'name="clt_neighborhood"' in next(v for v in fake.views.values() if v.get("name") == "Properties by neighborhood")["layoutxml"]
     # Documents tab shows the SharePoint folder on Property, Household and Occupancy
@@ -364,7 +371,7 @@ def stu_app_test(fake, dv, tmp):
         site = next(x for x in (ET.fromstring(v["sitemapxml"]) for v in fake.sitemaps.values())
                     if len(x.findall("Area")) == 2)
         titles = [ar.find("Titles/Title").get("Title") for ar in site.findall("Area")]
-        assert titles == ["Stewardship", "Intake & Selection"], titles
+        assert titles == ["Stewardship", "Applications and Sales"], titles
         ids = [e.get("Id") for e in site.iter() if e.get("Id")]
         assert len(ids) == len(set(ids)), "navigation ids must be unique across the two areas"
         first, second = site.findall("Area")

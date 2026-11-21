@@ -36,7 +36,7 @@ from urllib.parse import urlparse, quote
 # macOS's built-in Python uses LibreSSL; urllib3 warns about it on every run. It's harmless.
 warnings.filterwarnings("ignore", message=".*urllib3 v2 only supports OpenSSL.*")
 
-from schema import CHOICES, TABLES, LOOKUPS, KEYS, SEED_LISTS, RETIRED, ENVIRONMENT_VARIABLES, SEED_ROWS
+from schema import CHOICES, TABLES, LOOKUPS, LOOSENED, KEYS, SEED_LISTS, RETIRED, ENVIRONMENT_VARIABLES, SEED_ROWS
 
 # Dataverse's own tables a lookup may point at (no clt_ prefix).
 SYSTEM_TABLES = {"systemuser"}
@@ -685,6 +685,14 @@ def start_numbering(dv, log, t, c):
 def ensure_lookups(dv, log):
     log("\nLookups")
     cache = {}
+    # Loosen first: a table can have only one lookup that deletes its rows with the parent (Cascade), so an old
+    # Cascade has to become RemoveLink before the lookup that takes its place can be created.
+    for child, col, parent, label, ondelete, req in LOOKUPS:
+        if (child, col) in LOOSENED:
+            if child not in cache:
+                cache[child] = existing_attributes(dv, child)
+            if cache[child].get(ln(col)) == "Lookup":
+                loosen_lookup(dv, log, child, col, parent, ondelete, req)
     for child, col, parent, label, ondelete, req in LOOKUPS:
         if child not in cache:
             cache[child] = existing_attributes(dv, child)
@@ -716,6 +724,31 @@ def ensure_lookups(dv, log):
         })
         cache[child][ln(col)] = "Lookup"
         log.created(what)
+
+
+def loosen_lookup(dv, log, child, col, parent, ondelete, req):
+    """Bring a lookup that already exists in line with schema.py, only ever in the looser direction: required to
+    optional, and Cascade (the rows go with their parent) to RemoveLink (the rows stay). Settings only; no data changes."""
+    full = {"MSCRM.MergeLabels": "true"}
+    if not req:
+        path = f"EntityDefinitions(LogicalName='{ln(child)}')/Attributes(LogicalName='{ln(col)}')"
+        typ = "Microsoft.Dynamics.CRM.LookupAttributeMetadata"
+        meta = dv.call("GET", f"{path}/{typ}")
+        if ((meta.get("RequiredLevel") or {}).get("Value") or "None") != "None":
+            body = {k: v for k, v in meta.items() if "@" not in k}
+            body["@odata.type"] = typ
+            body["RequiredLevel"] = required_level(False)
+            dv.call("PUT", path, body, extra_headers=full)
+            log.created(f"{child}.{col}: now optional")
+    if ondelete == "RemoveLink":
+        typ = "Microsoft.Dynamics.CRM.OneToManyRelationshipMetadata"
+        rel = dv.call("GET", f"RelationshipDefinitions(SchemaName='{PREFIX}_{parent}_{child}_{col}')/{typ}", ok404=True)
+        if rel and (rel.get("CascadeConfiguration") or {}).get("Delete") == "Cascade":
+            body = {k: v for k, v in rel.items() if "@" not in k}
+            body["@odata.type"] = typ
+            body["CascadeConfiguration"] = dict(rel["CascadeConfiguration"], Delete="RemoveLink")
+            dv.call("PUT", f"RelationshipDefinitions({rel['MetadataId']})", body, extra_headers=full)
+            log.created(f"{child}.{col}: deleting the {parent} now keeps the rows (RemoveLink)")
 
 
 def ensure_keys(dv, log):

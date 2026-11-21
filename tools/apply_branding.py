@@ -7,7 +7,7 @@ Set a client's settings (environment variables) and brand the app header from th
 2. Reads the variables back and builds a modern theme (clt_brandtheme) from them: header colors,
    a base palette (buttons, links, selected tabs) from the accent color, and the logo in the header
    (downloaded from BrandLogoUrl into the web resource clt_brandlogo).
-3. Points each app's (Stu, and CLT Stewardship or CLT Intake & Selection where built) "Custom theme definition" setting at it,
+3. Points each app's (Stu, and CLT Stewardship or CLT Applications and Sales where built) "Custom theme definition" setting at it,
    and publishes. An app that isn't built yet is skipped; re-run after building it.
 
 Nothing here is added to the solution, so one client's branding never ships to another.

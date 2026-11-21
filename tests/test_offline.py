@@ -10,7 +10,7 @@ from urllib.parse import unquote
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import build_schema as b
 import schema  # noqa: E402
-from schema import CHOICES, TABLES, LOOKUPS, KEYS, SEED_LISTS, RETIRED, ENVIRONMENT_VARIABLES  # noqa: E402
+from schema import CHOICES, TABLES, LOOKUPS, LOOSENED, KEYS, SEED_LISTS, RETIRED, ENVIRONMENT_VARIABLES  # noqa: E402
 
 
 class Resp:
@@ -147,6 +147,19 @@ class FakeDataverse:
         m = re.fullmatch(r"RelationshipDefinitions\(SchemaName='(\w+)'\)\?\$select=SchemaName", path)
         if m and method == "GET":
             return Resp(200, {"SchemaName": m[1]}) if m[1] in self.rels else Resp(404, {"error": {"message": "Could not find"}})
+        m = re.fullmatch(r"RelationshipDefinitions\(SchemaName='(\w+)'\)/Microsoft\.Dynamics\.CRM\.OneToManyRelationshipMetadata", path)
+        if m and method == "GET":
+            if m[1] not in self.rels:
+                return Resp(404, {"error": {"message": "Could not find"}})
+            return Resp(200, dict(self.rels[m[1]], **{"@odata.context": "ctx", "MetadataId": "rel-" + m[1]}))
+        m = re.fullmatch(r"RelationshipDefinitions\(rel-(\w+)\)", path)
+        if m and method == "PUT":
+            assert headers.get("MSCRM.MergeLabels") == "true"
+            assert not [k for k in body if "@" in k and k != "@odata.type"], "annotations sent back"
+            assert body["SchemaName"] == m[1] and body["ReferencingEntity"] == self.rels[m[1]]["ReferencingEntity"], "PUT must send the full definition"
+            self.rels[m[1]] = {k: v for k, v in body.items() if k != "MetadataId"}
+            self.relabeled.append(m[1])
+            return Resp(204)
         m = re.fullmatch(r"RelationshipDefinitions\(SchemaName='(\w+)'\)", path)
         if m and method == "DELETE":
             if m[1] == "clt_development_property_development":
@@ -202,6 +215,10 @@ class FakeDataverse:
             look = body["Lookup"]["SchemaName"].lower()
             assert look not in self.entities[child]["attrs"]
             assert body["SchemaName"] not in self.rels
+            if body["CascadeConfiguration"]["Delete"] == "Cascade":   # like Dataverse: one parental relationship per table
+                other = [r for r in self.rels.values() if r["ReferencingEntity"] == child and r["CascadeConfiguration"]["Delete"] == "Cascade"]
+                if other:
+                    return Resp(400, {"error": {"message": f"Entity: {child} is parented to {other[0]['ReferencedEntity']}. Cannot create another parental relation"}})
             self.rels[body["SchemaName"]] = body
             self.entities[child]["attrs"][look] = body["Lookup"]
             return Resp(204)
@@ -442,6 +459,7 @@ def main():
     # Defaults resolved to real values
     hh = fake.entities["clt_household"]["attrs"]["clt_status"]
     assert hh["DefaultFormValue"] == vals["clt_householdstatus"]["Applicant"]
+    loosen_test()
     migration_test()
     v05_cleanup_test()
     numbers_and_names_test()
@@ -450,6 +468,33 @@ def main():
     print(f"OK: {expected} items created on first run, 0 on re-run, choice additions handled.")
     print(f"   {len(fake.entities)} tables, {sum(len(e['attrs']) for e in fake.entities.values())} attributes "
           f"(incl. primary name and id), {len(fake.rels)} relationships.")
+
+
+def loosen_test():
+    """A lookup an earlier version made required and Cascade is loosened in place; nothing else is touched."""
+    fake = FakeDataverse()
+    tmp = tempfile.mkdtemp()
+    dv = b.Dataverse("https://fake.crm.dynamics.com", lambda: "token", "CLTStewardship", session=fake)
+    b.run(dv, b.Log(os.path.join(tmp, "log.txt")), os.path.join(tmp, "c.json"))
+    assert LOOSENED and all(any(l[0] == c and l[1] == col and l[4] == "RemoveLink" and l[5] is False for l in LOOKUPS) for c, col in LOOSENED)
+    for child, col in LOOSENED:   # as the earlier version left it: required, Cascade, and no lookup to the property yet
+        fake.entities[f"clt_{child}"]["attrs"][f"clt_{col}"]["RequiredLevel"] = {"Value": "ApplicationRequired"}
+        fake.rels[f"clt_{col}_{child}_{col}"]["CascadeConfiguration"]["Delete"] = "Cascade"
+        del fake.rels[f"clt_property_{child}_property"]
+        del fake.entities[f"clt_{child}"]["attrs"]["clt_property"]
+    other = dict(fake.rels["clt_household_householdmember_household"]["CascadeConfiguration"])
+    log = b.Log(os.path.join(tmp, "log2.txt"))
+    b.run(dv, log, os.path.join(tmp, "c.json"))
+    assert log.counts["created"] == 3 * len(LOOSENED), log.counts   # optional, RemoveLink, and the new lookup to the property
+    assert all(fake.rels[f"clt_property_{child}_property"]["CascadeConfiguration"]["Delete"] == "Cascade" for child, _ in LOOSENED)
+    for child, col in LOOSENED:
+        assert fake.entities[f"clt_{child}"]["attrs"][f"clt_{col}"]["RequiredLevel"]["Value"] == "None"
+        rel = fake.rels[f"clt_{col}_{child}_{col}"]
+        assert rel["CascadeConfiguration"]["Delete"] == "RemoveLink" and rel["CascadeConfiguration"]["Assign"] == "NoCascade"
+    assert fake.rels["clt_household_householdmember_household"]["CascadeConfiguration"] == other, "a lookup that isn't listed is left alone"
+    log = b.Log(os.path.join(tmp, "log3.txt"))
+    b.run(dv, log, os.path.join(tmp, "c.json"))
+    assert log.counts["created"] == 0, "nothing left to loosen on the next run"
 
 
 def migration_test():

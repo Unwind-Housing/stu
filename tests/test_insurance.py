@@ -1,6 +1,7 @@
 """Offline test: the Insurance verification page's rules (webresources/insurancecheck.js) run in Node on worked
 examples, and the page is checked against the schema. Skipped with a message if Node isn't installed."""
 import os
+import json
 import re
 import shutil
 import subprocess
@@ -14,11 +15,7 @@ const assert = require("assert");
 const I = require(process.argv[process.argv.length - 1]);
 const today = "2026-11-17";
 
-// ---- what an answer on the yearly form starts
-assert.strictEqual(I.fromForm({ uploaded: true, contact: false }), "To review", "proof attached, no help asked for: staff review it");
-assert.strictEqual(I.fromForm({ uploaded: true, contact: true }), "Needs contact", "asked for help, even with something attached");
-assert.strictEqual(I.fromForm({ uploaded: false, contact: false }), "Needs contact", "nothing attached");
-assert.strictEqual(I.fromForm({ uploaded: false, contact: true }), "Needs contact");
+assert.strictEqual(I.fromForm, undefined, "the yearly occupancy form no longer starts an insurance verification");
 
 // ---- who to ask: homes whose insurance is due, and never one that already has a request open
 const occ = [{ id: "o1", name: "Rivera - 12 Pine St", household: "Rivera", email: "maria@example.com", due: true },
@@ -27,19 +24,33 @@ const occ = [{ id: "o1", name: "Rivera - 12 Pine St", household: "Rivera", email
              { id: "o4", name: "Lee - 3 Fir Rd", household: "Lee", email: "lee@example.com", due: true }];
 const list = [{ id: "i1", occupancy: "o4", status: "Requested", method: "Online form" }, { id: "i2", occupancy: "o1", status: "Approved" }, { id: "i3", occupancy: "o3", status: "Cancelled" }];
 const rows = I.choose(occ, list);
-assert.deepStrictEqual(rows.map(r => [r.id, r.tick, r.method, r.request && r.request.id]), [["o1", true, "Online form", null], ["o2", true, "Paper", null], ["o3", false, "Online form", null], ["o4", false, "Online form", "i1"]],
-                       "due homes are ticked; no email means paper; up to date isn't ticked; one with a request open isn't asked again");
+assert.deepStrictEqual(rows.map(r => [r.id, r.tick, r.request && r.request.id]), [["o1", true, null], ["o2", true, null], ["o3", false, null], ["o4", false, "i1"]],
+                       "due homes are ticked; up to date isn't ticked; one with a request open isn't asked again");
+assert.strictEqual(rows[0].method, undefined, "there is no online form to choose: Stu sends nothing");
 assert.deepStrictEqual(I.choose(occ, list, ["O3", "o4"]).map(r => r.tick), [false, false, true, false], "opened for particular households: only those, and never one already asked");
 assert.strictEqual(rows[0].household, "Rivera");
 
-// ---- starting a batch
-const inp = { due: "2026-12-17", link: "https://forms.example.com/insurance", subject: I.DEFAULT.subject, body: I.DEFAULT.body };
-assert.deepStrictEqual(I.startProblems([rows[0], rows[1]], inp, today), []);
-assert.deepStrictEqual(I.startProblems([rows[1]], { due: "2026-12-17", link: "", subject: "", body: "" }, today), [], "paper only needs no link or email");
-assert.ok(I.startProblems([], inp, today)[0].includes("Tick")); assert.ok(I.startProblems([rows[0]], { ...inp, due: "2026-11-01" }, today)[0].includes("past"));
-assert.ok(I.startProblems([rows[0]], { ...inp, link: "" }, today)[0].includes("no insurance form link")); assert.ok(I.startProblems([rows[0]], { ...inp, link: "forms.example.com" }, today)[0].includes("https://"));
-assert.ok(I.startProblems([rows[0]], { ...inp, body: "Hello" }, today)[0].includes("{link}")); assert.ok(I.startProblems([{ ...rows[1], method: "Online form" }], inp, today)[0].includes("Chen has no email address"));
-assert.ok(/\{link\}/.test(I.DEFAULT.body) && /\{due date\}/.test(I.DEFAULT.body) && !/—/.test(I.DEFAULT.body));
+// ---- starting requests: Stu records that the household was asked, and sends nothing
+assert.deepStrictEqual(I.startProblems([rows[0], rows[1]], { due: "2026-12-17" }, today), []);
+assert.ok(I.startProblems([], { due: "2026-12-17" }, today)[0].includes("Tick")); assert.ok(I.startProblems([rows[0]], { due: "2026-11-01" }, today)[0].includes("past"));
+assert.ok(I.startProblems([rows[0]], { due: "" }, today)[0].includes("due"));
+assert.strictEqual(I.BUTTON, undefined, "there is no form to link to");
+
+// ---- the email to copy: Stu writes it, staff send it. There is no link in it.
+const maria = { id: "o1", name: "Rivera - 12 Pine St", home: "12 Pine St", household: "Rivera", firstName: "Maria", email: "maria@example.com" };
+const m = I.email(maria, "2026-12-17", "Pine Valley CLT");
+assert.strictEqual(m.to, "maria@example.com"); assert.strictEqual(m.subject, "Proof of homeowner's insurance for 12 Pine St");
+assert.ok(m.body.startsWith("Hello Maria,\n\n") && m.body.includes("by December 17, 2026.") && m.body.endsWith("Thank you,\nPine Valley CLT"));
+assert.ok(!/\{|\}|https?:/.test(m.body), "every field is filled in, and there is no link");
+assert.ok(I.email({ ...maria, firstName: "" }, "2026-12-17", "Pine Valley CLT").body.startsWith("Hello Rivera,"), "no first name on file: the household's name");
+const own = I.email(maria, "2026-12-17", "Pine Valley CLT", { subject: "Insurance, {Home}", body: "Dear {household} household, due {due  date}. {mystery}" });
+assert.deepStrictEqual([own.subject, own.body], ["Insurance, 12 Pine St", "Dear Rivera household, due December 17, 2026. {mystery}"], "the organization's own wording; an unknown field stays showing");
+assert.strictEqual(I.email(maria, "2026-12-17", "X", { subject: "", body: " " }).subject, m.subject, "an empty template falls back to the starting words");
+assert.strictEqual(I.email(maria, "2026-12-17", "X", { subject: "", body: "Hi" }).subject, m.subject, "a template with no subject gets the starting one");
+const q = I.emails([maria, { id: "o2", household: "Chen", home: "4 Oak Ave", email: " " }], "2026-12-17", "Pine Valley CLT");
+assert.deepStrictEqual([q.mails.length, q.mails[0].row.id, q.mails[0].mail.to, q.noEmail.map(r => r.household)], [1, "o1", "maria@example.com", ["Chen"]], "a household with no address is named, not emailed");
+assert.deepStrictEqual(I.emails([], "2026-12-17", "X"), { mails: [], noEmail: [] });
+assert.deepStrictEqual(I.FIELDS.map(f => f[0]), ["first name", "household", "home", "due date", "organization"]);
 
 // ---- closing one
 assert.deepStrictEqual(I.closeProblems({ verified: today, outcome: "Approved", notes: "" }, today), []);
@@ -60,6 +71,16 @@ assert.strictEqual(I.afterCancel("2026-11-10", { verified: "2026-11-10", status:
 assert.strictEqual(I.afterCancel("2026-11-12", { verified: "2026-11-10", status: "Approved" }, others), undefined, "a newer date on the occupancy stays");
 assert.strictEqual(I.afterCancel("2025-10-01", { verified: "", status: "To review" }, others), undefined);
 assert.strictEqual(I.recordName(today, "Rivera - 12 Pine St"), "2026-11-17, Rivera - 12 Pine St");
+
+// ---- the insurer's card: entering it is an approved insurance verification
+assert.deepStrictEqual(I.cardProblems({ occupancy: "o1", verified: today, coverage: "" }, today), []);
+assert.deepStrictEqual(I.cardProblems({ occupancy: "o1", verified: "2026-10-30", coverage: "$410,000" }, today), []);
+assert.ok(I.cardProblems({ occupancy: "", verified: today }, today)[0].includes("home")); assert.ok(I.cardProblems({ occupancy: "o1", verified: "" }, today)[0].includes("date"));
+assert.ok(I.cardProblems({ occupancy: "o1", verified: "2026-11-18" }, today)[0].includes("future")); assert.ok(I.cardProblems({ occupancy: "o1", verified: today, coverage: "lots" }, today)[0].includes("coverage"));
+assert.strictEqual(I.cardTarget("o4", list), "i1", "a home with a request open: the card closes that one");
+assert.strictEqual(I.cardTarget("o1", list), "", "an approved one stays as it is: the card is a new verification"); assert.strictEqual(I.cardTarget("o3", list), "");
+assert.strictEqual(I.CARD, "Insurer's card");
+process.stdout.write(JSON.stringify({ card: I.CARD, mail: I.DEFAULT }));
 """
 
 
@@ -87,7 +108,10 @@ def main():
     assert sorted((listed[1] + ", " + listed[2] + ", " + listed[3]).replace('"', "").split(", ")) == sorted(CHOICES["insurancereviewstatus"][1])
     assert cols["insuranceverification"]["status"]["choice"] == "insurancereviewstatus" and cols["insuranceverification"]["document"]["kind"] == "file"
     assert ("insuranceverification", "occupancy", "occupancy", "Occupancy", "Cascade", True) in LOOKUPS
-    assert any(l[0] == "insuranceverification" and l[1] == "annualverification" and l[4] == "RemoveLink" for l in LOOKUPS), "deleting a verification keeps the insurance check"
+    from schema import RETIRED
+    assert not any(l[0] == "insuranceverification" and l[1] == "annualverification" for l in LOOKUPS) and ("insuranceverification", "annualverification", "annualverification") in RETIRED["lookups"], \
+        "insurance is checked on its own: nothing ties an insurance verification to the yearly occupancy form"
+    assert "documentslink" not in cols["insuranceverification"] and "annualverification" not in page and "documentslink" not in page
     # in the app, under Activities, in the core app and Stu; the hub leads to it
     assert core.PAGES["insurance"] == ("Insurance verification", "clt_/pages/insurance.html") and "page:insurance" in dict(core.NAVIGATION)["Activities"]
     for res in ("clt_/pages/insurance.html", "clt_/pages/insurancecheck.js"):
@@ -95,22 +119,36 @@ def main():
     assert "insuranceverification" in core.FORMS and "insuranceverification" in dict(core.NAVIGATION)["Stewardship"]
     assert 'data-goto="insurance"' in hub and 'data-goto="verify"' in hub and '"In progress"' in hub and "Asked<" not in hub
     assert page.index('src="pages.js"') < page.index('src="stewardship.js"') < page.index('src="verify.js"') < page.index('src="insurancecheck.js"') < page.index("CLTInsuranceCheck")
-    # the same three steps and the same requests list as Occupancy verification
-    twin = open(os.path.join(web, "verify.html")).read()
-    for piece in ('id="steps"', 'data-step="1"', 'data-step="2"', 'data-step="3"', 'id="all"', 'id="link"', 'id="keep"', 'id="sentit"', 'id="showall"', 'id="dash"', "Choose who", "The email", "Send"):
-        assert piece in page and piece in twin, piece
+    # no online form: asking a household is one list and one button, and the page never writes a link or a code
+    for gone in ('id="steps"', 'data-step=', 'id="link"', "clt_sentlink", "clt_verificationcode", "InsuranceFormLink", "saveSetting", "V.email", "emailHtml"):
+        assert gone not in page, gone
+    for piece in ('id="all"', 'id="due"', 'id="next"', 'id="showall"', 'id="dash"', "I.startProblems(", "ch.method[I.PAPER]"):
+        assert piece in page, piece
+    # starting requests queues up an email for each household to copy; Sent notes the date and address on the request
+    for piece in ('id="mailpanel"', 'id="mailcard"', "I.emails(", 'data-copy="body"', "mailto:", 'id="m-sent"', 'id="m-skip"', 'id="c-mail"', "clt_sentdate: today()", "clt_sentto: q.mail.to", "clt_primaryemail"):
+        assert piece in page, piece
+    # the wording has a starting point each organization can change: a message template used for Insurance verification
+    from schema import SEED_ROWS
+    start = [t for t in SEED_ROWS["messagetemplate"] if t["noticetype"] == "Insurance verification"]
+    mail = json.loads(r.stdout.strip().splitlines()[-1])["mail"]
+    assert len(start) == 1 and start[0]["subject"] == mail["subject"] and start[0]["body"] == mail["body"], "the seeded template and the page's fallback say the same thing"
+    assert "Insurance verification" in CHOICES["noticetype"][1] and "clt_noticetype" in page and "{link}" not in mail["body"]
     from schema import ENVIRONMENT_VARIABLES
-    assert any(v["name"] == "InsuranceFormLink" for v in ENVIRONMENT_VARIABLES) and "InsuranceFormLink" in page
-    assert "Insurance verification" in CHOICES["noticetype"][1] and CHOICES["insurancereviewstatus"][1][:5] == ["To review", "Needs contact", "Approved", "Issue found", "Cancelled"], "new statuses go on the end, so existing values keep their meaning"
+    assert not any(v["name"] == "InsuranceFormLink" for v in ENVIRONMENT_VARIABLES)
+    assert CHOICES["insurancereviewstatus"][1][:5] == ["To review", "Needs contact", "Approved", "Issue found", "Cancelled"], "new statuses go on the end, so existing values keep their meaning"
     assert {"method", "duedate", "sentdate", "sentto", "sentlink", "verificationcode", "replacementcoverage"} <= set(cols["insuranceverification"])
+    assert json.loads(r.stdout.strip().splitlines()[-1])["card"] in CHOICES["verificationmethod"][1] and CHOICES["verificationmethod"][1][:2] == ["Online form", "Paper"]
+    for piece in ('id="k-open"', 'id="k-home"', 'id="k-date"', 'id="k-file"', 'id="k-save"', "I.cardProblems(", "I.cardTarget(", "card=", "ch.method[I.CARD]", "ch.status.Approved"):
+        assert piece in page, piece
+    assert 'data: "card=' in hub, "the hub leads to the card form"
     assert "toreview" not in page.lower().replace("to review", ""), "no move-to-review step: staff save the outcome"
     script = re.findall(r"<script>(.*?)</script>", page, re.S)[-1]
     for src in (script, rules):
         p = subprocess.run([node, "-e", "new Function(require('fs').readFileSync(0, 'utf8'))"], input=src, capture_output=True, text=True)
         assert p.returncode == 0, p.stderr[-600:]
-    assert "mailto:" in script and "sendEmail" not in script   # the page hands the email to staff; it never sends one itself
+    assert "sendEmail" not in script   # the page never sends anything
     # every clt_ name is real
-    used_tables = ("occupancy", "insuranceverification", "household", "householdmember", "property", "listitem", "messagetemplate")
+    used_tables = ("occupancy", "insuranceverification", "household", "householdmember", "messagetemplate")
     known = {f"{PREFIX}_name", f"{PREFIX}_document_name"} | {f"{PREFIX}_{c}" for c in ("occupancystatus", "insurancereviewstatus", "verificationmethod", "applicantrole", "noticetype")}
     for t in used_tables:
         known |= {f"{PREFIX}_{c}" for c in cols[t]} | {f"{PREFIX}_{t}", f"{PREFIX}_{t}id"}

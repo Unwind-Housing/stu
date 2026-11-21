@@ -136,7 +136,7 @@ def main():
     rules = open(os.path.join(web, "verify.js")).read()
     page = open(os.path.join(web, "verify.html")).read()
     # the method, the statuses and the setting are real
-    assert CHOICES["verificationmethod"][1] == ["Online form", "Paper"] and cols["annualverification"]["method"]["choice"] == "verificationmethod"
+    assert CHOICES["verificationmethod"][1][:2] == ["Online form", "Paper"] and cols["annualverification"]["method"]["choice"] == "verificationmethod"
     listed = re.search(r'OPEN = \[(.*?)\], CLOSED = \[(.*?)\], CANCELLED = "(.*?)"', rules)
     assert sorted((listed[1] + ", " + listed[2] + ", " + listed[3]).replace('"', "").split(", ")) == sorted(CHOICES["verificationstatus"][1]), "every status is open, closed or cancelled"
     assert cols["annualverification"]["signedform"]["kind"] == "file" and cols["annualverification"]["sentlink"]["kind"] == "memo"
@@ -155,7 +155,9 @@ def main():
         assert p.returncode == 0, p.stderr[-600:]
     # every clt_ name is real
     used_tables = ("occupancy", "annualverification", "household", "householdmember", "messagetemplate", "property", "listitem")
-    assert {"peopleinhome", "noshorttermrental", "insurancecurrent", "insurancecontact", "mortgagecontact", "signeddate", "phone", "uploadslink"} <= set(cols["annualverification"])
+    assert {"peopleinhome", "noshorttermrental", "mortgagecontact", "signeddate", "phone"} <= set(cols["annualverification"])
+    assert not {"insurancecurrent", "insurancecontact", "insurancereceived", "uploadslink"} & set(cols["annualverification"]) and "insurance" not in page.lower().replace("insurance verification", ""), \
+        "the yearly form is about occupancy only: insurance is checked on its own"
     known = {f"{PREFIX}_name", f"{PREFIX}_signedform_name"} | {f"{PREFIX}_{c}" for c in ("occupancystatus", "verificationstatus", "verificationmethod", "rentalstatus", "applicantrole", "noticetype")}
     for t in used_tables:
         known |= {f"{PREFIX}_{c}" for c in cols[t]} | {f"{PREFIX}_{t}", f"{PREFIX}_{t}id"}

@@ -89,7 +89,7 @@
           <li><b>Cancel a verification</b>, open or closed, with <span class="ui">Cancel this verification</span>. It stays on record as Cancelled and the household can be asked again.</li>
         </ol>
         <div class="tip">Only an approval sets the occupancy's Last occupancy verification date, so the home drops off the overdue list on the Verification hub. A form that has come in, or an issue, doesn't move it. Cancelling an approved one takes that date back to the verification before it, so the home shows as overdue again if that was more than the usual time ago.</div>
-        <div class="tip">When a household sends in the online form, its request turns to <span class="ui">Received</span> by itself (and says To review on the Verification hub). Open it to read what they answered and see what they attached, then save your review. The same form starts the home's insurance verification, and a household that asks for contact about its mortgage gets a Homeowner request called Mortgage help requested.</div>
+        <div class="tip">When a household sends in the online form, its request turns to <span class="ui">Received</span> by itself (and says To review on the Verification hub). Open it to read what they answered, then save your review. A household that asks for contact about its mortgage gets a Homeowner request called Mortgage help requested. The form is about occupancy only: insurance is checked on its own, under <a href="#insurance">Run insurance verifications</a>.</div>
         <p class="later">Coming later: Stu sending the emails itself.</p>
         <div class="actions"><button class="btn" data-list="clt_annualverification">Open Annual verifications</button></div>
       </section>
@@ -97,32 +97,59 @@
       <section class="guide" id="insurance" data-title="Run insurance verifications">
         <h3>Run insurance verifications</h3>
         <p class="where">Activities &rsaquo; Insurance verification</p>
-        <p>This works the same way as occupancy verification.</p>
+        <p><b>When the insurer's card arrives.</b> If your organization is listed as additional insured, the insurer mails you a card. Entering it is that home's insurance verification, and nobody has to ask the household.</p>
         <ol>
-          <li><b>Choose who to ask.</b> Homes whose insurance verification is overdue or due soon are ticked. Set the <span class="ui">Due</span> date and choose <span class="ui">Online form</span> or <span class="ui">Paper</span> for each.</li>
-          <li><b>The email</b> (online form only). Check the form link and the wording. The link is kept in your organization's settings, and can be the same form as the annual verification.</li>
-          <li><b>Send.</b> Copy each finished email into your mail program, send it, then select <span class="ui">Sent</span>.</li>
-          <li><b>What is waiting,</b> under <span class="ui">Requests</span>: <span class="ui">Requested</span> means the household has been asked. <span class="ui">To review</span> means proof is waiting for you to look at. <span class="ui">Needs contact</span> means the household asked for help, or sent no proof.</li>
-          <li><b>Open one.</b> The first document the household attached to its form is already on the record: select <span class="ui">View</span>. <span class="ui">Open the uploaded documents</span> opens everything they attached, in SharePoint. You can also add or replace the document yourself (a PDF or a photo).</li>
+          <li>Select <span class="ui">Enter an insurance card</span> at the top of the page.</li>
+          <li>Choose the <span class="ui">Home</span>, and enter the <span class="ui">Date on the card</span>.</li>
+          <li>Enter the <span class="ui">Replacement coverage limit</span> if the card shows it, add a photo or scan of the card, and put the insurer, policy number and anything else worth keeping under <span class="ui">Notes</span>.</li>
+          <li>Select <span class="ui">Save the card</span>. It is saved as an approved insurance verification, with <span class="ui">Insurer's card</span> under How. If the home had a request open, the card closes it.</li>
+        </ol>
+        <p><b>When no card comes,</b> ask the household for proof. There is no online form for this: Stu keeps track of who you asked and writes the email, and you send it.</p>
+        <ol>
+          <li><b>Choose who to ask.</b> Homes with no insurance verification in the last year are ticked. Set the <span class="ui">Due</span> date and select <span class="ui">Start requests</span>.</li>
+          <li><b>Send the emails.</b> The page shows one finished email at a time under <span class="ui">Emails to send</span>. Copy it into your mail program or select <span class="ui">Open in mail</span>, send it, then select <span class="ui">Sent</span>. A household with no email address is named in the message at the top: call or write to them.</li>
+          <li><b>Send a reminder:</b> open a request that says Requested and select <span class="ui">Email to copy</span> to get its email again.</li>
+          <li><b>What is waiting,</b> under <span class="ui">Requests</span>: <span class="ui">Requested</span> means the household has been asked and you are waiting for its proof.</li>
+          <li><b>Open one</b> when the proof comes in, and add the document (a PDF or a photo). Select <span class="ui">View</span> to look at one that is already there.</li>
           <li><b>Review it:</b> enter the date, the <span class="ui">Replacement coverage limit</span> from the proof, choose Approved or Issue found, add notes, and <span class="ui">Save</span>. An issue needs a note saying what it is, and the request stays open as Issue found until you open it again and approve it.</li>
           <li><b>Cancel one</b>, open or closed, with <span class="ui">Cancel this verification</span>.</li>
         </ol>
-        <div class="tip">Only an approval sets the occupancy's Last insurance verification date. The yearly verification form also starts one of these by itself, or brings the open one up to date. On the Verification hub, a home with one open shows it in its insurance column: select it to open that verification.</div>
+        <div class="tip">The wording of the email is yours to change: Settings &rsaquo; Message templates, the one used for <span class="ui">Insurance verification</span>. It can use {first name}, {household}, {home}, {due date} and {organization}.</div>
+        <div class="tip">Only an approval sets the occupancy's Last insurance verification date. On the Verification hub, a home with one open shows it in the Insurance list: select it to open that verification.</div>
       </section>
 
       <section class="guide" id="regular" data-title="Use the Verification hub">
         <h3>Use the Verification hub</h3>
         <p class="where">Start here &rsaquo; Verification hub</p>
+        <p>The page has two parts that run on separate clocks: <span class="ui">Occupancy verification</span> and <span class="ui">Insurance</span>.</p>
         <ol>
-          <li>The page lists every current occupancy with two checks: <span class="ui">Occupancy verification</span> and <span class="ui">Insurance verification</span>. Each shows Overdue, Due soon or Up to date, with the date it was last done and the date it falls due.</li>
-          <li>A check that has never been recorded counts as overdue.</li>
+          <li><b>Occupancy verification</b> lists every current occupancy with the date of purchase and Overdue, Due soon or Up to date. It falls due each year on the anniversary of the purchase, whenever the last one came back. A new owner isn't due until the first anniversary.</li>
           <li>To send the occupancy verification form, tick the households you want (every one that is overdue or due soon and hasn't been asked starts ticked) and select <span class="ui">Start occupancy verifications</span> above the list, or <span class="ui">Ask this household</span> on one row. Both open <a href="#verification">Occupancy verification</a> with those households ticked.</li>
-          <li>For insurance, select <span class="ui">Ask for proof of insurance</span> on the row. It opens <a href="#insurance">Insurance verification</a> with that household ticked.</li>
-          <li>Once something is under way, the row says <span class="ui">In progress</span>, <span class="ui">To review</span>, <span class="ui">Needs contact</span> or <span class="ui">Issue found</span>. Select it to open that request.</li>
+          <li>Once a request is under way, the row says <span class="ui">In progress</span>, <span class="ui">To review</span> or <span class="ui">Issue found</span>. Select it to open that request.</li>
+          <li><b>Insurance</b> lists the homes with no insurance verification entered in the last 12 months. A new owner's first one is due a year after the purchase, the same day as the first occupancy verification.</li>
+          <li>When the insurer's card arrives in the mail, select <span class="ui">Enter the card</span> on the home's row, or <span class="ui">Enter an insurance card</span> above the list. See <a href="#insurance">Run insurance verifications</a>. Saving the card takes the home off the list.</li>
+          <li>If no card has come, select <span class="ui">Ask for proof</span> on the row. It opens <a href="#insurance">Insurance verification</a> with that household ticked.</li>
           <li>Click the home's name to open its occupancy. The <span class="ui">Stewardship</span> tab has the dates, follow-ups, relationship notes and verifications for that household in that home.</li>
         </ol>
         <div class="tip"><span class="ui">Last contact</span> is the newest relationship note, or verification that came back. Add a relationship note on the occupancy's <span class="ui">Stewardship</span> tab every time you are in touch with a household, even briefly.</div>
-        <p class="later">Each check falls due every 12 months unless your organization's settings say otherwise.</p>
+        <p class="later">An occupancy verification counts for an anniversary when it came back no more than 60 days before it, or any time after. Insurance is every 12 months unless your organization's settings say otherwise.</p>
+      </section>
+
+      <section class="guide" id="field" data-title="Do staff walk-bys from your phone">
+        <h3>Do staff walk-bys from your phone</h3>
+        <p class="where">Start here &rsaquo; Stu in the wild</p>
+        <p>Stu in the wild is the page for work away from your desk, built for a phone. Open Stu in the Power Apps app on your phone (or in the phone's browser): on a phone it opens on this page. From anywhere else, select <span class="ui">Stu in the wild</span> in the menu.</p>
+        <ol>
+          <li>Tap <span class="ui">Staff walk-by</span>, then the neighborhood you are in.</li>
+          <li>Every home has a card, empty homes too. <b>Red</b> is to do, <b>amber</b> is saved and not submitted, <b>green</b> is done. Tap a home.</li>
+          <li>Type your <span class="ui">Notes</span>.</li>
+          <li>If something needs coming back to, tick <span class="ui">Needs a follow-up</span>. The due date starts as today; change it if you like.</li>
+          <li>Tap <span class="ui">Take a photo</span> for each photo, or <span class="ui">Choose photos</span> to add ones already on the phone. Tap the &times; on a photo to take it off.</li>
+          <li>Tap <span class="ui">Save</span> to keep it and go back to the neighborhood. The home turns amber, and you can open it again to add more.</li>
+          <li>Tap <span class="ui">Submit</span> when the home is finished. It turns green, and a ticked follow-up is added to Stu as an open follow-up, which counts on the Stewardship Dashboard.</li>
+        </ol>
+        <div class="tip">A walk-by is kept on the property, so the home's history carries on through every owner and every gap between owners. When someone lives there, the walk-by and its follow-up also show on that occupancy. At your desk, open the property's <span class="ui">Stewardship</span> tab: <span class="ui">Walk-by history</span> shows every walk-by for the home, newest first, with its notes and photos. Select a photo to see it larger. Opening one walk-by shows its photos on its own form too.</div>
+        <p class="later">A green home goes back to red 12 months after its last submitted walk-by, unless your organization's settings say otherwise. The page needs a signal: if a save fails, what you typed and the photos stay on the screen so you can try again.</p>
       </section>
 
       <section class="guide" id="request" data-title="Handle a homeowner request">
@@ -142,17 +169,34 @@
 
       <section class="guide" id="resale" data-title="Run a resale">
         <h3>Run a resale</h3>
-        <p class="where">Activities &rsaquo; Resale</p>
-        <p>The Resale page walks a resale through five steps. Each step saves as you go, so you can leave and come back; pick the resale at the top of the page.</p>
+        <p class="where">Applications and Sales &rsaquo; Sales &rsaquo; Resale (in a Stewardship-only app: Activities &rsaquo; Resale)</p>
+        <p>The Resale page walks a resale through six steps. Each step saves as you go, so you can leave and come back. The page opens on the <b>sales in progress</b>, each with the step it is waiting on: select <span class="ui">Continue</span> on a row. The Dashboard's <span class="ui">Pending sales</span> tile brings you to the same list.</p>
         <ol>
           <li><b>Start the resale:</b> select <span class="ui">Start a resale</span>, choose the home, and enter the date the homeowner gave notice.</li>
           <li><b>Price and what the seller owes:</b> the <span class="ui">Formula price</span> and <span class="ui">Added value</span> (capital improvements) come from the occupancy and add up to the <span class="ui">Maximum resale price</span>. Loans from your organization are worked out for today; change the total to the real payoff. Add any <span class="ui">Other credits</span> and <span class="ui">Other debits</span>, saying what each is for. The page shows what the seller is left with.</li>
-          <li><b>Find the buyer:</b> pick a household that is already certified, or select <span class="ui">Start a project for this home</span> to run an application round, and come back to pick the buyer it produces.</li>
-          <li><b>Contract:</b> enter the <span class="ui">Purchase price</span>, the contract date, lender and title company. The home is marked Sale pending. If the price is above the maximum resale price, the seller's side stops at the maximum and the difference is recorded as <span class="ui">Subsidy recaptured</span> by your organization.</li>
-          <li><b>Closing:</b> once the sale has closed, enter the <span class="ui">Closing date</span> and select <span class="ui">Record the closing</span>. This ends the seller's occupancy, starts the buyer's with the same resale formula from the new price and date, and updates the home and both households.</li>
+          <li><b>Offer the home:</b> the home is offered to one certified household at a time. Choose the household: a project's certified households are listed first, in the order of the project's list, each with its rank and tier, and the next one to offer is chosen for you. Choosing one further down asks you to confirm. Set the <span class="ui">Answer by</span> date (7 days from today, or the project's <span class="ui">Days to answer an offer</span>) and save. Stu then shows the offer email to copy into your mail program, and <span class="ui">Download the flyer</span> makes a one-page PDF for the home to attach: a photo of the home, its address, size, sale price and what it costs each month. The photo comes from the property record: open the property, and under <span class="ui">Photos</span> on its Overview tab select <span class="ui">Add photos</span>. The first photo goes on the flyer; select <span class="ui">Use on the flyer</span> on another to change it. Select <span class="ui">Sent</span> once it has gone. If you have no certified household, select <span class="ui">Start a project for this home</span> to run an application round. New project opens with the home and its maximum resale price already filled in, and the project remembers this resale. From then on the <span class="ui">Project workflow</span> page shows the whole sale as one list of steps: the resale's start and price, the project's five steps, then pick the buyer, the contract and the closing. Each step opens the right page, and <span class="ui">Project overview</span> brings you back, so there is no need to find your way between the two sides. When the project has certified a household, the workflow page sends you back here to offer the home.</li>
+          <li><b>The household's answer:</b> record <span class="ui">Accepted</span>, <span class="ui">Declined</span> or <span class="ui">No response</span>, with the date and a reason if you have one. Accepted makes them the buyer. Declined or No response sends you back to Offer the home with the next household chosen, and takes that household off the project's lists: a household declines once for the whole project.</li>
+          <li><b>Purchase and sale agreement:</b> enter the <span class="ui">Purchase price</span>, the date the purchase and sale agreement was signed, lender and title company. Under <span class="ui">How the purchase price is made up</span>, add a line for each part: the buyer's cash, each loan (with its interest rate), each subsidy. The lines should add up to the purchase price. The home is marked Sale pending. If the price is above the maximum resale price, the seller's side stops at the maximum and the difference is recorded as <span class="ui">Subsidy recaptured</span> by your organization.</li>
+          <li><b>Closing:</b> once the sale has closed, enter the <span class="ui">Closing date</span>, the buyer's <span class="ui">Closing costs</span> and add the <span class="ui">Final settlement statement</span> if you have them, then select <span class="ui">Record the closing</span>. The statement can also be added, replaced and viewed on this page after the closing. This ends the seller's occupancy, starts the buyer's with the same resale formula from the new price and date, and updates the home and both households.</li>
         </ol>
         <div class="tip">To record a loan your organization made to a homeowner, open their occupancy, go to the <span class="ui">Resale price</span> tab and add it under <span class="ui">Loans from the organization</span>. The regular payment is filled in from the balance, rate and dates, and you can change it.</div>
         <p class="later">After closing, open the new occupancy and check its terms if the buyer's lease differs from the seller's.</p>
+      </section>
+
+      <section class="guide" id="aftersale" data-title="Finish up after a sale">
+        <h3>Finish up after a sale</h3>
+        <p class="where">Activities &rsaquo; After the sale</p>
+        <p>The work that follows a closing, for a resale or a first sale. Recording a closing on the Resale page brings you straight here.</p>
+        <ol>
+          <li>The page opens on two lists. <b>Sales in the last 30 days</b> shows each recent closing with its status: Not started, how many tasks are done, or All done. <b>All sales with pending actions</b> shows every sale with tasks still to do, whenever it closed. Select <span class="ui">Start</span> or <span class="ui">Continue</span> on a row.</li>
+          <li>Any sale, finished ones included, is under <span class="ui">Sale</span> at the top. The first time a sale is opened it gets its own copy of your organization's task list.</li>
+          <li><b>Enter the buyer's insurance:</b> select <span class="ui">Enter the insurance</span>, fill in the insurer, policy number, dwelling coverage and dates, tick the box if your organization is listed as additional insured, add the proof if you have it, and select <span class="ui">Save the insurance</span>. This creates the home's insurance policy and its first insurance verification, dated the closing, so the next one falls due a year after the purchase.</li>
+          <li><b>Add the final settlement statement:</b> choose the file and select <span class="ui">Save the file</span>.</li>
+          <li>For the other tasks, use the button to open the place the work is done, then select <span class="ui">Mark done</span>.</li>
+          <li>If a task doesn't apply to this sale, select <span class="ui">Not needed</span>. <span class="ui">Undo</span> puts a task back on the list.</li>
+        </ol>
+        <div class="tip">The Stewardship Dashboard shows <span class="ui">Sales with set-up to finish</span>: closed sales that still have tasks to do.</div>
+        <p class="later">The list is your organization's own. To change it, go to Settings &rsaquo; After-sale tasks: add a task, reword one, change the order, or deactivate one you don't use. <span class="ui">Which sales</span> decides whether a task is for every sale, resales only or first sales only. A change affects sales opened here afterwards, not ones already under way.</p>
       </section>
 
       <section class="guide" id="sale" data-title="Record a first sale">
@@ -161,7 +205,7 @@
         <p>For a home being sold for the first time. For a resale, use <a href="#resale">Run a resale</a>.</p>
         <ol>
           <li><b>1. Property:</b> pick the <span class="ui">Property</span> and <span class="ui">Sale type</span>.</li>
-          <li><b>2. Buyer and contract:</b> pick the <span class="ui">Buyer household</span> and enter the <span class="ui">Contract date</span>, <span class="ui">Purchase price</span>, lender and title company. Status stays Pending.</li>
+          <li><b>2. Buyer and contract:</b> pick the <span class="ui">Buyer household</span> and enter the <span class="ui">Purchase and sale agreement signed</span> date, <span class="ui">Purchase price</span>, lender and title company. Status stays Pending.</li>
           <li><b>3. Closing:</b> on closing day, enter the <span class="ui">Closing date</span> and set <span class="ui">Status</span> = Closed.</li>
           <li>Then create the buyer's occupancy (see <a href="#occupancy">Move a household into a home</a>), and pick it as the sale's <span class="ui">Buyer's occupancy</span>.</li>
         </ol>

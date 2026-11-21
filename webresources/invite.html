@@ -6,6 +6,7 @@
 <title>Invite</title>
 <link rel="stylesheet" href="pages.css">
 <script src="pages.js"></script>
+<script src="journey.js"></script>
 <script src="invite.js"></script>
 </head>
 <body>
@@ -18,6 +19,9 @@
       <p>Choose who to invite, check the email, then send them one at a time from your own mail.</p>
     </div>
   </div>
+
+  <ol class="steps" id="journey"></ol>
+  <script>CLTJourney.bar(document.getElementById("journey"), "invite", function () { return document.getElementById("project").value; });</script>
 
   <div class="toolbar" style="margin-top: 18px">
     <label>Project
@@ -43,7 +47,7 @@
       <p class="lead">This is the message each household will get. Change anything you like. Words in curly brackets are filled in
         for each household on the next step.</p>
       <div class="emailform">
-        <label for="link">Link to your full application form <small>paste the form's address; Stu adds each household's application number to the end</small></label>
+        <label for="link">Link to your full application form <small>your organization's form, kept as a setting; Stu adds each household's application number to the end</small></label>
         <input id="link" type="text" maxlength="500" placeholder="Paste the address here">
         <small id="linkhint"></small>
         <label for="due">Full application due <small>the date in the email, and the date each household is held to</small></label>
@@ -86,7 +90,7 @@
   var day = P.day;   // timestamps are shown as the local day
   var SIZES = ["Studio", "1 bedroom", "2 bedrooms", "3 bedrooms", "4+ bedrooms"];
   var STEPS = ["Who to invite", "The email", "Send"];
-  var sets = {}, choices = {}, projects = [], org = "", numberField = "", D = null, ticked = {}, busy = false;
+  var sets = {}, choices = {}, projects = [], org = "", numberField = "", orgLink = "", D = null, ticked = {}, busy = false;
   var step = 1, queue = [], at = 0, sent = 0, skipped = 0, tried = false;
 
   function show(kind, text) { $("problems").innerHTML = text ? '<div class="msgbox ' + kind + '">' + esc(text) + "</div>" : ""; }
@@ -116,7 +120,7 @@
       P.settings()
     ]).then(function (r) {
       projects = r[2].filter(function (p) { return fv(p, "clt_status") !== "Closed"; });
-      org = r[3].OrgName || ""; numberField = r[3].FullAppNumberField || "";
+      org = r[3].OrgName || ""; numberField = r[3].FullAppNumberField || ""; orgLink = (r[3].FullAppFormLink || "").trim();
       var sel = $("project"); sel.innerHTML = "";
       var o = document.createElement("option"); o.value = "";
       o.textContent = projects.length ? "Pick a project" : "No open projects"; sel.appendChild(o);
@@ -148,7 +152,7 @@
       var saved = D.template || I.DEFAULT;
       D.subject = keep ? keep.subject : saved.subject; D.body = keep ? keep.body : saved.body;
       r[3].forEach(function (a) { D.apps[a.clt_applicationid] = a; });
-      if (fresh) { $("link").value = D.project.clt_fullappformlink || ""; $("subject").value = D.subject; $("body").value = D.body;
+      if (fresh) { $("link").value = D.project.clt_fullappformlink || orgLink; $("subject").value = D.subject; $("body").value = D.body;
                    $("due").value = I.deadline(today(), D.project.clt_responsedays); step = 1; queue = []; at = 0; sent = 0; skipped = 0; }
       if (!round || fv(round, "clt_status") !== "Certified") return;
       var hh = {}; r[3].forEach(function (a) { if (a._clt_household_value) hh[a._clt_household_value] = 1; });
@@ -221,7 +225,7 @@
     var empty = !$("link").value.trim();
     var sample = (D.apps[chosen()[0]] || {}).clt_recordnumber || "A-00012";
     $("linkhint").textContent = empty ? "This box is empty. Paste your form's address, for example: https://www.cognitoforms.com/YourOrg/FullApplication"
-      : problem || "Kept on the project. For " + sample + " the link will be: " + I.linkFor($("link").value, sample, numberField);
+      : problem || ((D.project.clt_fullappformlink || "").trim() ? "This project has its own link, kept on the project. " : "Your organization's link, used by every project. ") + "For " + sample + " the link will be: " + I.linkFor($("link").value, sample, numberField);
     $("linkhint").className = problem && !empty ? "errtext" : "";
     $("link").classList.toggle("needs", !!problem && tried);
     var dp = I.dueProblem($("due").value, today()), days = Math.round((new Date($("due").value + "T00:00:00Z") - new Date(today() + "T00:00:00Z")) / 86400000);
@@ -300,16 +304,22 @@
     var link = $("link").value.trim(), problem = I.linkProblem(link);
     if (problem) {
       tried = true; renderEmail(); $("link").focus();
-      return show("bad", link ? problem : "Paste the link to your full application form in the first box, then try again. It only has to be done once for a project.");
+      return show("bad", link ? problem : "Paste the link to your full application form in the first box, then try again. It only has to be done once: Stu keeps it for every project.");
     }
     if (I.dueProblem($("due").value, today())) return show("bad", I.dueProblem($("due").value, today()));
     if (!D.subject.trim() || !D.body.trim()) return show("bad", "The email needs a subject and a message.");
     if (D.body.indexOf("{link}") < 0) return show("bad", "The message has no {link} in it, so nobody would get their link. Put {link} where the link should go.");
     var go = function () { queue = chosen(); at = 0; sent = 0; skipped = 0; step = 3; busy = false; render(); };
-    if (link === (D.project.clt_fullappformlink || "").trim()) return go();
-    busy = true; render();   // keep the link on the project, so it is there next time
-    P.patch("clt_projects(" + D.project.clt_projectid + ")", { clt_fullappformlink: link })
-      .then(function () { D.project.clt_fullappformlink = link; go(); }).catch(fail("Couldn't save the link on the project"));
+    var own = (D.project.clt_fullappformlink || "").trim();
+    if (link === (own || orgLink)) return go();
+    busy = true; render();
+    var onProject = function () {
+      return P.patch("clt_projects(" + D.project.clt_projectid + ")", { clt_fullappformlink: link }).then(function () { D.project.clt_fullappformlink = link; });
+    };
+    // The link is the organization's setting, there for every project from now on. A project that already has its own
+    // link keeps its own; and where the setting can't be saved, the link is kept on the project so the invites can go.
+    (own ? onProject() : P.saveSetting("FullAppFormLink", link).then(function () { orgLink = link; }, onProject))
+      .then(go).catch(fail("Couldn't save the link"));
   });
 
   $("resetwording").addEventListener("click", function () {

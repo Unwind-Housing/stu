@@ -8,7 +8,7 @@ Start a TEST environment from scratch, in one go:
      --sharepoint-folder: the folders inside that parent folder in each document library, nothing else).
   3. Load the made-up portfolio of 20 homes (tools/make_test_data.py, tools/import_records.py).
   4. Add made-up history to it: sales, insurance, loans, improvements, requests, follow-ups, notes, ERRR entries
-     and past verifications.
+     past verifications and a few staff walk-bys.
 
 NEVER run this on an environment that holds real records. It can't be undone.
 Without --confirm it only counts what would go and changes nothing.
@@ -20,13 +20,15 @@ Usage:
   --confirm        the first part of the environment's address, so a slip can't clear the wrong one
   --keep-projects  leave projects and their priorities, income bands and lottery factors in place
   --no-test-data   stop after clearing: an empty environment
+  --email          a test inbox (Gmail): every test household gets it with a dot in a different place, which Gmail
+                   delivers to the one inbox. Without it the addresses are at example.com and go nowhere.
 """
 import argparse
 import os
 import sys
 import tempfile
 from datetime import date
-from urllib.parse import quote, urlparse
+from urllib.parse import quote, unquote, urlparse
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -60,6 +62,77 @@ def clear_folders(sp, folder, delete=False, log=print):
     return total
 
 
+# Microsoft's own command line app for Microsoft Graph. In a tenant where the sign-in app for Dataverse tools isn't
+# allowed into SharePoint, the folders are cleared through Graph with this one instead (a second sign-in).
+GRAPH_CLIENT_ID = "14d82eec-204b-4c2f-b7e8-296a70dab67e"
+GRAPH = "https://graph.microsoft.com/v1.0/"
+
+
+class GraphSite:
+    """One SharePoint site through Microsoft Graph: enough to send record folders to the recycle bin."""
+
+    def __init__(self, site_url, get_token, session=None):
+        import requests
+        self.site = site_url.rstrip("/")
+        self.get_token = get_token
+        self.s = session or requests.Session()
+
+    def call(self, method, url):
+        r = self.s.request(method, url if url.startswith("http") else GRAPH + url,
+                           headers={"Authorization": "Bearer " + self.get_token()}, timeout=120)
+        if r.status_code == 404:
+            return None
+        if r.status_code >= 400:
+            raise SharePointError(f"{method} {url.split('?')[0][-60:]} -> {r.status_code}: {r.text[:200]}")
+        return r.json() if r.content else {}
+
+    def rows(self, url):
+        out = []
+        while url:
+            r = self.call("GET", url) or {}
+            out += r.get("value", [])
+            url = r.get("@odata.nextLink")
+        return out
+
+    def clear(self, folder, delete=False, log=print):
+        """As clear_folders(): the record folders inside <library>/<folder> of each document library. Recycled."""
+        u = urlparse(self.site)
+        site = self.call("GET", f"sites/{u.netloc}:{quote(u.path)}?$select=id,webUrl")
+        if not site or site.get("webUrl", "").rstrip("/").lower() != self.site.lower():
+            raise SharePointError(f"GET site -> the site {self.site} wasn't found")
+        drives = self.rows(f"sites/{site['id']}/drives?$select=id,webUrl")
+        total = 0
+        for t in TABLES:
+            if not t.get("documents"):
+                continue
+            want = f"{self.site}/{ln(t['name'])}".lower()
+            drive = next((x for x in drives if unquote(x.get("webUrl", "")).rstrip("/").lower() == want), None)
+            if not drive:
+                continue
+            subs = [k for k in self.rows(f"drives/{drive['id']}/root:/{quote(folder)}:/children?$select=id,name,folder")
+                    if "folder" in k]
+            if not subs:
+                continue
+            total += len(subs)
+            log(f"  {'-' if delete else ' '} {t['documents']}, {folder}: {len(subs)} folders")
+            if delete:
+                for k in subs:
+                    self.call("DELETE", f"drives/{drive['id']}/items/{k['id']}")
+        log(f"{'Moved' if delete else 'Would move'} {total} folders" + (" to the site's recycle bin." if delete else "."))
+        return total
+
+
+def graph_site(site_url, tenant="organizations"):
+    """Sign in to Microsoft Graph (the browser opens) and return the site. Raises SharePointError if it is refused."""
+    import msal
+    app = msal.PublicClientApplication(GRAPH_CLIENT_ID, authority=f"https://login.microsoftonline.com/{tenant}")
+    print("Opening your browser to sign in again, this time for SharePoint through Microsoft Graph.")
+    r = app.acquire_token_interactive(scopes=["https://graph.microsoft.com/Sites.ReadWrite.All"], prompt="select_account")
+    if "access_token" not in r:
+        raise SharePointError("Graph sign-in -> " + str(r.get("error_description", r)).splitlines()[0])
+    return GraphSite(site_url, lambda: r["access_token"])
+
+
 def load_history(dv, today, log=print):
     """Create the rows of make_test_data.history() on the loaded portfolio. Rows that are already there are left alone."""
     rows = mk.history(today)
@@ -80,7 +153,7 @@ def load_history(dv, today, log=print):
         c.sort(key=lambda o: o.get(ln("startdate")) or "")
 
     def parent(t):   # the link a row is told apart by
-        return "occupancy" if t not in ("sale", "errrtransaction") else "property"
+        return "occupancy" if t not in ("sale", "errrtransaction", "walkby") else "property"
 
     have = {}
     for t in tables:
@@ -120,20 +193,31 @@ def load_history(dv, today, log=print):
     return made
 
 
-def run(dv, sp=None, folder=None, delete=False, keep_projects=False, test_data=True, today=None, log=print):
+def run(dv, sp=None, folder=None, delete=False, keep_projects=False, test_data=True, today=None, email=None, log=print,
+        graph=None):
+    """graph: a function that signs in to Microsoft Graph and returns a GraphSite, tried when sp can't get in."""
     today = today or date.today()
-    reach = True
+    reach, clear = True, lambda **kw: clear_folders(sp, folder, **kw)
     if sp and folder:   # find out before anything is deleted whether this sign-in can reach SharePoint
         try:
-            clear_folders(sp, folder, delete=False, log=lambda s: None)
+            clear(delete=False, log=lambda s: None)
         except SharePointError as e:
-            reach = False
-            log(f"This sign-in can't reach SharePoint ({str(e).split(' -> ')[-1][:60]}), so the old record folders "
-                "have to be deleted by hand.\n")
+            reach, why = False, str(e).split(" -> ")[-1][:60]
+            if graph:
+                try:
+                    site = graph()
+                    site.clear(folder, delete=False, log=lambda s: None)
+                    reach, clear = True, lambda **kw: site.clear(folder, **kw)
+                    log(f"This sign-in can't reach SharePoint ({why}); Microsoft Graph can, so the folders go that way.\n")
+                except SharePointError as e2:
+                    why += "; Microsoft Graph: " + str(e2).split(" -> ")[-1][:60]
+            if not reach:
+                log(f"This sign-in can't reach SharePoint ({why}), so the old record folders "
+                    "have to be deleted by hand.\n")
     rr.run(dv, delete=delete, with_projects=not keep_projects, log=log)
     if sp and folder and reach:
         log("\nOld record folders in SharePoint:")
-        clear_folders(sp, folder, delete=delete, log=log)
+        clear(delete=delete, log=log)
     if not delete:
         log("\nNothing was changed. To do it, add --confirm <first part of the address>.")
         return
@@ -146,7 +230,7 @@ def run(dv, sp=None, folder=None, delete=False, keep_projects=False, test_data=T
         return
     log("\nLoading the test portfolio:")
     with tempfile.TemporaryDirectory() as tmp:
-        mk.write(tmp, today)
+        mk.write(tmp, today, email)
         counts = ir.run(dv, tmp, log=lambda s: None, add_list_values=True)
     log("  " + ", ".join(f"{v} {k}" for k, v in counts.items()))
     load_history(dv, today, log=lambda s: log("  " + s))
@@ -158,6 +242,7 @@ def main():
     ap.add_argument("--confirm", help="The first part of the environment's address. Without it, nothing is changed.")
     ap.add_argument("--keep-projects", action="store_true")
     ap.add_argument("--no-test-data", action="store_true")
+    ap.add_argument("--email", help="A test inbox (Gmail) for every test household, with a dot in a different place each")
     ap.add_argument("--sharepoint-site", help="Also clear the old record folders in this site's document libraries")
     ap.add_argument("--sharepoint-folder", help="The parent folder this environment's record folders are in (DEV)")
     ap.add_argument("--tenant", default="organizations")
@@ -175,7 +260,8 @@ def main():
         args.sharepoint_site, args.client_id, args.tenant, args.device_code)) if args.sharepoint_site else None
     try:
         run(dv, sp, args.sharepoint_folder, delete=bool(args.confirm), keep_projects=args.keep_projects,
-            test_data=not args.no_test_data)
+            test_data=not args.no_test_data, email=args.email,
+            graph=(lambda: graph_site(args.sharepoint_site, args.tenant)) if sp and not args.device_code else None)
     except (DataverseError, SharePointError) as e:
         sys.exit(f"\nSTOPPED: {e}")
 

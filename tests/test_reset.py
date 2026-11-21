@@ -96,6 +96,11 @@ def main():
           and all(h["Primary email"].endswith("@example.com") for h in rows["households.csv"]),
           "every person is marked as a test (last name -Test, email at example.com)")
 
+    inbox = [r[2] for r in mk.build(date(2026, 11, 18), "stutestinboxfortwentyhomes@gmail.com")["households.csv"][1]]
+    check(out, len(set(inbox)) == 19 and all(a.replace(".", "") == "stutestinboxfortwentyhomes@gmailcom" and ".." not in a for a in inbox)
+          and mk.address("ab@gmail.com", 5, "") == "ab+5@gmail.com",
+          f"with a test inbox, every household gets it with a dot in a different place ({inbox[0]}, {inbox[18]})")
+
     with tempfile.TemporaryDirectory() as tmp:
         mk.write(tmp, date(2026, 11, 18))
         fake, _, _ = ti.environment()
@@ -225,6 +230,37 @@ def main():
             log=said.append)
     check(out, left(f) == ["listitem", "sourceform"] and "by hand" in said[0] and "run this again" in said[-1].replace("\n", " "),
           "when SharePoint can't be reached: the records are cleared, it says to empty the folders by hand, and it loads nothing")
+    # the same job through Microsoft Graph, for a tenant where the usual sign-in isn't allowed into SharePoint
+    class FakeGraph:
+        def __init__(self):
+            self.deleted = []
+        def request(self, method, url, headers=None, timeout=None):
+            path = url.split("/v1.0/", 1)[1]
+            if method == "GET" and path.startswith("sites/x.sharepoint.com:/sites/S"):
+                return Resp(200, {"id": "site1", "webUrl": "https://x.sharepoint.com/sites/S"})
+            if method == "GET" and path.startswith("sites/site1/drives"):
+                return Resp(200, {"value": [{"id": "dp", "webUrl": "https://x.sharepoint.com/sites/S/clt_property"},
+                                            {"id": "other", "webUrl": "https://x.sharepoint.com/sites/S/Shared%20Documents"}]})
+            if method == "GET" and path.startswith("drives/dp/root:/DEV:/children"):
+                return Resp(200, {"value": [{"id": "a", "name": "12 Pine St - P-00001", "folder": {}},
+                                            {"id": "b", "name": "notes.txt", "file": {}}]})
+            if method == "DELETE" and path.startswith("drives/"):
+                self.deleted.append(path)
+                return Resp(204, {})
+            raise AssertionError(f"unexpected {method} {path}")
+
+    fg = FakeGraph()
+    gs = sfs.GraphSite("https://x.sharepoint.com/sites/S", lambda: "t", session=fg)
+    n = gs.clear("DEV", delete=False, log=lambda s: None)
+    check(out, n == 1 and not fg.deleted, "through Graph: the folders are counted, not touched, without the go-ahead")
+    gs.clear("DEV", delete=True, log=lambda s: None)
+    check(out, fg.deleted == ["drives/dp/items/a"], "through Graph: only folders inside the parent folder of a record library go")
+    f, said = env(), []
+    dv = b.Dataverse("https://fake.crm.dynamics.com", lambda: "t", None, session=f)
+    sfs.run(dv, b.SharePoint("https://x.sharepoint.com/sites/S", lambda: "t", session=NoEntry()), "DEV", delete=True,
+            test_data=False, log=said.append, graph=lambda: gs)
+    check(out, left(f) == ["listitem", "sourceform"] and "Microsoft Graph can" in said[0] and not any("by hand" in s for s in said)
+          and len(fg.deleted) == 2, "when only Graph can reach SharePoint: the folders go that way and nothing is left to do by hand")
     names = {t["name"] for t in TABLES}
     check(out, set(rr.SETUP + rr.PROJECT_SETUP) <= names, "every table the reset keeps is a real table")
 

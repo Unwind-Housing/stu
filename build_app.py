@@ -14,6 +14,7 @@ Usage:
 """
 import argparse
 import os
+import re
 import sys
 import uuid
 import xml.etree.ElementTree as ET
@@ -57,6 +58,7 @@ CLASSID = {
     "multi": "{4AA28AB7-9C13-4F57-A73D-AD894D048B5F}",
     "lookup": "{270BD3DB-D9AF-4782-9025-509E298DEC0A}",
     "subgrid": "{E7A81278-8635-4d9e-8D4D-59480B391C5B}",
+    "page": "{9FDF5F91-88B1-47f4-AD53-C11EFC01A01D}",  # a web resource shown on the form
 }
 TYPE_TO_KIND = {"String": "text", "Memo": "memo", "Integer": "int", "Decimal": "dec", "Double": "double",
                 "Money": "money", "DateTime": "date", "Boolean": "bool", "Picklist": "choice",
@@ -140,6 +142,9 @@ def check_spec():
                         if isinstance(item, dict) and item.get("sharepoint"):
                             if not any(x["name"] == t and x.get("documents") for x in TABLES):
                                 problems.append(f"form {t}: Documents tab needs documents= on the table in schema.py")
+                        elif isinstance(item, dict) and item.get("page"):
+                            if item["webresource"] not in spec.WEB_RESOURCES:
+                                problems.append(f"form {t}: page {item['webresource']} isn't in WEB_RESOURCES")
                         elif isinstance(item, dict):
                             if item["relationship"] not in RELATIONSHIPS:
                                 problems.append(f"form {t}: unknown relationship {item['relationship']}")
@@ -392,6 +397,21 @@ def subgrid_rows(rows, env, t, item, n):
         ET.SubElement(rows, "row")
 
 
+def page_rows(rows, t, item, n):
+    """A page (web resource) shown on the form. It is handed the record's id and table name (?id=...&typename=...)."""
+    cell = ET.SubElement(ET.SubElement(rows, "row"), "cell", id=gid(t, "page", n), showlabel="false",
+                         rowspan=str(item["rows"]), colspan="1", auto="false")
+    label_el(cell, item["label"])
+    name = re.sub(r"\W", "_", item["webresource"].rsplit("/", 1)[-1].rsplit(".", 1)[0])
+    ctl = ET.SubElement(cell, "control", id=f"WebResource_{name}_{n}", classid=CLASSID["page"])
+    params = ET.SubElement(ctl, "parameters")
+    for k, val in [("Url", item["webresource"]), ("PassParameters", "true"), ("Security", "false"), ("Scrolling", "auto"),
+                   ("Border", "false"), ("ShowOnMobileClient", "true")]:
+        ET.SubElement(params, k).text = val
+    for _ in range(item["rows"] - 1):
+        ET.SubElement(rows, "row")
+
+
 def build_tabs(env, t, form, kept=None):
     """kept: cells from the current form for fields this script can't place itself (file columns)."""
     kept = kept or {}
@@ -415,6 +435,9 @@ def build_tabs(env, t, form, kept=None):
                 for item in items:
                     if isinstance(item, dict):
                         n += 1
+                        if item.get("page"):
+                            page_rows(rows, t, item, n)
+                            continue
                         if item.get("sharepoint"):
                             if not env.sharepoint_view_id():
                                 skipped.append("Documents (SharePoint document management isn't set up)")
@@ -707,7 +730,7 @@ def main():
     ap.add_argument("--check", action="store_true", help="Check the app spec. No sign-in.")
     ap.add_argument("--app", choices=sorted(APP_SPECS), default="stu",
                     help="Which app: stu (both sides in one app, the default), core (CLT Stewardship only) "
-                         "or intake (CLT Intake & Selection only)")
+                         "or intake (CLT Applications and Sales only)")
     ap.add_argument("--only", help="Comma list of stages: views, forms, app")
     ap.add_argument("--solution", default=SOLUTION)
     ap.add_argument("--tenant", default="organizations")

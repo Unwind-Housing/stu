@@ -7,6 +7,9 @@ website", on Submit and on Update). Which question feeds which field comes from 
 one hidden question that the link from the Occupancy verification page fills in: the occupancy's record number
 (O-00012). That is what the entry is matched on.
 
+The form is about occupancy only. Insurance is checked on its own, on the Insurance verification page (the insurer's
+card, or proof the household sends), so this flow never starts or changes an Insurance verification.
+
 What the flow does with one entry:
   1. Keeps a copy as a Form submission (form type Annual verification), status Received.
   2. Finds the occupancy by its record number. No match: the submission is marked Needs attention and nothing
@@ -17,20 +20,11 @@ What the flow does with one entry:
        c. none: a new verification is added for the year the entry was submitted, so an answer is never lost.
   4. Saves the answers on the verification with the date it came back, and marks it Received for staff to
      review and close. A verification staff have already closed keeps its status.
-  5. Insurance: starts an Insurance verification for the occupancy (or brings its open one up to date):
-     To review when proof was attached and no help was asked for, Needs contact otherwise, with a link to
-     where the forms platform saved the uploads (when the organization's mapping names that folder). One staff
-     have already closed is left alone.
-  6. A household that asked for contact about its mortgage gets a Homeowner request ("Mortgage help requested",
+  5. A household that asked for contact about its mortgage gets a Homeowner request ("Mortgage help requested",
      type Other), unless one is already open for the occupancy.
-  7. The first file the household attached as proof of insurance is copied onto the Insurance verification
-     (its Insurance document), so staff can view it in Stu. Staff are never sent to the forms platform (not
-     everyone has an account there): when there are more files, or the copy fails, a note on the Insurance
-     verification points to the uploaded documents, and everything else still stands.
-  8. The Form submission is marked Processed, or Needs attention with the error.
+  6. The Form submission is marked Processed, or Needs attention with the error.
 
-Nothing here sets the occupancy's Last occupancy verification or Last insurance verification dates: those move
-when staff close the request and approve the insurance.
+Nothing here sets the occupancy's Last occupancy verification date: it moves when staff close the request.
 """
 import uuid
 
@@ -51,26 +45,6 @@ def text_of(key):
     return f"string(coalesce({m(key)}, ''))"
 
 
-def uploads_link(mapping):
-    """Expression: where the forms platform saved this entry's uploads ('' when the organization hasn't said)."""
-    if not mapping.uploads_folder:
-        return "''"
-    parts = [lit(mapping.uploads_folder.rstrip("/").replace(" ", "%20") + "/")]
-    values = {"formName": m("entry.formName"), "number": m("entry.number")}
-    rest = mapping.uploads_path
-    while rest:
-        i = rest.find("{")
-        j = rest.find("}", i)
-        if i < 0 or j < 0:
-            parts.append(lit(rest.replace(" ", "%20")))
-            break
-        if i:
-            parts.append(lit(rest[:i].replace(" ", "%20")))
-        parts.append(f"encodeUriComponent(string(coalesce({values[rest[i + 1:j]]}, '')))")
-        rest = rest[j + 1:]
-    return "concat(" + ", ".join(parts) + ")"
-
-
 def verification_flow(mapping):
     fi.use_form(mapping)
     ENTRY_ID, SUBMITTED, FIRST, LAST, PROVIDER = fi.ENTRY_ID, fi.SUBMITTED, fi.FIRST, fi.LAST, fi.PROVIDER
@@ -78,16 +52,7 @@ def verification_flow(mapping):
     # the date on the form (the household's own date), else when the entry was submitted; a blank date counts as none
     received_on = f"formatDateTime(if(equals(string(coalesce({m('answers.signedDate')}, '')), ''), {SUBMITTED}, {m('answers.signedDate')}), 'yyyy-MM-dd')"
     year = f"int(formatDateTime({SUBMITTED}, 'yyyy'))"
-    files = f"greater(length(coalesce({m('answers.insuranceFiles')}, json('[]'))), 0)"
-    link = uploads_link(mapping)
-    # the first attached file: where to fetch it (the forms platform puts a link on each file it posts) and its name
-    first_file = f"first(coalesce({m('answers.insuranceFiles')}, json('[]')))"
-    file_link = f"string(coalesce({first_file}?['{mapping.paths.get('entry.fileLink', ('File',))[0]}'], ''))"
-    file_name = f"string(coalesce({first_file}?['{mapping.paths.get('entry.fileName', ('Name',))[0]}'], 'Proof of insurance'))"
     vstatus = {s: choice_value("verificationstatus", s) for s in ("Due", "Sent", "Received", "Issue found")}   # still open
-    review, contact = choice_value("insurancereviewstatus", "To review"), choice_value("insurancereviewstatus", "Needs contact")
-    requested = choice_value("insurancereviewstatus", "Requested")   # staff asked for proof and are waiting
-    issue = choice_value("insurancereviewstatus", "Issue found")     # staff found a problem and are waiting for it to be put right
     received, processed, attention = (choice_value("submissionstatus", s) for s in ("Received", "Processed", "Needs attention"))
 
     # ---- 1. keep a copy
@@ -139,9 +104,6 @@ def verification_flow(mapping):
         "noshorttermrental": ("answers.noShortTermRental", yes("answers.noShortTermRental")),
         "rentalstatus": ("answers.renting", rental),
         "tenantdetails": ("answers.renting", tenant),
-        "insurancecurrent": ("answers.insuranceCurrent", yes("answers.insuranceCurrent")),
-        "insurancereceived": ("answers.insuranceFiles", files),
-        "insurancecontact": ("answers.insuranceContact", yes("answers.insuranceContact")),
         "mortgagecontact": ("answers.mortgageContact", yes("answers.mortgageContact")),
         "signeddate": ("answers.signedDate", received_on),
         "phone": ("answers.phone", text_of("answers.phone")),
@@ -150,18 +112,10 @@ def verification_flow(mapping):
                for col, (key, expr) in asked.items() if mapping.has(key)}
     rental_map = {a: choice_value("rentalstatus", label) for a, label in (mapping.choices("rentalstatus") or {}).items()}
 
-    by_entry, find_open, find_ins = "Find_request_for_this_entry", "Find_open_request", "Find_insurance_verification"
+    by_entry, find_open = "Find_request_for_this_entry", "Find_open_request"
     open_filter = " or ".join(f"{PREFIX}_status eq {v}" for v in vstatus.values())
     current = (f"coalesce(first(outputs('{by_entry}')?['body/value'])?['{PREFIX}_status'], "
                f"first(outputs('{find_open}')?['body/value'])?['{PREFIX}_status'], {vstatus['Received']})")
-    ins_status = f"if(and({files}, not({yes('answers.insuranceContact')})), {review}, {contact})"
-    ins_fields = {
-        f"item/{PREFIX}_status": "@" + ins_status,
-        f"item/{PREFIX}_contactrequested": "@" + yes("answers.insuranceContact"),
-        f"item/{PREFIX}_documentslink": f"@{{if({files}, {link}, '')}}",
-        f"item/{PREFIX}_annualverification@odata.bind": f"/{es('annualverification')}(@{{{VER}}})",
-    }
-    ins_found = f"first(outputs('{find_ins}')?['body/value'])"
     # a household that asked for contact about its mortgage: one Homeowner request, not one per saved entry
     rstatus = [choice_value("requeststatus", s) for s in ("Submitted", "Under review")]
     mortgage = {} if not mapping.has("answers.mortgageContact") else {"If_asked_for_mortgage_help": {
@@ -222,33 +176,7 @@ def verification_flow(mapping):
             f"item/{PREFIX}_receiveddate": "@" + received_on,
             f"item/{PREFIX}_formentryid": f"@{{{ENTRY_ID}}}",
             f"item/{PREFIX}_formlink": f"@{m('entry.adminLink')}",
-            f"item/{PREFIX}_uploadslink": f"@{{if({files}, {link}, '')}}",
             **answers}),
-        find_ins: dv("ListRecords", {
-            "entityName": es("insuranceverification"), "$select": f"{PREFIX}_insuranceverificationid,{PREFIX}_status",
-            "$filter": f"_{PREFIX}_occupancy_value eq @{{{OCC}}} and statecode eq 0 and (_{PREFIX}_annualverification_value eq @{{{VER}}} "
-                       f"or {PREFIX}_status eq {requested} or {PREFIX}_status eq {review} or {PREFIX}_status eq {contact} or {PREFIX}_status eq {issue})",
-            "$top": 1}),
-        "If_insurance_verification_exists": {
-            "type": "If",
-            "expression": {"greater": [f"@length(outputs('{find_ins}')?['body/value'])", 0]},
-            "actions": {"If_it_is_still_open": {
-                "type": "If",
-                "expression": {"or": [{"equals": [f"@{ins_found}?['{PREFIX}_status']", s]} for s in (requested, review, contact, issue)]},
-                "actions": chain({
-                    "Update_insurance_verification": dv("UpdateRecord", {
-                        "entityName": es("insuranceverification"), "recordId": f"@{{{first_id(find_ins, 'insuranceverification')}}}", **ins_fields}),
-                    "Remember_insurance_verification": setvar("InsuranceId", f"@{{{first_id(find_ins, 'insuranceverification')}}}")}),
-                "else": {"actions": {}}}},
-            "else": {"actions": chain({
-                "Create_insurance_verification": dv("CreateRecord", {
-                    "entityName": es("insuranceverification"),
-                    f"item/{PREFIX}_name": f"@{{take(concat({received_on}, ', ', variables('OccupancyName')), 100)}}",
-                    f"item/{PREFIX}_date": "@" + received_on,
-                    f"item/{PREFIX}_occupancy@odata.bind": f"/{es('occupancy')}(@{{{OCC}}})",
-                    **ins_fields}),
-                "Remember_new_insurance_verification": setvar(
-                    "InsuranceId", f"@outputs('Create_insurance_verification')?['body/{PREFIX}_insuranceverificationid']")})}},
         **mortgage,
     })
     process = chain({
@@ -270,39 +198,13 @@ def verification_flow(mapping):
     actions = chain({
         "Init_submission": init("SubmissionId"), "Init_source_form": init("SourceFormId"), "Init_form_project": init("FormProjectId"),
         "Init_occupancy": init("OccupancyId"), "Init_occupancy_name": init("OccupancyName"), "Init_verification": init("VerificationId"),
-        "Init_property": init("PropertyId"), "Init_insurance": init("InsuranceId"),
+        "Init_property": init("PropertyId"),
         "Init_problem": init("Problem"),
         "Keep_a_copy": {"type": "Scope", "actions": log},
         "Process_verification": {"type": "Scope", "actions": process},
     })
-    # The proof of insurance, copied onto the Insurance verification. On its own, after everything else is saved, so a
-    # file that can't be fetched costs nothing but the copy.
-    actions["Copy_insurance_document"] = {
-        "type": "Scope", "runAfter": {"Process_verification": ["Succeeded"]},
-        "actions": {"If_there_is_a_file_to_copy": {
-            "type": "If",
-            "expression": {"and": [{"not": {"equals": ["@variables('InsuranceId')", ""]}}, {"not": {"equals": ["@" + file_link, ""]}}]},
-            "actions": chain({
-                "Get_the_file": {"type": "Http", "inputs": {"method": "GET", "uri": "@{" + file_link + "}"}},
-                "Save_the_file": dv("UpdateEntityFileImageFieldContent", {
-                    "entityName": es("insuranceverification"), "recordId": "@variables('InsuranceId')",
-                    "fileImageFieldName": f"{PREFIX}_document", "item": "@body('Get_the_file')", "x-ms-file-name": "@{" + file_name + "}"}),
-                # only the first file fits on the record: say so when there are more, and where they all are
-                "If_more_than_one_file": {
-                    "type": "If",
-                    "expression": {"greater": [f"@length(coalesce({m('answers.insuranceFiles')}, json('[]')))", 1]},
-                    "actions": {"Note_the_other_files": dv("UpdateRecord", {
-                        "entityName": es("insuranceverification"), "recordId": "@variables('InsuranceId')",
-                        f"item/{PREFIX}_notes": f"@{{concat('The household attached ', string(length(coalesce({m('answers.insuranceFiles')}, json('[]')))), "
-                                                "' files. The first is copied here; all of them are in the uploaded documents.')}"})},
-                    "else": {"actions": {}}}}),
-            "else": {"actions": {}}}}}
-    actions["Note_the_copy_failed"] = dv("UpdateRecord", {
-        "entityName": es("insuranceverification"), "recordId": "@variables('InsuranceId')",
-        f"item/{PREFIX}_notes": "The document attached to the form couldn't be copied here. Open the uploaded documents to see it."})
-    actions["Note_the_copy_failed"]["runAfter"] = {"Copy_insurance_document": ["Failed", "TimedOut"]}
     actions["If_matched"] = {
-        "type": "If", "runAfter": {"Process_verification": ["Succeeded"], "Copy_insurance_document": ["Succeeded", "Failed", "TimedOut"]},
+        "type": "If", "runAfter": {"Process_verification": ["Succeeded"]},
         "expression": {"equals": ["@variables('Problem')", ""]},
         "actions": {"Mark_processed": dv("UpdateRecord", {
             "entityName": es("formsubmission"), "recordId": "@variables('SubmissionId')",
@@ -338,6 +240,6 @@ def verification_flow(mapping):
         "id": str(uuid.uuid5(uuid.NAMESPACE_URL, "clt-stewardship/flows/annual-verification-intake"
                              + (f"/{mapping.slug}" if mapping.slug else ""))),
         "description": "Receives annual verification entries posted by the forms platform, finds the occupancy's request, saves "
-                       "the answers as Received for staff to review, and starts the insurance verification.",
+                       "the answers as Received for staff to review.",
         "definition": definition,
     }

@@ -92,7 +92,7 @@ A few rollup columns can't be scripted yet. Follow `docs/STEP4-columns.md`. Sche
 caffeinate -i python3 build_app.py --url https://yourorg-dev.crm.dynamics.com
 ```
 
-This builds **Stu**: one app with two areas, Stewardship and Intake & Selection. Open it from **make.powerapps.com > Apps > Stu > Play**. A CLT that wants one side only can build `--app core` or `--app intake` instead.
+This builds **Stu**: one app with two areas, Stewardship and Applications and Sales. Open it from **make.powerapps.com > Apps > Stu > Play**. A CLT that wants one side only can build `--app core` or `--app intake` instead.
 
 ## Step 8. Load the reference data and branding
 
@@ -102,7 +102,7 @@ python3 tools/load_counties.py --url https://yourorg-dev.crm.dynamics.com
 python3 tools/apply_branding.py --url https://yourorg-dev.crm.dynamics.com --client clients/yourname/client.json
 ```
 
-Then, in Stu, under **Intake & Selection > Settings**: fill in **Organization eligibility** (your income limit, ratios and other rules) and add **HUD AMI Limits** for your counties (`docs/PLAYBOOK.md`, "Every year: HUD AMI limits").
+Then, in Stu, under **Applications and Sales > Settings**: fill in **Organization eligibility** (your income limit, ratios and other rules) and add **HUD AMI Limits** for your counties (`docs/PLAYBOOK.md`, "Every year: HUD AMI limits").
 
 ## Step 9. Build the flows
 
@@ -128,7 +128,7 @@ To make your mappings:
 
 1. Build your forms. The example mappings in `clients/example/forms/` show every question Stu can use; a question you don't ask is simply left out.
 2. Connect each form to its flow: `docs/PLAYBOOK.md`, "add a screener form" and "connect a full application form". (Step 9 already built the flows, from the example mappings you copied.)
-3. Submit one made-up entry on each form. Stu keeps a copy of every entry it receives, even one it can't read yet: in Stu, **Intake & Selection > Messages > Form submissions**, open the entry and copy its **Payload**. Save it as `clients/yourname/samples/screener.json` (and `full-application.json`).
+3. Submit one made-up entry on each form. Stu keeps a copy of every entry it receives, even one it can't read yet: in Stu, **Applications and Sales > Messages > Form submissions**, open the entry and copy its **Payload**. Save it as `clients/yourname/samples/screener.json` (and `full-application.json`).
 4. Ask Claude: "Write my form mappings from these sample entries." Then check each one:
 
 ```

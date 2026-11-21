@@ -8,9 +8,11 @@
 <script src="pages.js"></script>
 <script src="loan.js"></script>
 <script src="resale.js"></script>
+<script src="pdf.js"></script>
 <style>
   .pricebox { max-width: 560px; }
-  .costline input.note { width: 220px; text-align: left; }
+  .costline .pair { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+  .costline input.whatfor { width: 200px; text-align: left; }
   .costline.total { border-top: 2px solid var(--brand); margin-top: 8px; padding-top: 8px; font-weight: 600; }
   .costline.total b { font-size: 17px; color: var(--brand); font-variant-numeric: tabular-nums; }
   .costline .calc { font-variant-numeric: tabular-nums; font-weight: 600; }
@@ -23,7 +25,7 @@
   <div class="banner">
     <img data-logo alt="">
     <div>
-      <h1>Resale</h1>
+      <h1 id="title">Resale</h1>
       <p>Walks a resale from the homeowner's notice to closing: the price, what the seller owes, the buyer, the contract and the closing.</p>
     </div>
   </div>
@@ -33,27 +35,45 @@
       <select id="sale"><option value="">Loading...</option></select>
     </label>
     <button class="btn primary" id="new" type="button">Start a resale</button>
+    <button class="btn" id="overview" type="button" hidden>&lsaquo; Project overview</button>
     <span id="saleinfo" style="color: var(--muted); align-self: center"></span>
   </div>
 
+  <div id="landing" hidden>
+    <h2>Sales in progress</h2>
+    <div class="tablewrap">
+      <table class="data">
+        <thead><tr><th>Home</th><th>Kind</th><th>Seller</th><th>Buyer</th><th>Do this next</th><th></th></tr></thead>
+        <tbody id="pending"></tbody>
+      </table>
+    </div>
+  </div>
+
   <ol class="track" id="track"></ol>
+  <div id="mailcard" style="margin: 0 0 14px 50px"></div>
   <div class="bottombar"><span class="msg" id="msg"></span></div>
 </div>
 
 <script>
 (function () {
   var P = CLTPage, R = CLTResale, $ = function (id) { return document.getElementById(id); };
-  var fv = P.fv, sets = {}, ch = {}, sales = [], D = null, open = "", starting = false;
+  var fv = P.fv, sets = {}, ch = {}, sales = [], others = [], D = null, org = {}, open = "", starting = false;
+  // Opened from a project's workflow page: ?data=sale=<sale id>&project=<project id>
+  var sent = decodeURIComponent((/[?&]data=([^&]*)/.exec(location.search) || [])[1] || "");
+  var wantSale = ((/(?:^|&)sale=([0-9a-f-]+)/i.exec(sent) || [])[1] || "").toLowerCase(), fromProject = ((/(?:^|&)project=([0-9a-f-]+)/i.exec(sent) || [])[1] || "").toLowerCase();
   // D: the resale on screen { sale, seller, loans, owed, buyers, candidates }
-  var TABLES = ["clt_sale", "clt_occupancy", "clt_property", "clt_household", "clt_loan", "clt_homeownerrequest", "clt_improvementcredit"];
-  var SALE = "clt_saleid,clt_name,clt_status,clt_noticedate,clt_contractdate,clt_closingdate,clt_appraisedvalue,clt_formulapriceatsale,clt_creditsatsale," +
+  var TABLES = ["clt_sale", "clt_occupancy", "clt_property", "clt_household", "clt_loan", "clt_homeownerrequest", "clt_improvementcredit", "clt_salefunding", "clt_saleoffer"];
+  var offered = {};   // the sales with an offer out, waiting for an answer: { sale id: true }
+  var SALE = "clt_saleid,clt_name,clt_status,clt_saletype,clt_noticedate,clt_contractdate,clt_closingdate,clt_appraisedvalue,clt_formulapriceatsale,clt_creditsatsale," +
              "clt_maxpriceatsale,clt_purchaseprice,clt_subsidyrecapture,clt_lender,clt_titlecompany,clt_loanpayoff,clt_othercredits,clt_othercreditsnote,clt_otherdebits," +
-             "clt_otherdebitsnote,_clt_property_value,_clt_selleroccupancy_value,_clt_buyerhousehold_value,_clt_buyeroccupancy_value";
+             "clt_otherdebitsnote,clt_closingcosts,clt_settlementstatement_name,_clt_property_value,_clt_selleroccupancy_value,_clt_buyerhousehold_value,_clt_buyeroccupancy_value";
 
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
   function today() { var d = new Date(); return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2); }
   function money(v) { return v == null || v === "" || isNaN(v) ? "" : "$" + Number(v).toLocaleString("en-US", { maximumFractionDigits: 2 }); }
   function plain(v) { return v == null ? "" : String(v); }
+  // A price as it goes in a box: "$227,160.94". The rules read it back with or without the sign and commas.
+  function dollars(v) { return v == null || v === "" || isNaN(v) ? "" : "$" + Number(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
   function day(v) { return v ? String(v).slice(0, 10) : ""; }
   function val(id) { return $(id) ? $(id).value.trim() : ""; }
   function say(text, err) { $("msg").textContent = text || ""; $("msg").className = "msg" + (err ? " err" : ""); }
@@ -62,26 +82,36 @@
 
   // ---- loading
   function loadSales(pick) {
-    return P.getAll(sets.clt_sale + "?$select=" + SALE + "&$filter=statecode eq 0 and clt_saletype eq " + ch.saletype.Resale + "&$orderby=createdon desc")
-      .then(function (rows) {
+    return P.getAll(sets.clt_sale + "?$select=" + SALE + "&$filter=statecode eq 0&$orderby=createdon desc")
+      .then(function (every) {
+        // this page walks resales; a pending sale of another kind is listed too, and opens as its own record
+        var rows = every.filter(walked);
+        others = every.filter(function (s) { return !walked(s) && s.clt_status === ch.salestatus.Pending; });
         sales = rows;
+        return P.getAll(sets.clt_saleoffer + "?$select=_clt_sale_value&$filter=statecode eq 0 and clt_status eq " + ch.offerstatus[R.OFFERED]).catch(function () { return []; })
+          .then(function (open) { offered = {}; open.forEach(function (o) { offered[o._clt_sale_value] = true; }); return rows; });
+      }).then(function (rows) {
         var pending = rows.filter(function (s) { return s.clt_status === ch.salestatus.Pending; }), rest = rows.filter(function (s) { return s.clt_status !== ch.salestatus.Pending; });
         $("sale").innerHTML = '<option value="">' + (rows.length ? "Choose a resale" : "No resales yet") + "</option>" +
           (pending.length ? '<optgroup label="In progress">' + pending.map(opt).join("") + "</optgroup>" : "") +
           (rest.length ? '<optgroup label="Closed or cancelled">' + rest.map(opt).join("") + "</optgroup>" : "");
-        if (!pick && pending.length === 1) pick = pending[0].clt_saleid;
+        if (pick && !rows.some(function (x) { return x.clt_saleid === pick; })) pick = "";
         $("sale").value = pick || "";
         return pick ? show(pick) : (D = null, render());
       });
   }
+  // This page walks a resale, and the first sale of a home (which has no seller: it starts at the offer).
+  function walked(s) { return s.clt_saletype === ch.saletype[R.RESALE] || s.clt_saletype === ch.saletype[R.FIRST]; }
+  function isFirst(s) { return !!s && s.clt_saletype === ch.saletype[R.FIRST]; }
+  function steps() { return R.stepsFor(isFirst(D && D.sale) ? R.FIRST : R.RESALE); }
   function opt(s) { return '<option value="' + s.clt_saleid + '">' + esc(s.clt_name || fv(s, "_clt_property_value")) + "</option>"; }
 
   function show(id) {
-    starting = false; open = ""; say("");
+    starting = false; open = ""; say(""); $("mailcard").innerHTML = "";
     var sale = sales.filter(function (s) { return s.clt_saleid === id; })[0];
     if (!sale) { D = null; return render(); }
     var occ = sale._clt_selleroccupancy_value;
-    return Promise.all([
+    return homeStatuses().then(function () { return Promise.all([
       occ ? P.get(sets.clt_occupancy + "(" + occ + ")") : null,
       occ ? P.getAll(sets.clt_loan + "?$select=clt_name,clt_startingbalance,clt_interestrate,clt_startdate,clt_enddate,clt_payment,clt_status" +
                      "&$filter=statecode eq 0 and _clt_occupancy_value eq " + occ) : [],
@@ -91,8 +121,11 @@
                      " and clt_approvedcredit gt 0") : [],
       projectFor(sale._clt_property_value),
       occ ? P.getAll(sets.clt_improvementcredit + "?$select=clt_name,clt_originalvalue,clt_valuedate,clt_depreciationyears,_clt_homeownerrequest_value&$filter=statecode eq 0 and _clt_occupancy_value eq " + occ)
-              .catch(function () { return []; }) : []
-    ]).then(function (r) {
+              .catch(function () { return []; }) : [],
+      P.getAll(sets.clt_salefunding + "?$select=clt_salefundingid,clt_type,clt_amount,clt_interestrate,clt_notes&$filter=statecode eq 0 and _clt_sale_value eq " + id + "&$orderby=createdon asc"),
+      P.getAll(sets.clt_saleoffer + "?$select=clt_saleofferid,clt_status,clt_offeredon,clt_responsedue,clt_respondedon,clt_reason,clt_sentto,_clt_household_value" +
+               "&$filter=statecode eq 0 and _clt_sale_value eq " + id)
+    ]); }).then(function (r) {
       var loans = r[1].map(function (l) {
         return { name: l.clt_name, balance: l.clt_startingbalance, rate: l.clt_interestrate, start: l.clt_startdate, end: l.clt_enddate,
                  payment: l.clt_payment, status: fv(l, "clt_status") };
@@ -101,7 +134,11 @@
       D = { sale: sale, seller: r[0] || {}, loans: loans, owed: R.loansOwed(loans, today()), buyers: buyers,
             improved: R.improvements(r[3].map(function (q) { return { id: q.clt_homeownerrequestid, name: q.clt_name, type: fv(q, "clt_requesttype"), status: fv(q, "clt_status"), credit: q.clt_approvedcredit }; }),
                                      r[5].map(function (c) { return { name: c.clt_name, original: c.clt_originalvalue, date: c.clt_valuedate, years: c.clt_depreciationyears, request: c._clt_homeownerrequest_value }; }), today()),
-            groups: R.buyerGroups(r[4].projects, r[4].certified, buyers) };
+            groups: R.buyerGroups(r[4].projects, r[4].certified, buyers), priority: R.priorities(r[4].entries, r[4].bedrooms),
+            entries: r[4].entries, entrySet: r[4].entrySet, home: r[4].home || {}, homeSet: r[4].homeSet, projectSet: r[4].projectSet, offerDays: r[4].offerDays,
+            offers: R.offers(r[7].map(function (o) { return { id: o.clt_saleofferid, household: o._clt_household_value, name: fv(o, "_clt_household_value"), status: fv(o, "clt_status"),
+                                                              offeredOn: day(o.clt_offeredon), due: day(o.clt_responsedue), respondedOn: day(o.clt_respondedon), reason: o.clt_reason || "", sentTo: o.clt_sentto || "" }; })),
+            funding: r[6].map(function (f) { return { id: f.clt_salefundingid, type: fv(f, "clt_type"), amount: f.clt_amount, rate: f.clt_interestrate, notes: f.clt_notes || "" }; }) };
       render();
       // The occupancy's Improvement credits figure follows its list, at today's value (it feeds the maximum resale price).
       var total = R.creditsTotal(r[5].map(function (c) { return { original: c.clt_originalvalue, date: c.clt_valuedate, years: c.clt_depreciationyears }; }), today());
@@ -114,20 +151,40 @@
   // Projects that include this home, and the households each has certified. These tables belong to the Intake and
   // Selection side; where that isn't installed (or can't be read) the page simply has no project to show.
   function projectFor(propertyId) {
-    var none = { projects: [], certified: [] };
+    var none = { projects: [], certified: [], entries: [], bedrooms: null };
     if (!propertyId) return Promise.resolve(none);
-    return Promise.all(["clt_projecthome", "clt_project", "clt_certification"].map(P.entitySet)).then(function (s) {
-      return P.getAll(s[0] + "?$select=_clt_project_value&$filter=statecode eq 0 and _clt_property_value eq " + propertyId).then(function (homes) {
+    return Promise.all(["clt_projecthome", "clt_project", "clt_certification", "clt_selectionround", "clt_selectionentry", "clt_application"].map(P.entitySet)).then(function (s) {
+      return P.getAll(s[0] + "?$select=clt_projecthomeid,clt_status,_clt_project_value,clt_bedrooms,clt_principalinterest,clt_propertytaxes,clt_insurance,clt_hoadues,clt_leasefee,clt_reservefee,clt_estimatedmonthlycost" +
+                      "&$filter=statecode eq 0 and _clt_property_value eq " + propertyId).then(function (homes) {
         var ids = homes.map(function (h) { return h._clt_project_value; }).filter(Boolean);
         if (!ids.length) return none;
         var any = function (col) { return "(" + ids.map(function (i) { return col + " eq " + i; }).join(" or ") + ")"; };
         return Promise.all([
-          P.getAll(s[1] + "?$select=clt_projectid,clt_name,clt_status&$filter=" + any("clt_projectid") + "&$orderby=createdon desc"),
+          P.getAll(s[1] + "?$select=clt_projectid,clt_name,clt_status,clt_offerdays&$filter=" + any("clt_projectid") + "&$orderby=createdon desc"),
           P.getAll(s[2] + "?$select=_clt_household_value,_clt_project_value,clt_status&$filter=statecode eq 0 and " + any("_clt_project_value"))
         ]).then(function (r) {
-          return { projects: r[0].map(function (p) { return { id: p.clt_projectid, name: p.clt_name, status: fv(p, "clt_status") }; }),
-                   certified: r[1].filter(function (c) { return fv(c, "clt_status") === "Certified"; })
-                                  .map(function (c) { return { household: c._clt_household_value, project: c._clt_project_value }; }) };
+          var found = { projects: r[0].map(function (p) { return { id: p.clt_projectid, name: p.clt_name, status: fv(p, "clt_status") }; }),
+                        certified: r[1].filter(function (c) { return fv(c, "clt_status") === "Certified"; })
+                                       .map(function (c) { return { household: c._clt_household_value, project: c._clt_project_value }; }),
+                        entries: [], bedrooms: null, homeSet: s[0], projectSet: s[1] };
+          // the project's ranked lists (its newest round), so the offer step can show each household's priority
+          var pj = R.buyerGroups(found.projects, [], []).project;
+          if (!pj) return found;
+          found.home = homes.filter(function (h) { return h._clt_project_value === pj.id; })[0] || {};
+          found.bedrooms = found.home.clt_bedrooms;
+          found.offerDays = (r[0].filter(function (p) { return p.clt_projectid === pj.id; })[0] || {}).clt_offerdays;
+          return P.getAll(s[3] + "?$select=clt_selectionroundid&$filter=statecode eq 0 and _clt_project_value eq " + pj.id + "&$orderby=createdon desc&$top=1").then(function (rounds) {
+            if (!rounds.length) return found;
+            return Promise.all([
+              P.getAll(s[4] + "?$select=clt_selectionentryid,clt_bedrooms,clt_tier,clt_rank,clt_status,_clt_application_value&$filter=statecode eq 0 and _clt_round_value eq " + rounds[0].clt_selectionroundid),
+              P.getAll(s[5] + "?$select=clt_applicationid,_clt_household_value&$filter=statecode eq 0 and _clt_project_value eq " + pj.id)
+            ]).then(function (e) {
+              var hh = {}; e[1].forEach(function (a) { hh[a.clt_applicationid] = a._clt_household_value; });
+              found.entries = e[0].map(function (x) { return { id: x.clt_selectionentryid, household: hh[x._clt_application_value], bedrooms: x.clt_bedrooms, tier: x.clt_tier, rank: x.clt_rank, status: fv(x, "clt_status") }; });
+              found.entrySet = s[4];
+              return found;
+            });
+          }).catch(function () { return found; });   // the lists can't be read: the buyers still show, without a priority
         });
       });
     }).catch(function () { return none; });
@@ -142,20 +199,32 @@
   }
 
   // ---- what each step shows
-  function saleFacts() {
-    var s = D.sale;
+  function saleFacts(sale) {
+    var s = sale || D.sale;
     return { noticeDate: s.clt_noticedate, maxPrice: s.clt_maxpriceatsale, buyer: s._clt_buyerhousehold_value, contractDate: s.clt_contractdate,
-             price: s.clt_purchaseprice, status: label(ch.salestatus, s.clt_status) };
+             price: s.clt_purchaseprice, status: label(ch.salestatus, s.clt_status), offered: !!offered[s.clt_saleid] };
   }
   function summary(key) {
     var s = D.sale;
     if (key === "start") return esc(fv(s, "_clt_selleroccupancy_value") || fv(s, "_clt_property_value")) + ". Notice given " + (day(s.clt_noticedate) || "(no date)") + ".";
     if (key === "price") return "Maximum resale price " + money(s.clt_maxpriceatsale) + " (formula " + money(s.clt_formulapriceatsale) + ", added value " + money(s.clt_creditsatsale || 0) +
       "). Loans owed " + money(s.clt_loanpayoff || 0) + ".";
-    if (key === "buyer") return "Buyer: " + esc(fv(s, "_clt_buyerhousehold_value")) + ".";
-    if (key === "contract") return "Purchase price " + money(s.clt_purchaseprice) + ", contract dated " + day(s.clt_contractdate) + "." +
-      (s.clt_subsidyrecapture > 0 ? " Subsidy recaptured: " + money(s.clt_subsidyrecapture) + "." : "");
-    return "Closed " + day(s.clt_closingdate) + ". " + esc(fv(s, "_clt_buyeroccupancy_value")) + " is the current occupancy.";
+    var of = D.offers, live = of.open || of.accepted;
+    if (key === "offer") {
+      var past = of.past.map(function (o) { return esc(o.name) + (o.status === R.DECLINED ? " declined" : " didn't answer") + (o.respondedOn ? " " + o.respondedOn : "") + (o.reason ? " (" + esc(o.reason) + ")" : ""); });
+      return (live ? "Offered to <b>" + esc(live.name) + "</b> on " + live.offeredOn + (of.open && live.due ? ", to answer by " + live.due : "") + "." +
+                     (live.sentTo ? " Email sent to " + esc(live.sentTo) + "." : "") +
+                     ' <button class="btn small" type="button" id="o-mail">Email to copy</button> <button class="btn small" type="button" id="o-flyer">Download the flyer</button>'
+                   : "Buyer chosen without an offer on record: " + esc(fv(s, "_clt_buyerhousehold_value")) + ".") +
+        (past.length ? '<br><span class="mutedtext">Before that: ' + past.join("; ") + ".</span>" : "");
+    }
+    if (key === "buyer") return of.accepted ? esc(of.accepted.name) + " accepted" + (of.accepted.respondedOn ? " on " + of.accepted.respondedOn : "") + ". They are the buyer."
+                                            : "Buyer: " + esc(fv(s, "_clt_buyerhousehold_value")) + ".";
+    if (key === "contract") return "Purchase price " + money(s.clt_purchaseprice) + ", purchase and sale agreement signed " + day(s.clt_contractdate) + "." +
+      (s.clt_subsidyrecapture > 0 ? " Subsidy recaptured: " + money(s.clt_subsidyrecapture) + "." : "") +
+      (D.funding.length ? " Funding: " + esc(R.fundingSummary(D.funding)) + "." : "");
+    return "Closed " + day(s.clt_closingdate) + ". " + esc(fv(s, "_clt_buyeroccupancy_value")) + " is the current occupancy." +
+      (s.clt_closingcosts != null ? " Closing costs " + dollars(s.clt_closingcosts) + "." : "");
   }
   function line(text, input, small) { return '<div class="costline"><span>' + text + (small ? " <small>" + small + "</small>" : "") + "</span>" + input + "</div>"; }
   function box(id, value, cls) { return '<input id="' + id + '" type="text" inputmode="decimal" value="' + esc(plain(value)) + '"' + (cls ? ' class="' + cls + '"' : "") + ">"; }
@@ -175,53 +244,107 @@
         '<div class="costsub">What the seller owes and is owed</div>' +
         (D.owed.lines.length ? D.owed.lines.map(function (l) { return line(esc(l.name), '<span class="calc">' + money(l.owed) + "</span>", "owed today if payments are up to date"); }).join("") : "") +
         line("Loans owed to the organization", box("p-loans", first ? (D.owed.lines.length ? D.owed.total : "") : s.clt_loanpayoff), D.owed.lines.length ? "the total above; change it to the real payoff" : "no loans on this occupancy") +
-        line("Other credits to the seller", box("p-credits", s.clt_othercredits)) +
-        line("What for", '<input id="p-creditsnote" class="note" type="text" maxlength="200" value="' + esc(plain(s.clt_othercreditsnote)) + '">') +
-        line("Other debits", box("p-debits", s.clt_otherdebits)) +
-        line("What for", '<input id="p-debitsnote" class="note" type="text" maxlength="200" value="' + esc(plain(s.clt_otherdebitsnote)) + '">') +
+        line("Other credits to the seller", '<span class="pair"><input id="p-creditsnote" class="whatfor" type="text" maxlength="200" placeholder="What for" aria-label="What the other credits are for" value="' +
+             esc(plain(s.clt_othercreditsnote)) + '">' + box("p-credits", s.clt_othercredits) + "</span>") +
+        line("Other debits", '<span class="pair"><input id="p-debitsnote" class="whatfor" type="text" maxlength="200" placeholder="What for" aria-label="What the other debits are for" value="' +
+             esc(plain(s.clt_otherdebitsnote)) + '">' + box("p-debits", s.clt_otherdebits) + "</span>") +
         '<div class="costline total"><span>Estimated to the seller <small id="p-basis"></small></span><b id="p-net"></b></div>' +
         '<div class="costline" id="p-recaprow" hidden><span>Subsidy recaptured by the organization <small>the purchase price above the maximum</small></span><span class="calc" id="p-recap"></span></div>' +
         '<p class="mutedtext" style="margin:6px 0 0">Before the seller\'s own mortgage payoff and closing costs.</p></div>';
     }
     if (key === "buyer") {
-      var g = D.groups, pj = g.project, option = function (h) {
-        return '<option value="' + h.clt_householdid + '"' + (h.clt_householdid === s._clt_buyerhousehold_value ? " selected" : "") + ">" + esc(h.clt_name) +
+      var a = D.offers.open || D.offers.accepted;
+      if (!a) return '<p class="mutedtext">Offer the home to a household first.</p>';
+      return "<p>The home was offered to <b>" + esc(a.name) + "</b> on " + a.offeredOn + (a.due ? ", to answer by " + a.due : "") + ". Record what they said. " +
+        "If they accept, they are the buyer and the next step is the purchase and sale agreement. If they decline, or don't answer, the home is offered to the next household" +
+        (D.groups.project ? ", and they come off " + esc(D.groups.project.name) + "'s lists: a household declines once for the whole project." : ".") + "</p>" +
+        '<div class="fields"><label class="field">Their answer<select id="a-answer"><option value="">Choose</option>' + R.ANSWERS.map(function (x) {
+          return "<option" + (x === a.status ? " selected" : "") + ">" + x + "</option>"; }).join("") + "</select></label>" +
+        '<label class="field">Answered on<input id="a-date" type="date" max="' + today() + '" value="' + (a.respondedOn || today()) + '"></label>' +
+        '<label class="field">Reason or note<input id="a-reason" type="text" maxlength="200" placeholder="Optional. For example: bought another home" value="' + esc(a.reason) + '"></label></div>';
+    }
+    if (key === "offer") {
+      var g = D.groups, pj = g.project, ranked = Object.keys(D.priority).length > 0, out = D.offers.out, cur = D.offers.open;
+      // not one that has said no, nor one already offered or matched to another of the project's homes
+      var mine = R.available(R.byPriority(g.fromProject, D.priority), D.priority, cur ? cur.household : "").filter(function (h) { return !out[h.id]; }),
+          rest = g.others.filter(function (h) { return !out[h.id]; });
+      var inProject = {}; g.fromProject.forEach(function (h) { inProject[h.id] = 1; });
+      var suggest = cur ? cur.household : (R.nextToOffer(mine.length ? mine : rest, out) || {}).id;
+      var option = function (h) {
+        return '<option value="' + h.clt_householdid + '"' + (h.clt_householdid === suggest ? " selected" : "") + ">" + esc(h.clt_name) +
+          (ranked && inProject[h.id] ? ", " + R.priorityText(D.priority[h.id]) : "") +
           (h.clt_certifiedamipercent != null ? ", " + h.clt_certifiedamipercent + "% of AMI" : "") + (h.clt_certificationexpires ? ", certified to " + day(h.clt_certificationexpires) : "") + "</option>";
       };
-      return "<p>Pick a household that is already certified, or start a project to find one (an application round, then a lottery or first come, first served).</p>" +
+      var pastLine = D.offers.past.length ? '<p class="mutedtext">Already offered: ' + D.offers.past.map(function (o) {
+        return esc(o.name) + (o.status === R.DECLINED ? " (declined" : " (no answer") + (o.respondedOn ? " " + o.respondedOn : "") + ")"; }).join(", ") + ". They aren't listed below.</p>" : "";
+      return "<p>Offer the home to one certified household at a time. Stu writes the offer email and makes a one-page flyer for the home to attach. " +
+        "If you have no certified household, start a project to find one (an application round, then a lottery or first come, first served).</p>" + pastLine +
         (pj ? '<div class="msgbox ' + (g.fromProject.length ? "ok" : "warn") + '">Project for this home: <b>' + esc(pj.name) + "</b> (" + esc(pj.status || "no status") + "). " +
-              (g.fromProject.length ? g.fromProject.length + " certified household" + (g.fromProject.length === 1 ? "" : "s") + " so far, listed first below."
+              (g.fromProject.length ? g.fromProject.length + " certified household" + (g.fromProject.length === 1 ? "" : "s") + " so far, listed first below" +
+                                      (ranked ? ", in the order of the project's list, each with its rank and tier." : ".")
                                     : "It hasn't certified a household yet. Come back here when it has.") + "</div>"
             : '<p class="mutedtext">No project includes this home yet.</p>') +
-        '<div class="fields"><label class="field">Buyer<select id="b-household"><option value="">' + (D.buyers.length ? "Choose a certified household" : "No certified households yet") + "</option>" +
-        (g.fromProject.length ? '<optgroup label="Certified through ' + esc(pj.name) + '">' + g.fromProject.map(option).join("") + '</optgroup><optgroup label="Other certified households">' +
-                                g.others.map(option).join("") + "</optgroup>" : D.buyers.map(option).join("")) +
-        "</select><small>Households with status Eligible.</small></label></div>" +
-        '<div class="actions" style="margin-top:10px">' + (pj ? "" : '<button class="btn" type="button" id="b-project" title="Opens New project in a separate window, with this home already selected. ' +
+        '<div class="fields"><label class="field">Offer the home to<select id="b-household"><option value="">' + (D.buyers.length ? "Choose a certified household" : "No certified households yet") + "</option>" +
+        (g.fromProject.length ? '<optgroup label="Certified through ' + esc(pj.name) + '">' + mine.map(option).join("") + '</optgroup><optgroup label="Other certified households">' +
+                                rest.map(option).join("") + "</optgroup>" : rest.map(option).join("")) +
+        "</select><small>Households with status Eligible" + (ranked ? ", in the order of the project's list. The next one to offer is chosen for you." : ".") + "</small></label>" +
+        '<label class="field">Answer by<input id="b-due" type="date" min="' + today() + '" value="' + (cur && cur.due >= today() ? cur.due : R.offerDue(today(), D.offerDays)) + '">' +
+        "<small>" + (D.offerDays >= 1 ? D.offerDays : R.OFFER_DAYS) + " days from today" + (pj ? ", from the project's Days to answer an offer" : "") + ". Change it if you need to.</small></label></div>" +
+        '<div class="actions" style="margin-top:10px">' + (pj ? '<button class="btn" type="button" id="b-workflow" title="The project\'s progress, step by step, with this resale\'s steps around it">Open the project\'s workflow</button>'
+             : '<button class="btn" type="button" id="b-project" title="Opens New project with this home and its maximum resale price already filled in. ' +
           'Keep this home selected there: that is how this resale finds the project.">Start a project for this home</button>') +
         '<button class="btn" type="button" id="b-refresh" title="Look again for a project that includes this home, and for newly certified households">Check again</button></div>' +
-        (pj ? "" : '<p class="mutedtext" style="margin:8px 0 0">A new project opens in a separate window with <b>' + esc(fv(s, "_clt_property_value")) +
-                   "</b> already selected. Keep this home selected there, then come back here and select Check again.</p>");
+        (pj ? "" : '<p class="mutedtext" style="margin:8px 0 0">New project opens with <b>' + esc(fv(s, "_clt_property_value")) +
+                   "</b> already selected. Keep this home selected there. The project's workflow page brings you back here to pick the buyer.</p>");
     }
     if (key === "contract") {
       return '<div class="fields">' +
-        '<label class="field">Purchase price' + box("c-price", s.clt_purchaseprice != null ? s.clt_purchaseprice : s.clt_maxpriceatsale, "mid") + "<small>Maximum resale price: " + money(s.clt_maxpriceatsale) + ". A price above it is allowed: the difference is subsidy recaptured by the organization.</small></label>" +
-        '<label class="field">Contract date<input id="c-date" type="date" max="' + today() + '" value="' + day(s.clt_contractdate) + '"></label>' +
+        '<label class="field">Purchase price' + box("c-price", dollars(s.clt_purchaseprice != null ? s.clt_purchaseprice : s.clt_maxpriceatsale), "mid") + (isFirst(s) ? "<small>The home's sale price" + (s.clt_maxpriceatsale > 0 ? ", " + dollars(s.clt_maxpriceatsale) + " on the project" : "") + ". Change it if the agreement says otherwise.</small></label>"
+                    : "<small>The sale price to the selling homeowner is this amount, up to the maximum resale price of " + dollars(s.clt_maxpriceatsale) + ". A price above the maximum is allowed: the difference is subsidy recaptured by the organization.</small></label>") +
+        '<label class="field">Purchase and sale agreement signed<input id="c-date" type="date" max="' + today() + '" value="' + day(s.clt_contractdate) + '"></label>' +
         '<label class="field">Lender<input id="c-lender" type="text" maxlength="200" value="' + esc(plain(s.clt_lender)) + '"></label>' +
         '<label class="field">Title or escrow company<input id="c-title" type="text" maxlength="200" value="' + esc(plain(s.clt_titlecompany)) + '"></label></div>' +
+        '<div class="fundingbox"><h4>How the purchase price is made up</h4><small>One line for each part: the buyer\'s cash, each loan, each subsidy. A loan needs its interest rate (0 for none). The lines should add up to the purchase price.</small>' +
+        '<table class="funding"><thead><tr><th>Type</th><th>Amount</th><th>Interest rate (%)</th><th>Notes</th><th></th></tr></thead><tbody id="f-rows">' +
+        D.funding.concat(D.funding.length ? [] : [{}]).map(fundingRow).join("") + '</tbody></table>' +
+        '<div class="actions" style="margin-top:8px;align-items:center"><button class="btn small" type="button" id="f-add">Add a line</button><span id="f-total" class="mutedtext"></span></div></div>' +
         "<p>Saving also marks the home <b>Sale pending</b>.</p>";
     }
     if (key === "closing") {
       var buyer = fv(s, "_clt_buyerhousehold_value"), home = fv(s, "_clt_property_value");
-      return '<div class="fields"><label class="field">Closing date<input id="x-date" type="date" max="' + today() + '" value="' + today() + '"></label></div>' +
+      return '<div class="fields"><label class="field">Closing date<input id="x-date" type="date" max="' + today() + '" value="' + today() + '"></label>' +
+        '<label class="field">Closing costs' + box("x-costs", dollars(s.clt_closingcosts), "mid") + "<small>The buyer's closing costs, from the final settlement statement. Leave it blank if you don't have it yet.</small></label>" +
+        '<label class="field">Final settlement statement<input id="x-file" type="file" accept=".pdf,.jpg,.jpeg,.png"><small>A PDF, or a photo. You can also add it after the closing is recorded.</small></label></div>' +
         "<p>Recording the closing does all of this at once:</p><ul>" +
         "<li>Marks the sale <b>Closed</b>.</li>" +
-        "<li>Ends " + esc(fv(s, "_clt_selleroccupancy_value")) + " on the closing date.</li>" +
-        "<li>Starts a new occupancy, <b>" + esc(R.occupancyName(buyer, home)) + "</b>, with the same resale formula and limits, starting from " + money(s.clt_purchaseprice) + " on the closing date.</li>" +
+        (isFirst(s) ? "" : "<li>Ends " + esc(fv(s, "_clt_selleroccupancy_value")) + " on the closing date.</li>") +
+        "<li>Starts a new occupancy, <b>" + esc(R.occupancyName(buyer, home)) + "</b>, " + (isFirst(s) ? "starting from " : "with the same resale formula and limits, starting from ") + money(s.clt_purchaseprice) + " on the closing date.</li>" +
         "<li>Marks " + esc(home) + " <b>Owner-occupied</b> with the new occupancy, " + esc(buyer) + " a <b>Homeowner</b>, and the seller a <b>Past homeowner</b> (unless they own another home here).</li></ul>" +
         "<p>Check the new occupancy's terms afterwards if this buyer's lease differs.</p>";
     }
     return "";
+  }
+
+  // One line of how the purchase price is made up. The interest rate is only for a loan.
+  function fundingRow(f) {
+    f = f || {};
+    return '<tr data-id="' + esc(f.id || "") + '"><td><select data-f="type"><option value="">Choose</option>' + R.FUNDING_TYPES.map(function (t) {
+        return "<option" + (t === f.type ? " selected" : "") + ">" + t + "</option>"; }).join("") + "</select></td>" +
+      '<td class="narrow"><input data-f="amount" type="text" inputmode="decimal" value="' + esc(f.amount == null ? "" : dollars(f.amount)) + '"></td>' +
+      '<td class="narrow"><input data-f="rate" type="text" inputmode="decimal" placeholder="' + (f.type === R.LOAN ? "Required" : "Loans only") + '" value="' + esc(f.rate == null ? "" : f.rate) + '"' + (f.type === R.LOAN ? "" : " disabled") + "></td>" +
+      '<td><input data-f="notes" type="text" maxlength="500" placeholder="Who it is from, or what it is" value="' + esc(f.notes || "") + '"></td>' +
+      '<td class="x"><button class="btn small" type="button" data-f="drop" title="Take this line off">&times;</button></td></tr>';
+  }
+  function readFunding() {
+    return Array.prototype.map.call(document.querySelectorAll("#f-rows tr"), function (tr) {
+      var get = function (k) { var el = tr.querySelector('[data-f="' + k + '"]'); return el ? el.value.trim() : ""; };
+      return { id: tr.dataset.id || "", type: get("type"), amount: get("amount"), rate: get("rate"), notes: get("notes") };
+    });
+  }
+  function fundingTotalLine() {
+    if (!$("f-total")) return;
+    var lines = R.fundingLines(readFunding()), price = n(val("c-price"));
+    $("f-total").textContent = lines.length ? "Total " + dollars(R.fundingTotal(readFunding())) + (price > 0 ? " of " + dollars(price) : "") : "";
   }
 
   function startForm() {
@@ -238,26 +361,51 @@
       }).join("");
   }
 
+  // Nothing chosen: every sale in progress, with the step each is waiting on.
+  function landing() {
+    var rows = R.pending(sales.filter(function (s) { return s.clt_status === ch.salestatus.Pending; }).map(function (s) {
+      var f = saleFacts(s); f.id = s.clt_saleid; f.resale = true; f.created = s.createdon || ""; return f;
+    }).concat(others.map(function (s) { return { id: s.clt_saleid, resale: false }; })));
+    var by = {}; sales.concat(others).forEach(function (s) { by[s.clt_saleid] = s; });
+    $("pending").innerHTML = rows.length ? rows.map(function (r) {
+      var s = by[r.id];
+      return "<tr><td>" + esc(fv(s, "_clt_property_value") || s.clt_name) + "</td><td>" + esc(label(ch.saletype, s.clt_saletype)) + "</td><td>" + esc(fv(s, "_clt_selleroccupancy_value")) + "</td>" +
+        "<td>" + (esc(fv(s, "_clt_buyerhousehold_value")) || '<span class="mutedtext">not chosen yet</span>') + "</td><td>" + esc(r.next) + "</td>" +
+        '<td><button class="btn small primary" type="button" ' + (r.resale ? 'data-pick="' : 'data-record="') + r.id + '">' + (r.resale ? "Continue" : "Open the sale") + "</button></td></tr>";
+    }).join("") : '<tr><td colspan="6">No sales are in progress. Select Start a resale when a homeowner gives notice.</td></tr>';
+  }
   function render() {
+    $("landing").hidden = starting || !!(D && D.sale);
+    $("title").textContent = D && D.sale && isFirst(D.sale) ? "Sale of a home" : "Resale";
+    $("overview").hidden = !(D && D.sale && (fromProject || (D.groups && D.groups.project)));
     if (starting) { $("saleinfo").textContent = ""; $("track").innerHTML = startForm(); return; }
-    if (!D || !D.sale) { $("saleinfo").textContent = ""; $("track").innerHTML = ""; return; }
+    if (!D || !D.sale) { $("saleinfo").textContent = ""; $("track").innerHTML = ""; return landing(); }
     var pr = R.progress(saleFacts()), locked = pr.closed || pr.cancelled;
     $("saleinfo").textContent = pr.cancelled ? "Cancelled" : pr.closed ? "Closed" : "In progress";
     var showing = locked ? "" : open || pr.next;
-    $("track").innerHTML = R.STEPS.map(function (st, i) {
+    $("track").innerHTML = steps().map(function (st, i) {
       var done = pr.done[st.key], isOpen = st.key === showing && st.key !== "start", waiting = !done && st.key !== pr.next;
       return '<li class="step ' + (done ? "done" : st.key === pr.next && !locked ? "next" : "waiting") + '"><div class="stepnum">' + (i + 1) + '</div><div class="stepbody">' +
         '<div class="stephead"><h3>' + st.title + "</h3>" +
         (done ? '<span class="pill ok">Done</span>' : st.key === pr.next && !locked ? '<span class="pill warn">Do this next</span>' : "") +
-        (done && !locked && !isOpen && st.key !== "start" && st.key !== "closing" ? '<button class="btn small" type="button" data-change="' + st.key + '">Change</button>' : "") + "</div>" +
+        (done && !locked && !isOpen && st.key !== "start" && st.key !== "closing" && !(st.key === "offer" && pr.done.buyer) ? '<button class="btn small" type="button" data-change="' + st.key + '">Change</button>' : "") + "</div>" +
         (done && !isOpen ? '<p class="summaryline">' + summary(st.key) + "</p>" : "") +
         (isOpen && !waiting ? '<div class="stepmore">' + form(st.key) + '<div id="errs"></div><div class="actions"><button class="btn primary" type="button" data-save="' + st.key + '">' +
           (st.key === "closing" ? "Record the closing" : "Save") + "</button>" + (done ? '<button class="btn" type="button" data-change="">Cancel</button>' : "") + "</div></div>" : "") +
         "</div></li>";
-    }).join("") + (locked ? "" : '<li style="list-style:none;margin:6px 0 0 50px"><button class="btn small" type="button" id="cancelsale">Cancel this resale</button></li>');
+    }).join("") + (locked ? "" : '<li style="list-style:none;margin:6px 0 0 50px"><button class="btn small" type="button" id="cancelsale">Cancel this ' + (isFirst(D.sale) ? "sale" : "resale") + "</button></li>");
     if (showing === "price") figures();
+    if (showing === "contract") fundingTotalLine();
+    if (pr.closed) {   // the final statement often arrives after the closing: it can be added, replaced and viewed here
+      var name = D.sale.clt_settlementstatement_name;
+      $("track").insertAdjacentHTML("beforeend", '<li style="list-style:none;margin:10px 0 0 50px"><div class="reqline"><span class="mutedtext">Final settlement statement</span>' +
+        (name ? "<b>" + esc(name) + '</b><button class="btn small" type="button" id="viewstatement">View</button>' : '<span class="mutedtext">none yet</span>') +
+        "<label>" + (name ? "Replace it" : "Add it") + ' (PDF, or a photo) <input id="statementfile" type="file" accept=".pdf,.jpg,.jpeg,.png"></label>' +
+        '<button class="btn small" type="button" id="addstatement">Save the file</button><span class="errtext" id="statementerr"></span></div></li>');
+    }
     if (pr.closed && D.sale._clt_buyeroccupancy_value) {
-      $("track").insertAdjacentHTML("beforeend", '<li style="list-style:none;margin:6px 0 0 50px"><button class="btn" type="button" id="openocc">Open the new occupancy</button></li>');
+      $("track").insertAdjacentHTML("beforeend", '<li style="list-style:none;margin:6px 0 0 50px"><div class="actions"><button class="btn primary" type="button" id="aftersale">After the sale: what to do next</button>' +
+        '<button class="btn" type="button" id="openocc">Open the new occupancy</button></div></li>');
     }
   }
 
@@ -301,38 +449,83 @@
         clt_subsidyrecapture: s.clt_purchaseprice != null ? f.recapture : null, clt_formulapriceatsale: n(input.formula), clt_creditsatsale: n(input.addedValue) || 0, clt_maxpriceatsale: f.maxPrice, clt_appraisedvalue: n(input.appraised),
         clt_loanpayoff: n(input.loans) || 0, clt_othercredits: n(input.credits), clt_othercreditsnote: input.creditsNote || null,
         clt_otherdebits: n(input.debits), clt_otherdebitsnote: input.debitsNote || null } }];
-    } else if (key === "buyer") {
+    } else if (key === "offer") {
       var h = D.buyers.filter(function (b) { return b.clt_householdid === val("b-household"); })[0];
-      input = { household: val("b-household"), sameAsSeller: !!h && h.clt_householdid === D.seller._clt_household_value, certificationExpires: h && h.clt_certificationexpires };
-      if (problems(R.check("buyer", input, today()))) return;
-      var warn = R.warnings("buyer", input, today());
-      if (warn.length && $("errs").dataset.warned !== input.household) { problems(warn.concat("Save again to use this household anyway."), "warn"); $("errs").dataset.warned = input.household; return; }
-      ops = [{ method: "PATCH", path: sets.clt_sale + "(" + id + ")", body: { "clt_buyerhousehold@odata.bind": bind("clt_household", input.household) } }];
+      var first = R.ahead(val("b-household"), R.byPriority(D.groups.fromProject, D.priority).filter(function (b) { return !D.offers.out[b.id]; }), D.priority);
+      input = { household: val("b-household"), due: val("b-due"), sameAsSeller: !!h && h.clt_householdid === D.seller._clt_household_value, certificationExpires: h && h.clt_certificationexpires,
+                ahead: first ? first.clt_name + " (" + R.priorityText(D.priority[first.id]) + ")" : "" };
+      if (problems(R.check("offer", input, today()))) return;
+      var warn = R.warnings("offer", input, today());
+      if (warn.length && $("errs").dataset.warned !== input.household) { problems(warn.concat("Save again to offer it to this household anyway."), "warn"); $("errs").dataset.warned = input.household; return; }
+      var was = D.offers.open, offer = { clt_name: R.offerName(h.clt_name, fv(s, "_clt_property_value")), clt_offeredon: today(), clt_responsedue: input.due, clt_status: ch.offerstatus[R.OFFERED] };
+      offer["clt_sale@odata.bind"] = bind("clt_sale", id); offer["clt_household@odata.bind"] = bind("clt_household", input.household);
+      // the same household with a new date: the offer is kept and its date changed. Another household: the old offer is withdrawn.
+      if (was && was.household === input.household) ops = [{ method: "PATCH", path: sets.clt_saleoffer + "(" + was.id + ")", body: { clt_responsedue: input.due } }];
+      else ops = [{ method: "POST", path: sets.clt_saleoffer, body: offer }].concat(was ? [{ method: "PATCH", path: sets.clt_saleoffer + "(" + was.id + ")", body: { clt_status: ch.offerstatus[R.WITHDRAWN], clt_respondedon: today() } }] : [])
+        .concat(entryOps(input.household, R.OFFERED, "")).concat(was ? entryOps(was.household, R.WITHDRAWN, "") : []);
+      return busy(P.batch(ops).then(function () { say("Offer recorded. Send the email with the flyer attached."); return loadSales(id); }).then(function () { return showMail(); }));
+    } else if (key === "buyer") {
+      var a = D.offers.open || D.offers.accepted;
+      input = { answer: val("a-answer"), date: val("a-date"), reason: val("a-reason") };
+      if (!a || problems(R.check("answer", input, today()))) return;
+      ops = [{ method: "PATCH", path: sets.clt_saleoffer + "(" + a.id + ")", body: { clt_status: ch.offerstatus[input.answer], clt_respondedon: input.date, clt_reason: input.reason || null } }]
+        .concat(entryOps(a.household, input.answer, input.reason));
+      // yes: they are the buyer. No, after a yes was recorded by mistake: the sale has no buyer again.
+      if (input.answer === R.ACCEPTED) ops.push({ method: "PATCH", path: sets.clt_sale + "(" + id + ")", body: { "clt_buyerhousehold@odata.bind": bind("clt_household", a.household) } });
+      else if (s._clt_buyerhousehold_value) ops.push({ method: "DELETE", path: sets.clt_sale + "(" + id + ")/clt_buyerhousehold/$ref" });
+      ops = ops.concat(homeOps(input.answer === R.ACCEPTED ? "Matched" : "Available"));
+      var left = R.byPriority(D.groups.fromProject, D.priority).concat(D.groups.others).filter(function (b) { return b.id !== a.household; }), gone = {};
+      Object.keys(D.offers.out).forEach(function (k) { gone[k] = true; }); gone[a.household] = true;
+      var next = input.answer === R.ACCEPTED ? null : R.nextToOffer(left, gone);
+      $("mailcard").innerHTML = "";
+      return busy(P.batch(ops).then(function () {
+        say(input.answer === R.ACCEPTED ? a.name + " accepted. Next: the purchase and sale agreement."
+            : a.name + (input.answer === R.DECLINED ? " declined." : " didn't answer.") + (next ? " Next to offer: " + next.clt_name + "." : " No other certified household is waiting: find more buyers before offering again."));
+        return loadSales(id);
+      }));
     } else if (key === "contract") {
-      input = { price: val("c-price"), maxPrice: s.clt_maxpriceatsale, contractDate: val("c-date") };
-      if (problems(R.check("contract", input, today()))) return;
-      var cw = R.warnings("contract", input, today());
-      if (cw.length && $("errs").dataset.warned !== input.price) { problems(cw.concat("Save again to keep this price."), "warn"); $("errs").dataset.warned = input.price; return; }
+      input = { price: val("c-price"), maxPrice: isFirst(s) ? null : s.clt_maxpriceatsale, contractDate: val("c-date") };
+      var typed = readFunding(), lines = R.fundingLines(typed);
+      if (problems(R.check("contract", input, today()).concat(R.fundingProblems(typed)))) return;
+      var cw = R.warnings("contract", input, today()).concat(R.fundingWarnings(typed, input.price)), asked = input.price + "|" + R.fundingTotal(typed);
+      if (cw.length && $("errs").dataset.warned !== asked) { problems(cw.concat("Save again to keep it this way."), "warn"); $("errs").dataset.warned = asked; return; }
       ops = [{ method: "PATCH", path: sets.clt_sale + "(" + id + ")", body: { clt_purchaseprice: n(input.price), clt_contractdate: input.contractDate,
-               clt_subsidyrecapture: R.figures({ formula: s.clt_maxpriceatsale, price: input.price }).recapture,
+               clt_subsidyrecapture: isFirst(s) ? null : R.figures({ formula: s.clt_maxpriceatsale, price: input.price }).recapture,
                clt_lender: val("c-lender") || null, clt_titlecompany: val("c-title") || null } },
              { method: "PATCH", path: sets.clt_property + "(" + s._clt_property_value + ")", body: { clt_status: ch.propertystatus["Sale pending"] } }];
+      // the funding lines: ones taken off are deleted, the rest saved, all in the same change set as the price
+      var kept = {}; lines.forEach(function (l) { if (l.id) kept[l.id] = 1; });
+      D.funding.forEach(function (f) { if (!kept[f.id]) ops.push({ method: "DELETE", path: sets.clt_salefunding + "(" + f.id + ")" }); });
+      lines.forEach(function (l) {
+        var body = { clt_name: R.fundingName(l), clt_type: ch.fundingtype[l.type], clt_amount: l.amount, clt_interestrate: l.rate, clt_notes: l.notes || null };
+        if (l.id) ops.push({ method: "PATCH", path: sets.clt_salefunding + "(" + l.id + ")", body: body });
+        else { body["clt_sale@odata.bind"] = bind("clt_sale", id); ops.push({ method: "POST", path: sets.clt_salefunding, body: body }); }
+      });
     } else if (key === "closing") {
-      input = { closingDate: val("x-date"), contractDate: s.clt_contractdate };
-      if (problems(R.check("closing", input, today()))) return;
+      input = { closingDate: val("x-date"), contractDate: s.clt_contractdate, closingCosts: val("x-costs") };
+      var statement = $("x-file") && $("x-file").files && $("x-file").files[0] ? $("x-file").files[0] : null, sp = R.statementProblem(statement);
+      if (problems(R.check("closing", input, today()).concat(sp ? [sp] : []))) return;
       var sellerHh = D.seller._clt_household_value;
-      return busy(P.confirm("Record the closing?", "This ends the seller's occupancy and starts the buyer's. It can't be undone from this page.").then(function (yes) {
+      return busy(P.confirm("Record the closing?", (isFirst(s) ? "This starts the buyer's occupancy." : "This ends the seller's occupancy and starts the buyer's.") + " It can't be undone from this page.").then(function (yes) {
         if (!yes) { render(); return; }
         // does the seller own another home in the program?
         return (sellerHh ? P.getAll(sets.clt_occupancy + "?$select=clt_occupancyid&$filter=statecode eq 0 and clt_status eq " + ch.occupancystatus.Current +
                                     " and _clt_household_value eq " + sellerHh + " and clt_occupancyid ne " + D.seller.clt_occupancyid) : Promise.resolve([]))
+          .then(function (others) { return (statement ? P.upload(sets.clt_sale + "(" + id + ")/clt_settlementstatement", statement) : Promise.resolve()).then(function () { return others; }); })
+          .then(function (others) { return soldOps().then(function (sold) { others.sold = sold; return others; }); })
           .then(function (others) {
+            // the closing's own changes come first: the new occupancy is referred to by its place in the list
             return P.batch(R.closing({ saleId: id, closingDate: input.closingDate, price: s.clt_purchaseprice, appraised: s.clt_appraisedvalue, seller: D.seller,
               sellerHouseholdId: sellerHh, sellerHasOtherHome: others.length > 0, buyerHouseholdId: s._clt_buyerhousehold_value,
               buyerHouseholdName: fv(s, "_clt_buyerhousehold_value"), propertyId: s._clt_property_value, propertyName: fv(s, "_clt_property_value"), sets: sets,
               values: { current: ch.occupancystatus.Current, past: ch.occupancystatus.Past, owner: ch.occupancyrole.Owner, closed: ch.salestatus.Closed,
-                        homeowner: ch.householdstatus.Homeowner, pastHomeowner: ch.householdstatus["Past homeowner"], ownerOccupied: ch.propertystatus["Owner-occupied"] } }));
-          }).then(function () { say("Closing recorded."); return loadSales(id); });
+                        homeowner: ch.householdstatus.Homeowner, pastHomeowner: ch.householdstatus["Past homeowner"], ownerOccupied: ch.propertystatus["Owner-occupied"] } })
+              .concat([{ method: "PATCH", path: sets.clt_sale + "(" + id + ")", body: { clt_closingcosts: n(input.closingCosts) } }]).concat(others.sold));
+          }).then(function () {
+            // straight on to the work that follows a closing
+            say("Closing recorded.");
+            return P.go({ pageType: "webresource", webresourceName: "clt_/pages/aftersale.html", data: "sale=" + id });
+          });
       }));
     }
     return busy(P.batch(ops).then(function () { say("Saved."); return loadSales(id); }));
@@ -351,8 +544,26 @@
     else if (t.dataset.change !== undefined) { open = t.dataset.change; render(); }
     else if (t.id === "s-cancel") { starting = false; D = null; $("sale").value = ""; render(); }
     else if (t.id === "b-project") newProject();
+    else if (t.id === "o-mail") showMail();
+    else if (t.id === "o-flyer") saveFlyer();
+    else if (t.id === "b-workflow") P.go({ pageType: "webresource", webresourceName: "clt_/pages/project.html", data: D.groups.project.id });
     else if (t.id === "b-refresh") show(D.sale.clt_saleid).then(function () { say("Checked just now."); });
     else if (t.id === "openocc") P.openRecord("clt_occupancy", D.sale._clt_buyeroccupancy_value);
+    else if (t.id === "aftersale") P.go({ pageType: "webresource", webresourceName: "clt_/pages/aftersale.html", data: "sale=" + D.sale.clt_saleid });
+    else if (t.id === "f-add") { $("f-rows").insertAdjacentHTML("beforeend", fundingRow({})); }
+    else if (t.dataset.f === "drop") { t.closest("tr").remove(); fundingTotalLine(); }
+    else if (t.id === "viewstatement") {
+      var nm = D.sale.clt_settlementstatement_name || "", type = /\.pdf$/i.test(nm) ? "application/pdf" : /\.png$/i.test(nm) ? "image/png" : "image/jpeg";
+      P.download(sets.clt_sale + "(" + D.sale.clt_saleid + ")/clt_settlementstatement").then(function (blob) { window.open(URL.createObjectURL(new Blob([blob], { type: type })), "_blank"); })
+        .catch(function (err) { $("statementerr").textContent = "Couldn't open the file: " + err.message; });
+    }
+    else if (t.id === "addstatement") {
+      var file = $("statementfile").files && $("statementfile").files[0], bad = file ? R.statementProblem(file) : "Choose the file first.";
+      if (bad) { $("statementerr").textContent = bad; return; }
+      t.disabled = true;
+      P.upload(sets.clt_sale + "(" + D.sale.clt_saleid + ")/clt_settlementstatement", file).then(function () { say("Settlement statement saved."); return loadSales(D.sale.clt_saleid); })
+        .catch(function (err) { t.disabled = false; $("statementerr").textContent = "Couldn't save the file: " + err.message; });
+    }
     else if (t.id === "cancelsale") {
       P.confirm("Cancel this resale?", "The sale is marked Cancelled. Nothing else changes.").then(function (yes) {
         if (!yes) return;
@@ -361,27 +572,173 @@
       }).catch(function (e) { say("Couldn't cancel: " + e.message, true); });
     }
   });
-  // New project opens in its own window, already set to a resale of this home, so the resale stays on screen here.
-  function newProject() {
-    var data = "property=" + D.sale._clt_property_value, app = "";
-    try { app = (/[?&]appid=([0-9a-f-]+)/i.exec(window.top.location.search) || [])[1] || ""; } catch (e) { app = ""; }
-    var url = location.origin + "/main.aspx?" + (app ? "appid=" + app + "&" : "") + "pagetype=webresource&webresourceName=" +
-              encodeURIComponent("clt_/pages/newproject.html") + "&data=" + encodeURIComponent(data);
-    if (!window.open(url, "_blank")) P.go({ pageType: "webresource", webresourceName: "clt_/pages/newproject.html", data: data });
+  // ---- the project's home follows its sale: Matched once a household accepts, Available again if they back out, Sold at closing
+  var homeChoices = null;
+  function homeStatuses() {
+    if (homeChoices) return Promise.resolve(homeChoices);
+    return Promise.all([P.choice("clt_projecthomestatus"), P.choice("clt_projectstatus")]).then(function (r) { return (homeChoices = { home: r[0], project: r[1] }); })
+      .catch(function () { return (homeChoices = { home: {}, project: {} }); });
+  }
+  function homeOps(status) {
+    var h = D.home || {};
+    if (!h.clt_projecthomeid || !D.homeSet || !homeChoices || homeChoices.home[status] == null) return [];
+    return [{ method: "PATCH", path: D.homeSet + "(" + h.clt_projecthomeid + ")", body: { clt_status: homeChoices.home[status] } }];
+  }
+  // At closing: the home is Sold, and when it was the project's last home to sell, the project is closed.
+  function soldOps() {
+    var h = D.home || {}, pj = D.groups && D.groups.project;
+    if (!h.clt_projecthomeid || !D.homeSet || !pj) return Promise.resolve([]);
+    return homeStatuses().then(function (c) {
+      if (c.home.Sold == null) return [];
+      return P.getAll(D.homeSet + "?$select=clt_projecthomeid,clt_status&$filter=statecode eq 0 and _clt_project_value eq " + pj.id).then(function (homes) {
+        var ops = homeOps("Sold"), left = homes.filter(function (x) { return x.clt_projecthomeid !== h.clt_projecthomeid && x.clt_status !== c.home.Sold; }).length;
+        if (!left && c.project.Closed != null && D.projectSet) ops.push({ method: "PATCH", path: D.projectSet + "(" + pj.id + ")", body: { clt_status: c.project.Closed } });
+        return ops;
+      });
+    }).catch(function () { return []; });
   }
 
-  $("track").addEventListener("input", function (e) { if (/^p-/.test(e.target.id)) figures(); });
+  // ---- the offer: its place on the project's lists, its email and its flyer
+  // A household's entries on the project's lists follow its offer: Offered, Accepted, Declined, Unresponsive (or back to Approved when withdrawn).
+  function entryOps(household, offerStatus, reason) {
+    var to = R.entryStatus(offerStatus), value = ch.entrystatus[to];
+    if (value == null || !D.groups.project) return [];
+    return (D.entries || []).filter(function (e) { return e.household === household && e.id; }).map(function (e) {
+      return { method: "PATCH", path: D.entrySet + "(" + e.id + ")", body: { clt_status: value, clt_statusdate: today(), clt_statusreason: reason || (to === "Offered" ? "Offered " + fv(D.sale, "_clt_property_value") : null) } };
+    });
+  }
+  // The household's email address and the primary applicant's first name, and the organization's wording for the offer (if it has one).
+  function offerFacts(o) {
+    var first = P.entitySet("clt_householdmember").then(function (es) {
+      return P.choice("clt_applicantrole").then(function (role) {
+        return P.getAll(es + "?$select=clt_firstname&$filter=statecode eq 0 and _clt_household_value eq " + o.household + " and clt_applicantrole eq " + role["Primary applicant"]); });
+    }).then(function (m) { return (m.filter(function (x) { return x.clt_firstname; })[0] || {}).clt_firstname || ""; }).catch(function () { return ""; });
+    var template = Promise.all([P.entitySet("clt_messagetemplate"), P.choice("clt_noticetype")]).then(function (m) {
+      if (!m[0] || m[1].Offer == null) return null;
+      return P.getAll(m[0] + "?$select=clt_subject,clt_body&$filter=statecode eq 0 and clt_noticetype eq " + m[1].Offer + "&$orderby=createdon asc")
+        .then(function (t) { return t.length ? { subject: t[0].clt_subject || "", body: t[0].clt_body || "" } : null; });
+    }).catch(function () { return null; });
+    return Promise.all([P.get(sets.clt_household + "(" + o.household + ")?$select=clt_name,clt_primaryemail"), first, template]);
+  }
+  function showMail() {
+    var o = D.offers.open || D.offers.accepted;
+    if (!o) return;
+    return offerFacts(o).then(function (r) {
+      var m = R.offerEmail({ email: r[0].clt_primaryemail || "", firstName: r[1], household: r[0].clt_name, home: fv(D.sale, "_clt_property_value"), price: D.sale.clt_maxpriceatsale,
+                             due: o.due, organization: org.OrgName || "" }, r[2]);
+      var mail = "mailto:" + encodeURIComponent(m.to) + "?subject=" + encodeURIComponent(m.subject) + "&body=" + encodeURIComponent(m.body);
+      $("mailcard").innerHTML = '<div class="emailcard"><div class="emailhead"><b>The offer to ' + esc(o.name) + "</b></div>" +
+        [["To", m.to || "(no email address on the household)", "to"], ["Subject", m.subject, "subject"]].map(function (x) {
+          return '<div class="emailrow"><span class="mutedtext">' + x[0] + '</span><span class="emailvalue">' + esc(x[1]) + '</span><button class="btn small" type="button" data-copy="' + x[2] + '">Copy</button></div>'; }).join("") +
+        "<pre>" + esc(m.body) + "</pre>" +
+        '<div class="actions emailactions"><button class="btn small" type="button" data-copy="body">Copy the message</button>' +
+        '<a class="btn small" href="' + esc(mail) + '">Open in mail</a><button class="btn small" type="button" id="m-flyer">Download the flyer to attach</button></div>' +
+        '<p class="note">Stu does not send email itself. Copy this into your mail program, attach the flyer, and send it.</p></div>' +
+        '<div class="actions" style="margin-top:10px">' + (m.to ? '<button class="btn primary" type="button" id="m-sent">Sent</button>' : "") + '<button class="btn" type="button" id="m-close">Close</button></div>';
+      $("mailcard").dataset.to = m.to; $("mailcard").dataset.subject = m.subject; $("mailcard").dataset.body = m.body;
+      if ($("mailcard").scrollIntoView) $("mailcard").scrollIntoView();
+    }).catch(function (e) { say("Couldn't prepare the email: " + e.message, true); });
+  }
+  // The home's photo for the flyer, as a JPEG the PDF maker can place: { jpeg, width, height }, or null when the home
+  // has no photo or it can't be read (the flyer is made without one).
+  function homePhoto(propertyId) {
+    return P.entitySet("clt_propertyphoto").then(function (es) {
+      return P.getAll(es + "?$select=clt_propertyphotoid,clt_flyer,createdon&$filter=statecode eq 0 and _clt_property_value eq " + propertyId).then(function (rows) {
+        var pick = R.flyerPhoto(rows.map(function (x) { return { id: x.clt_propertyphotoid, flyer: !!x.clt_flyer, created: x.createdon }; }));
+        return pick ? P.download(es + "(" + pick.id + ")/clt_photo") : null;
+      });
+    }).then(function (blob) {
+      if (!blob) return null;
+      return new Promise(function (ok) {
+        var src = URL.createObjectURL(new Blob([blob], { type: "image/jpeg" })), img = new Image();
+        img.onload = function () {
+          // drawn again at a size that suits a page, as a plain color JPEG
+          var k = Math.min(1, 1200 / Math.max(img.naturalWidth, img.naturalHeight, 1)), c = document.createElement("canvas");
+          c.width = Math.max(1, Math.round(img.naturalWidth * k)); c.height = Math.max(1, Math.round(img.naturalHeight * k));
+          var g = c.getContext("2d"); g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0, c.width, c.height);
+          URL.revokeObjectURL(src);
+          var data = c.toDataURL("image/jpeg", 0.85).split(",")[1];
+          ok(data ? { jpeg: atob(data), width: c.width, height: c.height } : null);
+        };
+        img.onerror = function () { URL.revokeObjectURL(src); ok(null); };
+        img.src = src;
+      });
+    }).catch(function () { return null; });
+  }
+  // The one-page flyer for the home, saved to the downloads folder to attach to the offer.
+  function saveFlyer() {
+    var o = D.offers.open || D.offers.accepted, s = D.sale, hm = D.home || {};
+    if (typeof CLTPdf === "undefined") { say("This copy of Stu can't make the flyer (the PDF maker isn't installed).", true); return; }
+    return Promise.all([P.get(sets.clt_property + "(" + s._clt_property_value + ")?$select=clt_name,clt_street,clt_unit,clt_city,clt_zip,clt_bedrooms,clt_bathrooms,clt_squarefeet,clt_yearbuilt"),
+                        homePhoto(s._clt_property_value)]).then(function (r) {
+      var p = r[0], photo = r[1];
+      var address = [[p.clt_street, p.clt_unit].filter(Boolean).join(" "), p.clt_city, p.clt_zip].filter(Boolean).join(", ");
+      var doc = R.flyer({ home: p.clt_name || fv(s, "_clt_property_value"), address: address, bedrooms: p.clt_bedrooms, bathrooms: p.clt_bathrooms, squareFeet: p.clt_squarefeet,
+                          yearBuilt: p.clt_yearbuilt, price: s.clt_maxpriceatsale, due: o ? o.due : "", organization: org.OrgName || "", photo: photo,
+                          monthly: { principalInterest: hm.clt_principalinterest, taxes: hm.clt_propertytaxes, insurance: hm.clt_insurance, hoa: hm.clt_hoadues, leaseFee: hm.clt_leasefee,
+                                     reserveFee: hm.clt_reservefee, total: hm.clt_estimatedmonthlycost } });
+      var file = (p.clt_name || "home").replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "") + "-flyer.pdf";
+      if (CLTPdf.save(file, CLTPdf.make(doc))) say("Saved " + file + " to your downloads" + (photo ? "" : " (no photo: add one on the property record, under Photos)") + ". Attach it to the offer email.");
+    }).catch(function (e) { say("Couldn't make the flyer: " + e.message, true); });
+  }
+  $("mailcard").addEventListener("click", function (e) {
+    var t = e.target, box = $("mailcard");
+    if (t.dataset.copy) {
+      var text = box.dataset[t.dataset.copy] || "", done = function () { t.textContent = "Copied"; };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, function () { say("Select the text and copy it by hand.", true); });
+      else say("Select the text and copy it by hand.", true);
+    }
+    else if (t.id === "m-flyer") saveFlyer();
+    else if (t.id === "m-close") box.innerHTML = "";
+    else if (t.id === "m-sent") {
+      var o = D.offers.open || D.offers.accepted;
+      t.disabled = true;
+      P.patch(sets.clt_saleoffer + "(" + o.id + ")", { clt_sentto: box.dataset.to }).then(function () { box.innerHTML = ""; say("Marked as sent to " + o.name + "."); return show(D.sale.clt_saleid); })
+        .catch(function (err) { t.disabled = false; say("Couldn't mark it sent: " + err.message, true); });
+    }
+  });
+
+  // New project opens already set to a resale of this home, with its price, and remembers this sale. The project's
+  // workflow page then shows the resale's steps around the project's, and leads back here for the buyer, contract and closing.
+  function newProject() {
+    var data = "property=" + D.sale._clt_property_value + (D.sale.clt_maxpriceatsale > 0 ? "&price=" + D.sale.clt_maxpriceatsale : "") + "&sale=" + D.sale.clt_saleid;
+    P.go({ pageType: "webresource", webresourceName: "clt_/pages/newproject.html", data: data });
+  }
+
+  $("track").addEventListener("input", function (e) {
+    if (/^p-/.test(e.target.id)) figures();
+    if (e.target.dataset.f || e.target.id === "c-price") fundingTotalLine();
+  });
+  // the interest rate is only for a loan
+  $("track").addEventListener("change", function (e) {
+    if (e.target.dataset.f !== "type") return;
+    var rate = e.target.closest("tr").querySelector('[data-f="rate"]'), loan = e.target.value === R.LOAN;
+    rate.disabled = !loan; rate.placeholder = loan ? "Required" : "Loans only"; if (!loan) rate.value = "";
+    fundingTotalLine();
+  });
   $("sale").addEventListener("change", function () { show($("sale").value); });
+  // back to the workflow page of the project that is finding this resale's buyer (the one it was opened from, else the home's)
+  $("overview").addEventListener("click", function () {
+    var pj = fromProject || (D && D.groups && D.groups.project && D.groups.project.id);
+    if (pj) P.go({ pageType: "webresource", webresourceName: "clt_/pages/project.html", data: pj });
+  });
+  $("pending").addEventListener("click", function (e) {
+    var d = e.target.dataset;
+    if (d.pick) { $("sale").value = d.pick; show(d.pick); }
+    else if (d.record) P.openRecord("clt_sale", d.record);
+  });
   $("new").addEventListener("click", function () {
     loadCandidates().then(function (c) { starting = true; D = { candidates: c }; $("sale").value = ""; say(""); render(); });
   });
 
   Promise.all([P.brand(), P.choice("clt_saletype"), P.choice("clt_salestatus"), P.choice("clt_occupancystatus"), P.choice("clt_occupancyrole"),
-               P.choice("clt_householdstatus"), P.choice("clt_propertystatus")].concat(TABLES.map(P.entitySet)))
+               P.choice("clt_householdstatus"), P.choice("clt_propertystatus"), P.choice("clt_purchasefundingtype"), P.choice("clt_offerstatus"),
+               P.choice("clt_entrystatus").catch(function () { return {}; })].concat(TABLES.map(P.entitySet)))
     .then(function (r) {
-      ch = { saletype: r[1], salestatus: r[2], occupancystatus: r[3], occupancyrole: r[4], householdstatus: r[5], propertystatus: r[6] };
-      TABLES.forEach(function (t, i) { sets[t] = r[7 + i]; });
-      return loadSales();
+      org = r[0] || {};
+      ch = { saletype: r[1], salestatus: r[2], occupancystatus: r[3], occupancyrole: r[4], householdstatus: r[5], propertystatus: r[6], fundingtype: r[7], offerstatus: r[8], entrystatus: r[9] || {} };
+      TABLES.forEach(function (t, i) { sets[t] = r[10 + i]; });
+      return loadSales(wantSale);
     }).catch(function (e) { say("Couldn't load: " + e.message, true); });
 })();
 </script>

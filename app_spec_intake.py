@@ -1,5 +1,5 @@
 """
-CLT Intake & Selection: the second model-driven app (navigation, views, forms).
+CLT Applications and Sales: the second model-driven app (navigation, views, forms).
 
 Built by the same code as CLT Stewardship:  python3 build_app.py --app intake --url ...
 Projects, screeners and applications, selection (lottery or first come first served), certification,
@@ -12,7 +12,7 @@ entry views) show Unique IDs only, never the application or household.
 from app_spec import v, sub, tab, spdocs  # noqa: F401  (same helpers as the core app)
 
 APP = {
-    "name": "CLT Intake & Selection",
+    "name": "CLT Applications and Sales",
     "uniquename": "clt_CLTIntake",
     "description": "Projects, applications, selection and certification for community land trusts.",
 }
@@ -21,6 +21,8 @@ APP = {
 PAGES = {"intake": ("Hub", "clt_/pages/intake.html"),                # figures and what needs attention
          "guide":  ("How it works", "clt_/pages/intake-guide.html"),  # the steps, from screener to handoff
          "newproject": ("New project", "clt_/pages/newproject.html"),  # guided: basics, homes, costs, rules, priorities
+         # one project from start to finish: where it stands, the next step, and the way into each
+         "workflow": ("Project workflow", "clt_/pages/project.html"),
          "assign": ("Add to a project", "clt_/pages/assign.html"),
          "prescreen": ("Pre-screen", "clt_/pages/prescreen.html"),   # test a project's screeners against its rules
          # where a project is in the process, and the steps that run its lottery or first come, first served list
@@ -32,7 +34,7 @@ PAGES = {"intake": ("Hub", "clt_/pages/intake.html"),                # figures a
 
 NAVIGATION = [
     ("Start here", ["page:intake", "page:guide"]),
-    ("Projects",   ["project", "page:newproject", "page:assign", "page:prescreen", "page:selection", "page:invite", "page:certify", "selectionround"]),
+    ("Projects",   ["project", "page:newproject", "page:workflow", "page:assign", "page:prescreen", "page:selection", "page:invite", "page:certify", "selectionround"]),
     ("Applicants", ["application", "household", "certification"]),
     ("Messages",   ["notice", "formsubmission"]),
     ("Settings",   ["eligibility", "incomelimitset", "listitem", "sourceform", "messagetemplate"]),
@@ -147,7 +149,7 @@ FORMS = {
         header=["projecttype", "status", "selectionmethod", "applicationcloses"],
         tabs=[
             tab("General",
-                [("Project", ["name", "projecttype", "status", "applicationopens", "applicationcloses"]),
+                [("Project", ["name", "projecttype", "status", "applicationopens", "applicationcloses", "sale"]),
                  ("Selection", ["selectionmethod", "rolling", "listsource", "reuseround"])],
                 [("Eligibility (blank uses the organization's rules)",
                   ["maxami", "minami", "firsttimebuyer", "localtie", "localarea", "assetlimit", "housingratiomax",
@@ -157,7 +159,7 @@ FORMS = {
                  ("Monthly housing cost by home size (the highest income band's; see the Income bands tab)",
                   ["monthlycoststudio", "monthlycost1br", "monthlycost2br", "monthlycost3br", "monthlycost4br"]),
                  ("Financing (used to work out each band's mortgage payment)", ["downpaymentpct", "loantermyears"]),
-                 ("Invitations and lists", ["invitesperlist", "invitesperhome", "responsedays", "waitlistmonths", "fullappformlink", "documentsfolderlink"]),
+                 ("Invitations and lists", ["invitesperlist", "invitesperhome", "responsedays", "offerdays", "waitlistmonths", "fullappformlink", "documentsfolderlink"]),
                  ("Notes", ["notes"])]),
             tab("Homes",
                 [("Homes", [sub("Homes", "projecthome", "project", "project", rows=6)])]),
@@ -189,7 +191,7 @@ FORMS = {
                    ("Monthly housing cost by home size (what the pre-screen tests against)", ["monthlycoststudio", "monthlycost1br", "monthlycost2br", "monthlycost3br", "monthlycost4br"])])]),
     "projecthome": dict(
         header=["bedrooms", "status", "estimatedprice"],
-        tabs=[tab("General", [("Home", ["name", "project", "property", "bedrooms", "status"])],
+        tabs=[tab("General", [("Home", ["name", "project", "property", "bedrooms", "status", "sale"])],
                   [("Price and monthly housing cost",
                     ["estimatedprice", "principalinterest", "propertytaxes", "insurance", "hoadues", "leasefee",
                      "reservefee", "estimatedmonthlycost", "targetami"])])]),
@@ -354,7 +356,10 @@ WEB_RESOURCES = {
     "clt_/pages/intake-guide.html": "webresources/intake-guide.html",
     "clt_/pages/newproject.html": "webresources/newproject.html",
     "clt_/pages/newproject.js": "webresources/newproject.js",
+    "clt_/pages/journey.js": "webresources/journey.js",
+    "clt_/pages/project.html": "webresources/project.html",
     "clt_/pages/assign.html": "webresources/assign.html",
+    "clt_/pages/assign.js": "webresources/assign.js",
     "clt_/pages/prescreen.html": "webresources/prescreen.html",
     "clt_/pages/prescreen.js": "webresources/prescreen.js",
     "clt_/pages/selection.html": "webresources/selection.html",

@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Project workflow</title>
+<link rel="stylesheet" href="pages.css">
+<script src="pages.js"></script>
+<script src="journey.js"></script>
+<script src="resale.js"></script>
+<style>
+  .track .stephead .btn { margin-left: auto; }
+  .facts { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 14px 0 0; color: var(--muted); }
+  .facts b { color: var(--ink); }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="banner">
+    <img data-logo alt="">
+    <div>
+      <h1>Project workflow</h1>
+      <p>One project from start to finish: where it stands, what to do next, and the way into each step. A project that is finding the buyer for a resale shows the resale's steps too, from the notice to the closing. Every step brings you back here.</p>
+    </div>
+  </div>
+
+  <div class="toolbar" style="margin-top: 18px">
+    <label>Project
+      <select id="project"><option value="">Loading projects...</option></select>
+    </label>
+    <button class="btn" id="all" type="button" hidden>All projects</button>
+    <button class="btn" id="new" type="button">New project</button>
+    <button class="btn" id="record" type="button" hidden>Open the project record</button>
+  </div>
+  <div class="bottombar"><span class="msg" id="msg"></span></div>
+
+  <!-- nothing chosen: every project, with the step it is waiting on -->
+  <div id="landing" hidden>
+    <h2>Projects in progress</h2>
+    <div class="tablewrap">
+      <table class="data">
+        <thead><tr><th>Project</th><th>Status</th><th>Screeners</th><th>Waiting on</th><th></th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <p class="note">Select Open to see a project's progress. Closed projects are under Project, at the top.</p>
+  </div>
+
+  <!-- one project: its steps -->
+  <div id="one" hidden>
+    <div class="facts" id="facts"></div>
+    <ol class="track" id="track"></ol>
+    <!-- a project that isn't a resale: each of its homes is sold here, one sale per home -->
+    <div id="sell" hidden>
+      <h2>Sell the homes <small id="sellcount"></small></h2>
+      <p class="lead" id="selllead"></p>
+      <div class="tablewrap">
+        <table class="data">
+          <thead><tr><th>Home</th><th>Sale price</th><th>Where it stands</th><th></th></tr></thead>
+          <tbody id="sellrows"></tbody>
+        </table>
+      </div>
+    </div>
+    <p class="note">The step marked Do this next is where the project is waiting. Any step can be opened at any time, and the row of steps at the top of each one has a way back here.
+      You can stop whenever you like: everything is saved as you go, and this page picks the project up where it was.</p>
+  </div>
+</div>
+
+<script>
+(function () {
+  var P = CLTPage, J = CLTJourney, fv = P.fv, $ = function (id) { return document.getElementById(id); };
+  var list = [], want = new URLSearchParams(location.search).get("data") || "", sales = {};
+  function money(v) { return v == null || isNaN(v) ? "" : "$" + Number(v).toLocaleString("en-US", { maximumFractionDigits: 2 }); }
+  function day(v) { return v ? String(v).slice(0, 10) : ""; }
+  // The resale a project is finding the buyer for (when it was started from one): where it stands, in the words of its steps.
+  // Read once per project. Where the sale can't be read, the project shows on its own.
+  function saleFor(p) {
+    if (!p.sale || typeof CLTResale === "undefined") return Promise.resolve(null);
+    if (sales[p.sale] !== undefined) return Promise.resolve(sales[p.sale]);
+    // the offer that is out, if there is one (none where offers aren't installed yet)
+    var out = P.entitySet("clt_saleoffer").then(function (es) {
+      return P.getAll(es + "?$select=clt_status,clt_responsedue,_clt_household_value&$filter=statecode eq 0 and _clt_sale_value eq " + p.sale); })
+      .then(function (rows) { return rows.filter(function (o) { return fv(o, "clt_status") === CLTResale.OFFERED; })[0] || null; }).catch(function () { return null; });
+    return Promise.all([P.entitySet("clt_sale"), P.choice("clt_salestatus"), out]).then(function (r) {
+      return P.get(r[0] + "(" + p.sale + ")?$select=clt_name,clt_status,clt_noticedate,clt_maxpriceatsale,clt_contractdate,clt_purchaseprice,clt_closingdate," +
+                   "_clt_buyerhousehold_value,_clt_selleroccupancy_value,_clt_property_value").then(function (s) {
+        var status = Object.keys(r[1]).filter(function (l) { return r[1][l] === s.clt_status; })[0] || "", offer = r[2];
+        var pr = CLTResale.progress({ noticeDate: s.clt_noticedate, maxPrice: s.clt_maxpriceatsale, buyer: s._clt_buyerhousehold_value, contractDate: s.clt_contractdate,
+                                      price: s.clt_purchaseprice, status: status, offered: !!offer });
+        return (sales[p.sale] = { id: p.sale, name: s.clt_name || "", home: fv(s, "_clt_property_value"), done: pr.done, closed: pr.closed, cancelled: pr.cancelled, lines: {
+          start: (fv(s, "_clt_selleroccupancy_value") || fv(s, "_clt_property_value")) + (s.clt_noticedate ? ". Notice given " + day(s.clt_noticedate) : ""),
+          price: pr.done.price ? "Maximum resale price " + money(s.clt_maxpriceatsale) : "Not worked out yet",
+          offer: offer ? "Offered to " + fv(offer, "_clt_household_value") + (offer.clt_responsedue ? ", to answer by " + day(offer.clt_responsedue) : "") : pr.done.buyer ? "Offered and accepted" : "",
+          buyer: pr.done.buyer ? fv(s, "_clt_buyerhousehold_value") + " accepted: they are the buyer" : offer ? "Waiting for their answer" : "",
+          contract: pr.done.contract ? "Purchase price " + money(s.clt_purchaseprice) + ", signed " + day(s.clt_contractdate) : "",
+          closing: pr.closed ? "Closed " + day(s.clt_closingdate) : pr.cancelled ? "The resale was cancelled" : "" } });
+      });
+    }).catch(function () { return (sales[p.sale] = null); });
+  }
+
+  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+  function say(text, err) { $("msg").textContent = text || ""; $("msg").className = "msg" + (err ? " err" : ""); }
+  function to(page, id) { var t = { pageType: "webresource", webresourceName: page }; if (id) t.data = id; P.go(t); }
+
+  function load() {
+    return Promise.all(["clt_selectionround", "clt_selectionentry", "clt_certification"].map(P.entitySet)).then(function (s) {
+      return Promise.all([
+        // the resale link is newer than the page: read without it where it isn't there yet
+        P.getAll("clt_projects?$select=clt_projectid,clt_name,clt_status,clt_selectionmethod,clt_applicationcloses,_clt_sale_value&$filter=statecode eq 0").catch(function () {
+          return P.getAll("clt_projects?$select=clt_projectid,clt_name,clt_status,clt_selectionmethod,clt_applicationcloses&$filter=statecode eq 0"); }),
+        P.getAll("clt_applications?$select=clt_prescreenresult,_clt_project_value&$filter=statecode eq 0 and clt_screenerentryid ne null and _clt_project_value ne null"),
+        P.getAll(s[0] + "?$select=clt_selectionroundid,clt_status,createdon,_clt_project_value&$filter=statecode eq 0"),
+        P.getAll(s[1] + "?$select=_clt_round_value&$filter=statecode eq 0 and clt_invitedon ne null"),
+        P.getAll(s[2] + "?$select=clt_status,_clt_project_value&$filter=statecode eq 0").catch(function () { return []; }),
+        P.getAll("clt_projecthomes?$select=_clt_project_value&$filter=statecode eq 0").catch(function () { return []; })
+      ]);
+    }).then(function (r) {
+      var project = {}, homes = {}; r[2].forEach(function (x) { project[x.clt_selectionroundid] = x._clt_project_value; });
+      r[5].forEach(function (h) { homes[h._clt_project_value] = (homes[h._clt_project_value] || 0) + 1; });
+      var by = {}; r[0].forEach(function (p) { by[p.clt_projectid] = p; });
+      list = J.standing(r[0].map(function (p) { return { id: p.clt_projectid, name: p.clt_name, status: fv(p, "clt_status") }; }),
+                        r[1].map(function (a) { return { project: a._clt_project_value, tested: a.clt_prescreenresult != null, eligible: fv(a, "clt_prescreenresult") === "Eligible for selection" }; }),
+                        r[2].map(function (x) { return { project: x._clt_project_value, status: fv(x, "clt_status"), created: x.createdon }; }),
+                        r[3].map(function (e) { return { project: project[e._clt_round_value] }; }),
+                        r[4].filter(function (c) { return fv(c, "clt_status") === "Certified"; }).map(function (c) { return { project: c._clt_project_value }; }));
+      list.forEach(function (p) {
+        var row = by[p.id];
+        p.method = fv(row, "clt_selectionmethod"); p.closes = row.clt_applicationcloses ? String(row.clt_applicationcloses).slice(0, 10) : ""; p.homes = homes[p.id] || 0; p.sale = row._clt_sale_value || "";
+      });
+      var open = list.filter(function (p) { return p.status !== "Closed"; }), closed = list.filter(function (p) { return p.status === "Closed"; });
+      var opt = function (p) { return '<option value="' + p.id + '">' + esc(p.name) + "</option>"; };
+      $("project").innerHTML = '<option value="">' + (list.length ? "All projects in progress" : "No projects yet") + "</option>" +
+        (open.length ? '<optgroup label="In progress">' + open.map(opt).join("") + "</optgroup>" : "") +
+        (closed.length ? '<optgroup label="Closed">' + closed.map(opt).join("") + "</optgroup>" : "");
+      if (want && list.some(function (p) { return p.id === want.toLowerCase(); })) $("project").value = want.toLowerCase();
+      render();
+    });
+  }
+
+  function render() {
+    var id = $("project").value, p = list.filter(function (x) { return x.id === id; })[0];
+    $("landing").hidden = !!p; $("one").hidden = !p; $("all").hidden = !p; $("record").hidden = !p;
+    if (!p) {
+      var open = list.filter(function (x) { return x.status !== "Closed"; });
+      $("rows").innerHTML = open.length ? open.map(function (x) {
+        return "<tr><td>" + esc(x.name) + "</td><td>" + esc(x.status) + "</td><td>" + x.applications + "</td><td>" + (x.next ? "<b>" + esc(x.next.label) + "</b>. " + esc(x.next.why) : "") + "</td>" +
+          '<td><button class="btn small primary" type="button" data-open="' + x.id + '">Open</button></td></tr>';
+      }).join("") : '<tr><td colspan="5">No projects are in progress. Select New project to start one.</td></tr>';
+      return;
+    }
+    saleFor(p).then(function (sale) { if ($("project").value === p.id) one(p, sale); });
+  }
+  // The homes of a project that isn't a resale, each with its own sale: offered, answered, under agreement, closed.
+  var selling = null;   // { project, sets, pending, raw: the project's homes as read }
+  function loadHomes(p) {
+    return Promise.all(["clt_projecthome", "clt_sale", "clt_saleoffer"].map(P.entitySet).concat([P.choice("clt_salestatus")])).then(function (r) {
+      return P.getAll(r[0] + "?$select=clt_projecthomeid,clt_name,clt_estimatedprice,clt_status,_clt_property_value,_clt_sale_value&$filter=statecode eq 0 and _clt_project_value eq " + p.id).then(function (homes) {
+        var ids = homes.map(function (h) { return h._clt_sale_value; }).filter(Boolean);
+        var any = function (col) { return "(" + ids.map(function (i) { return col + " eq " + i; }).join(" or ") + ")"; };
+        return (ids.length ? Promise.all([
+          P.getAll(r[1] + "?$select=clt_saleid,clt_status,clt_maxpriceatsale,clt_contractdate,clt_purchaseprice,clt_closingdate,_clt_buyerhousehold_value&$filter=" + any("clt_saleid")),
+          P.getAll(r[2] + "?$select=clt_status,_clt_sale_value,_clt_household_value&$filter=statecode eq 0 and " + any("_clt_sale_value")).catch(function () { return []; })
+        ]) : Promise.resolve([[], []])).then(function (x) {
+          var offer = {}, sales = {};
+          x[1].forEach(function (o) { if (fv(o, "clt_status") === CLTResale.OFFERED) offer[o._clt_sale_value] = fv(o, "_clt_household_value"); });
+          x[0].forEach(function (s) {
+            var status = Object.keys(r[3]).filter(function (l) { return r[3][l] === s.clt_status; })[0] || "";
+            var pr = CLTResale.progress({ maxPrice: s.clt_maxpriceatsale, buyer: s._clt_buyerhousehold_value, contractDate: s.clt_contractdate, price: s.clt_purchaseprice,
+                                          status: status, offered: !!offer[s.clt_saleid] });
+            var step = CLTResale.STEPS.filter(function (st) { return st.key === pr.next; })[0];
+            sales[s.clt_saleid] = { next: step ? step.title : "", closed: pr.closed, cancelled: pr.cancelled, closedOn: day(s.clt_closingdate), buyer: fv(s, "_clt_buyerhousehold_value"),
+                                    offeredTo: offer[s.clt_saleid] || "" };
+          });
+          selling = { project: p, sets: { home: r[0], sale: r[1] }, pending: r[3].Pending, raw: homes };
+          return J.homesToSell(homes.map(function (h) {
+            return { id: h.clt_projecthomeid, name: h.clt_name || fv(h, "_clt_property_value"), price: h.clt_estimatedprice, status: fv(h, "clt_status"), sale: h._clt_sale_value || "" }; }),
+            sales, p.facts.certified);
+        });
+      });
+    });
+  }
+  function sell(p) {
+    if (typeof CLTResale === "undefined") { $("sell").hidden = true; return; }
+    $("sell").hidden = false; $("sellrows").innerHTML = '<tr><td colspan="4">Loading...</td></tr>';
+    loadHomes(p).then(function (rows) {
+      if ($("project").value !== p.id) return;
+      var sold = rows.filter(function (h) { return h.state === "sold"; }).length;
+      $("sellcount").textContent = rows.length ? sold + " of " + rows.length + " sold" : "";
+      $("selllead").textContent = p.facts.certified > 0
+        ? "Each home has its own sale: offer it to a certified household, record their answer, then the purchase and sale agreement and the closing. Households say which home they prefer, and you choose who is offered which."
+        : "Once the project has certified a household, each home is offered and sold from here.";
+      $("sellrows").innerHTML = rows.length ? rows.map(function (h) {
+        var pill = h.state === "sold" ? "ok" : h.state === "open" ? "warn" : "";
+        return "<tr><td>" + esc(h.name) + "</td><td>" + esc(money(h.price)) + '</td><td><span class="pill ' + pill + '">' + esc(h.line) + "</span></td><td>" +
+          (h.button ? '<button class="btn small' + (h.state === "sold" ? "" : " primary") + '" type="button" ' + (h.sale ? 'data-sale="' + h.sale + '"' : 'data-start="' + h.id + '"') + ">" + esc(h.button) + "</button>" : "") + "</td></tr>";
+      }).join("") : '<tr><td colspan="4">This project has no homes. Add them on the project record.</td></tr>';
+    }).catch(function (e) { $("sellrows").innerHTML = '<tr><td colspan="4">Couldn\'t load the homes: ' + esc(e.message) + "</td></tr>"; });
+  }
+  // Start a home's sale: a first sale of that home at the project's price, linked to the project's home, then on to its page.
+  function startSale(homeId) {
+    var h = selling.raw.filter(function (x) { return x.clt_projecthomeid === homeId; })[0], today = new Date().toISOString().slice(0, 10);
+    if (!h || !h._clt_property_value) { say("This home isn't linked to a property yet. Open the project record and set its property first.", true); return; }
+    return Promise.all([P.choice("clt_saletype"), P.entitySet("clt_property")]).then(function (r) {
+      var body = { clt_name: CLTResale.saleName(h.clt_name || fv(h, "_clt_property_value"), today, CLTResale.FIRST), clt_saletype: r[0][CLTResale.FIRST], clt_status: selling.pending,
+                   clt_maxpriceatsale: h.clt_estimatedprice || 0 };
+      body["clt_property@odata.bind"] = "/" + r[1] + "(" + h._clt_property_value + ")";
+      return P.create(selling.sets.sale, body).then(function (rec) {
+        var link = {}; link["clt_sale@odata.bind"] = "/" + selling.sets.sale + "(" + rec.clt_saleid + ")";
+        return P.patch(selling.sets.home + "(" + homeId + ")", link).then(function () { to(J.RESALE_PAGE, "sale=" + rec.clt_saleid + "&project=" + selling.project.id); });
+      });
+    }).catch(function (e) { say("Couldn't start the sale: " + e.message, true); });
+  }
+
+  // One project's steps; with its resale's steps around them when it has one.
+  function one(p, sale) {
+    if (sale) $("sell").hidden = true; else sell(p);
+    $("facts").innerHTML = [["Resale of", sale ? sale.home || sale.name : ""], ["Status", p.status], ["Selection", p.method], ["Homes", p.homes], ["Applications close", p.closes || (p.method ? "rolling" : "")]]
+      .filter(function (f) { return f[1] !== "" && f[1] != null; }).map(function (f) { return "<span>" + f[0] + ": <b>" + esc(f[1]) + "</b></span>"; }).join("");
+    $("track").dataset.sale = sale ? sale.id : "";
+    $("track").innerHTML = J.whole(p.facts, sale).map(function (s, i) {
+      var done = s.state === "done", next = s.state === "next";
+      return '<li class="step ' + s.state + '"><div class="stepnum">' + (done ? "&#10003;" : i + 1) + '</div><div class="stepbody"><div class="stephead"><h3>' + esc(s.label) + "</h3>" +
+        (next ? '<span class="pill warn">Do this next</span>' : done ? '<span class="pill ok">Done</span>' : "") +
+        '<button class="btn' + (next ? " primary" : " small") + '" type="button" data-step="' + s.key + '">' + (next ? "Go to " + esc(s.label) : "Open") + "</button></div>" +
+        '<p class="summaryline">' + esc(next && !s.resale && p.next ? p.next.why : s.line) + "</p></div></li>";
+    }).join("") + (p.status === "Closed" ? '<li style="list-style:none;margin:6px 0 0 50px" class="mutedtext">This project is closed.</li>' : "");
+  }
+
+  $("project").addEventListener("change", render);
+  $("all").addEventListener("click", function () { $("project").value = ""; render(); });
+  $("new").addEventListener("click", function () { to("clt_/pages/newproject.html"); });
+  $("record").addEventListener("click", function () { P.openRecord("clt_project", $("project").value); });
+  $("rows").addEventListener("click", function (e) { var id = e.target.dataset.open; if (id) { $("project").value = id; render(); } });
+  $("sellrows").addEventListener("click", function (e) {
+    var d = e.target.dataset;
+    if (d.sale) to(J.RESALE_PAGE, "sale=" + d.sale + "&project=" + $("project").value);
+    else if (d.start) { e.target.disabled = true; startSale(d.start); }
+  });
+  $("track").addEventListener("click", function (e) {
+    var key = e.target.dataset.step, s = key && J.step(key);
+    if (s) to(s.page, $("project").value);
+    // a step of the resale: its page, on this sale, knowing which project to come back to
+    else if (key && key.indexOf("resale:") === 0) to(J.RESALE_PAGE, "sale=" + $("track").dataset.sale + "&project=" + $("project").value);
+  });
+
+  P.brand();
+  load().catch(function (e) { $("project").innerHTML = '<option value="">Couldn\'t load</option>'; say("Couldn't load the projects: " + e.message, true); });
+})();
+</script>
+</body>
+</html>

@@ -6,6 +6,7 @@
 <title>Review and certify</title>
 <link rel="stylesheet" href="pages.css">
 <script src="pages.js"></script>
+<script src="journey.js"></script>
 <script src="prescreen.js"></script>
 <script src="certify.js"></script>
 </head>
@@ -20,6 +21,9 @@
         the project's tests on them. Then certify the household, or record why not.</p>
     </div>
   </div>
+
+  <ol class="steps" id="journey"></ol>
+  <script>CLTJourney.bar(document.getElementById("journey"), "certify", function () { return document.getElementById("project").value; });</script>
 
   <!-- choosing a household -->
   <div id="picker">

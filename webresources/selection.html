@@ -6,6 +6,7 @@
 <title>Buyer Selection</title>
 <link rel="stylesheet" href="pages.css">
 <script src="pages.js"></script>
+<script src="journey.js"></script>
 <script src="selection.js"></script>
 <script src="pdf.js"></script>
 </head>
@@ -19,6 +20,9 @@
       <p>Where a project stands, from set-up to full applications coming in, and the next thing to do. The lists show Unique IDs only, never names.</p>
     </div>
   </div>
+
+  <ol class="steps" id="journey"></ol>
+  <script>CLTJourney.bar(document.getElementById("journey"), "selection", function () { return document.getElementById("project").value; });</script>
 
   <div class="toolbar" style="margin-top: 18px">
     <label>Project
@@ -40,7 +44,7 @@
   var $ = function (id) { return document.getElementById(id); };
   var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); };
   var day = P.day;   // timestamps are shown as the local day
-  var sets = {}, choices = {}, projects = [], D = null, busy = false, note = "", rollText = "", observerText = "";
+  var sets = {}, choices = {}, projects = [], D = null, busy = false, note = "", rollText = "", observerText = "", dropping = null;
   var STATE = { done: "Done", next: "Do this next", waiting: "Waiting", byhand: "Do this next" };
 
   function fail(what) {
@@ -54,7 +58,7 @@
   // ---------------------------------------------------------------- loading
   function start() {
     var tables = ["clt_selectionround", "clt_selectionentry", "clt_projecthome", "clt_projectpriority", "clt_projectband"];
-    var names = ["roundstatus", "entrystatus", "applicationstage", "projectstatus"];
+    var names = ["roundstatus", "entrystatus", "applicationstage", "projectstatus", "householdstatus"];
     return Promise.all([
       Promise.all(tables.map(function (t) { return P.entitySet(t).then(function (es) { sets[t] = es; }); })),
       Promise.all(names.map(function (n) { return P.choice("clt_" + n).then(function (c) { choices[n] = c; }); })),
@@ -104,14 +108,14 @@
       D.lottery = D.method !== S.FCFS;
       if (!round) return;
       return P.getAll(sets.clt_selectionentry + "?$select=clt_selectionentryid,clt_uniqueid,clt_bedrooms,clt_householdsize,clt_tier,clt_chances," +
-                      "clt_submittedon,clt_lotteryseq,clt_lotterynumber,clt_rank,clt_status,clt_invitedon,clt_responsedue,_clt_application_value" +
+                      "clt_submittedon,clt_lotteryseq,clt_lotterynumber,clt_rank,clt_status,clt_statusdate,clt_statusreason,clt_invitedon,clt_responsedue,_clt_application_value" +
                       "&$filter=statecode eq 0 and _clt_round_value eq " +
                       round.clt_selectionroundid).then(function (rows) {
         D.entries = rows.map(function (e) {
           return { id: e.clt_selectionentryid, applicationId: e._clt_application_value, uniqueId: e.clt_uniqueid, bedrooms: e.clt_bedrooms,
                    householdSize: e.clt_householdsize, tier: e.clt_tier, chances: e.clt_chances == null ? 1 : e.clt_chances,
                    submittedOn: e.clt_submittedon || null, lotterySeq: e.clt_lotteryseq, lotteryNumber: e.clt_lotterynumber, rank: e.clt_rank,
-                   status: fv(e, "clt_status"), invitedOn: e.clt_invitedon || "", responseDue: e.clt_responsedue || "" };
+                   status: fv(e, "clt_status"), statusDate: e.clt_statusdate || "", statusReason: e.clt_statusreason || "", invitedOn: e.clt_invitedon || "", responseDue: e.clt_responsedue || "" };
         });
         // Names are only ever loaded once the results are certified and someone has been invited.
         if (fv(round, "clt_status") === "Certified" && D.entries.some(function (e) { return e.invitedOn; })) return loadNames(id);
@@ -126,7 +130,7 @@
       P.entitySet("clt_household").then(function (es) { return P.getAll(es + "?$select=clt_householdid,clt_name&$filter=statecode eq 0"); })
     ]).then(function (r) {
       var hh = {}; r[1].forEach(function (h) { hh[h.clt_householdid] = h.clt_name || ""; });
-      r[0].forEach(function (a) { D.names[a.clt_applicationid] = { who: hh[a._clt_household_value] || "", number: a.clt_recordnumber || "" }; });
+      r[0].forEach(function (a) { D.names[a.clt_applicationid] = { who: hh[a._clt_household_value] || "", number: a.clt_recordnumber || "", household: a._clt_household_value || "" }; });
     });
   }
   function today() { var d = new Date(); return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2); }
@@ -149,14 +153,25 @@
   function invitedTable() {
     var rows = board().invited;
     if (!rows.length) return "";
-    return '<div class="tablewrap" style="margin-top: 12px"><table class="data"><thead><tr><th>Household</th><th>Application</th><th>List</th><th>Invited</th><th>Due</th><th>Full application</th><th>Certification</th></tr></thead><tbody>' +
+    return '<div class="tablewrap" style="margin-top: 12px"><table class="data"><thead><tr><th>Household</th><th>Application</th><th>List</th><th>Invited</th><th>Due</th><th>Full application</th><th>Certification</th><th></th></tr></thead><tbody>' +
       rows.map(function (r) {
-        var n = D.names[r.applicationId] || {};
+        var n = D.names[r.applicationId] || {}, out = r.state === "out", form = dropping && dropping.app === r.applicationId;
+        // a household that says no, or never answers, is marked here; one that dropped out can be put back
+        var last = out ? (S.DROPS.indexOf(r.out) >= 0 ? '<button class="btn small" type="button" data-act="undrop" data-app="' + r.applicationId + '">Put back</button>' : "")
+          : r.review === "Certified" ? "" : '<button class="btn small" type="button" data-act="drop" data-how="Declined" data-app="' + r.applicationId + '">Declined</button>' +
+            (r.state === "in" ? "" : ' <button class="btn small" type="button" data-act="drop" data-how="Unresponsive" data-app="' + r.applicationId + '">Unresponsive</button>');
         return "<tr><td>" + esc(n.who) + "</td><td>" + esc(n.number) + "</td><td>" +
           esc(r.lists.map(function (l) { return S.sizeName(l.bedrooms) + " #" + l.rank; }).join(", ")) + "</td><td>" + esc(r.invitedOn) + "</td><td>" + esc(r.due) +
-          '</td><td><span class="pill ' + (r.state === "in" ? "ok" : r.state === "late" ? "bad" : "warn") + '">' + esc(r.text) + "</span></td><td>" +
+          '</td><td><span class="pill ' + (r.state === "in" ? "ok" : r.state === "late" ? "bad" : out ? "" : "warn") + '">' + esc(r.text) + "</span>" +
+          (out && r.reason ? ' <span class="mutedtext">' + esc(r.reason) + "</span>" : "") + "</td><td>" +
           (!r.review ? "" : '<span class="pill ' + (r.review === "Certified" ? "ok" : r.review === "Not certified" ? "bad" : "warn") + '">' + esc(r.review) + "</span> " +
-            '<button class="btn small" type="button" data-act="review" data-app="' + r.applicationId + '">' + (r.review === "To review" ? "Review" : "Open") + "</button>") + "</td></tr>";
+            '<button class="btn small" type="button" data-act="review" data-app="' + r.applicationId + '">' + (r.review === "To review" ? "Review" : "Open") + "</button>") + "</td><td>" + last + "</td></tr>" +
+          (form ? '<tr class="detail"><td colspan="8"><div class="closeform"><label class="wide">' + esc(n.who || "This household") + " " +
+                  (dropping.how === "Declined" ? "declined the invitation" : "didn't respond") + '. Reason or note (optional) <input id="dropreason" type="text" maxlength="100" placeholder="' +
+                  (dropping.how === "Declined" ? "For example: bought another home" : "For example: no reply to two emails and a call") + '"></label>' +
+                  '<button class="btn primary" type="button" data-act="dropsave" data-app="' + r.applicationId + '">Mark as ' + esc(dropping.how.toLowerCase()) + "</button>" +
+                  '<button class="btn" type="button" data-act="dropcancel">Cancel</button>' +
+                  '<span class="mutedtext wide">Every list entry this household has in the project is marked ' + esc(dropping.how) + ", and the next household on each list is named for you to invite.</span></div></td></tr>" : "");
       }).join("") + "</tbody></table></div>";
   }
 
@@ -278,7 +293,7 @@
     }).join("") + (note ? "" : "");
     track.querySelectorAll("[data-act]").forEach(function (b) {
       b.disabled = busy;
-      b.addEventListener("click", function () { act(b.dataset.act, b.closest(".step"), b.dataset.app); });
+      b.addEventListener("click", function () { act(b.dataset.act, b.closest(".step"), b.dataset.app, b.dataset.how); });
     });
     var roll = $("roll");
     if (roll) roll.addEventListener("input", function () {
@@ -315,8 +330,71 @@
   }
   function checksMatch() { return S.checkText(D.entries) === (D.round.clt_checknumbers || ""); }
 
-  function act(action, card, appId) {
+  // ---- a household drops out of the invitations, or is put back
+  function householdPath(id) { return P.entitySet("clt_household").then(function (es) { return es + "(" + id + ")"; }); }
+  // Is this household invited, or further along, in another project? Then its own status is left as it is.
+  function busyElsewhere(household, appId) {
+    return P.getAll("clt_applications?$select=clt_applicationid&$filter=statecode eq 0 and _clt_household_value eq " + household).then(function (apps) {
+      var others = apps.map(function (a) { return a.clt_applicationid; }).filter(function (i) { return i !== appId; });
+      if (!others.length) return false;
+      return P.getAll(sets.clt_selectionentry + "?$select=clt_status&$filter=statecode eq 0 and clt_invitedon ne null and (" +
+                      others.map(function (i) { return "_clt_application_value eq " + i; }).join(" or ") + ")")
+        .then(function (rows) { return rows.some(function (e) { return S.OUT.indexOf(fv(e, "clt_status")) < 0 && fv(e, "clt_status") !== "Ineligible"; }); });
+    });
+  }
+  function drop(appId, how, reason) {
+    var ids = S.dropPlan(appId, D.entries), n = D.names[appId] || {}, next = S.nextText(S.nextUp(appId, D.entries)), who = n.who || "The household";
+    if (!ids.length) return;
+    busy = true;
+    var ops = ids.map(function (id) {
+      return { method: "PATCH", path: sets.clt_selectionentry + "(" + id + ")", body: { clt_status: choices.entrystatus[how], clt_statusreason: reason || null, clt_statusdate: today() } };
+    });
+    return (n.household ? Promise.all([householdPath(n.household), busyElsewhere(n.household, appId)]) : Promise.resolve(null)).then(function (h) {
+      if (!h) return;
+      return P.get(h[0] + "?$select=clt_status").then(function (row) {
+        var to = S.householdAfterDrop(fv(row, "clt_status"), h[1]);
+        if (to) ops.push({ method: "PATCH", path: h[0], body: { clt_status: choices.householdstatus[to] } });
+      });
+    }).then(function () { return P.batch(ops); }).then(function () {
+      // a note on the application, so its history says what happened; the change stands even if the note can't be saved
+      var note = { subject: how === "Declined" ? "Declined the invitation" : "Did not respond to the invitation",
+                   notetext: who + (how === "Declined" ? " declined the invitation to the full application for " : " did not respond to the invitation to the full application for ") +
+                             D.project.clt_name + " on " + today() + "." + (reason ? " " + reason : "") };
+      note["objectid_clt_application@odata.bind"] = "/clt_applications(" + appId + ")";
+      return P.create("annotations", note).catch(function () { /* the list entries already say it */ });
+    }).then(function () {
+      busy = false; dropping = null;
+      return load().then(function () { ok(who + " is marked " + how.toLowerCase() + "." + (next ? " " + next + " Open Invite to invite them." : " Nobody is left on the waitlist for " + (ids.length === 1 ? "that list." : "those lists."))); });
+    }).catch(fail("Couldn't mark the household as " + how.toLowerCase()));
+  }
+  function undrop(appId) {
+    var plan = S.restorePlan(appId, D.entries), n = D.names[appId] || {};
+    if (!plan.length) return;
+    busy = true;
+    var ops = plan.map(function (p) {
+      return { method: "PATCH", path: sets.clt_selectionentry + "(" + p.id + ")", body: { clt_status: choices.entrystatus[p.status], clt_statusreason: null, clt_statusdate: today() } };
+    });
+    return (n.household ? householdPath(n.household) : Promise.resolve("")).then(function (path) {
+      if (!path) return;
+      return P.get(path + "?$select=clt_status").then(function (row) {
+        var to = S.householdAfterRestore(fv(row, "clt_status"), plan);
+        if (to) ops.push({ method: "PATCH", path: path, body: { clt_status: choices.householdstatus[to] } });
+      });
+    }).then(function () { return P.batch(ops); }).then(function () {
+      busy = false;
+      return load().then(function () { ok((n.who || "The household") + " is back on the list as it was."); });
+    }).catch(fail("Couldn't put the household back"));
+  }
+
+  function act(action, card, appId, how) {
     var pid = D.project.clt_projectid, rid = D.round && D.round.clt_selectionroundid;
+    if (action === "drop") { dropping = { app: appId, how: how }; return render(); }
+    if (action === "dropcancel") { dropping = null; return render(); }
+    if (action === "dropsave") { if (busy) return; return drop(appId, dropping.how, ($("dropreason").value || "").trim()); }
+    if (action === "undrop") {
+      if (busy) return;
+      return P.confirm("Put back", "Put this household back on the project's lists as it was before it dropped out?").then(function (yes) { if (yes) return undrop(appId); });
+    }
     if (action === "open") return P.openRecord("clt_project", pid);
     if (action === "round") return P.openRecord("clt_selectionround", rid);
     if (action === "invite") return P.go({ pageType: "webresource", webresourceName: "clt_/pages/invite.html", data: pid });

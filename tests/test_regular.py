@@ -43,7 +43,7 @@ const occ = [
 ];
 const records = { occupancy: { b: ["2025-01-10", "2024-01-08"] }, insurance: { a: ["2026-04-15"] }, contact: { a: ["2026-11-01", "2026-07-04"], c: ["2025-12-25"] } };
 const rows = R.rows(occ, records, {}, today);
-assert.deepStrictEqual(rows.map(r => [r.id, r.worst]), [["b", "Overdue"], ["c", "Overdue"], ["a", "Up to date"]], "never done first, then the oldest due date");
+assert.deepStrictEqual(rows.map(r => [r.id, r.activities.occupancy.state]), [["b", "Overdue"], ["c", "Due soon"], ["a", "Up to date"]], "by occupancy verification: overdue, then due soon, then the rest");
 const a = rows[2], b = rows[0], c = rows[1];
 assert.deepStrictEqual(b.activities.occupancy, { state: "Overdue", last: "2025-01-10", dueOn: "2026-01-10" }, "a record counts when nothing is typed");
 assert.strictEqual(b.activities.insurance.state, "Overdue"); assert.strictEqual(b.activities.walkby, undefined, "walk-bys aren't on the hub");
@@ -55,6 +55,39 @@ assert.deepStrictEqual([c.activities.occupancy.state, c.activities.insurance.sta
 // the setting changes what is due: insurance every 6 months puts Rivera's April approval overdue
 const six = R.rows(occ, records, { InsuranceVerificationMonths: "6" }, today).find(r => r.id === "a");
 assert.deepStrictEqual(six.activities.insurance, { state: "Overdue", last: "2026-04-15", dueOn: "2026-10-15" }); assert.strictEqual(six.activities.occupancy.state, "Up to date");
+
+// ---- occupancy verification: due on each anniversary of the purchase, whenever the last one came back
+const A = (start, last) => R.anniversary(start, last, today);
+assert.strictEqual(A("", "2026-01-01"), null, "no start date: the caller counts months from the last one");
+assert.deepStrictEqual(A("2026-03-10", ""), { state: "Up to date", last: "", dueOn: "2027-03-10" }, "a new owner isn't due until the first anniversary");
+assert.deepStrictEqual(A("2025-12-10", ""), { state: "Due soon", last: "", dueOn: "2026-12-10" }, "first anniversary in 23 days");
+assert.deepStrictEqual(A("2025-11-17", ""), { state: "Due soon", last: "", dueOn: "2026-11-17" }, "due today is due soon, not overdue");
+assert.deepStrictEqual(A("2025-11-16", ""), { state: "Overdue", last: "", dueOn: "2026-11-16" }, "the anniversary was yesterday");
+assert.deepStrictEqual(A("2020-06-01", "2026-06-20"), { state: "Up to date", last: "2026-06-20", dueOn: "2027-06-01" }, "this year's is in: next due on the next anniversary");
+assert.deepStrictEqual(A("2020-06-01", "2026-10-30"), { state: "Up to date", last: "2026-10-30", dueOn: "2027-06-01" }, "a late reply doesn't move next year's date");
+assert.deepStrictEqual(A("2020-06-01", "2025-07-01"), { state: "Overdue", last: "2025-07-01", dueOn: "2026-06-01" }, "last year's doesn't count for this year");
+assert.deepStrictEqual(A("2020-06-01", "2026-04-15"), { state: "Up to date", last: "2026-04-15", dueOn: "2027-06-01" }, "back 47 days before the anniversary: it counts for it");
+assert.strictEqual(A("2020-06-01", "2026-04-01").state, "Overdue", "back 61 days before the anniversary: too early to count for it");
+assert.deepStrictEqual(A("2020-12-01", "2026-11-10"), { state: "Up to date", last: "2026-11-10", dueOn: "2027-12-01" }, "asked early and already back: not asked again");
+assert.deepStrictEqual(A("2020-12-01", "2025-12-05"), { state: "Due soon", last: "2025-12-05", dueOn: "2026-12-01" });
+assert.deepStrictEqual(A("2024-02-29", "2026-03-02"), { state: "Up to date", last: "2026-03-02", dueOn: "2027-02-28" }, "a leap day purchase falls due on the 28th");
+assert.deepStrictEqual(A("2027-01-01", ""), { state: "Up to date", last: "", dueOn: "2028-01-01" }, "a start date in the future");
+// on the hub: the occupancy column goes by the anniversary, insurance still by months since the last one
+const byStart = R.rows([{ id: "n", property: "1 New St", start: "2026-09-01", dates: {} },
+                        { id: "o", property: "2 Old St", start: "2019-05-01", dates: { occupancy: "2025-05-10", insurance: "2026-05-10" } }], {}, {}, today);
+assert.deepStrictEqual(byStart.map(r => [r.id, r.start, r.activities.occupancy.state, r.activities.occupancy.dueOn, r.activities.insurance.state]),
+                       [["o", "2019-05-01", "Overdue", "2026-05-01", "Up to date"], ["n", "2026-09-01", "Up to date", "2027-09-01", "Up to date"]]);
+assert.deepStrictEqual(byStart[1].activities.insurance, { state: "Up to date", last: "", dueOn: "2027-09-01" }, "a new purchase: the first insurance verification is due a year on, like the occupancy one");
+assert.strictEqual(R.stand(R.ACTIVITIES[1], "2025-11-01", "", {}, today).state, "Overdue", "bought over a year ago and never entered");
+assert.strictEqual(R.stand(R.ACTIVITIES[1], "2025-12-01", "", {}, today).state, "Due soon"); assert.strictEqual(R.stand(R.ACTIVITIES[1], "", "", {}, today).state, "Overdue", "no start date and nothing entered");
+assert.deepStrictEqual(R.stand(R.ACTIVITIES[1], "2020-01-01", "2026-06-01", {}, today), { state: "Up to date", last: "2026-06-01", dueOn: "2027-06-01" }, "once one is entered, 12 months from it");
+assert.deepStrictEqual(R.toAsk(byStart), ["o"], "a new owner isn't asked");
+assert.strictEqual(R.rows([{ id: "o", start: "2019-05-01", dates: { occupancy: "2025-05-10" } }], {}, { OccupancyVerificationMonths: "24" }, today)[0].activities.occupancy.state, "Overdue", "the months setting doesn't move an anniversary");
+
+// ---- the insurance list: nothing entered in the last 12 months, never entered first, then the longest ago
+assert.deepStrictEqual(R.lapsed(rows).map(r => [r.id, r.activities.insurance.last]), [["b", ""], ["c", "2025-06-01"]]);
+assert.deepStrictEqual(R.lapsed(byStart).map(r => r.id), [], "a new owner isn't on the list until a year after the purchase");
+assert.deepStrictEqual(R.lapsed([]), []);
 
 // ---- who to ask next: occupancy verification overdue or due soon, and not already asked
 assert.deepStrictEqual(R.toAsk(rows), ["b", "c"]);
@@ -77,6 +110,10 @@ assert.deepStrictEqual(R.dashboard([{ dates: { occupancy: "2025-11-25", insuranc
                        { overdue: 2, thisMonth: 3 });
 assert.deepStrictEqual(R.dashboard([{ dates: { occupancy: "2026-05-20", insurance: "2026-08-20" } }], { OccupancyVerificationMonths: "6", InsuranceVerificationMonths: "3" }, "2026-11-17"), { overdue: 0, thisMonth: 2 });
 assert.deepStrictEqual(R.dashboard([], {}, "2026-11-17"), { overdue: 0, thisMonth: 0 });
+assert.deepStrictEqual(R.dashboard([{ start: "2021-11-25", dates: { occupancy: "2025-12-01", insurance: "2026-06-01" } },   // anniversary on the 25th: this month
+                                    { start: "2026-02-01", dates: { occupancy: "", insurance: "" } },                       // a new owner: neither is due yet
+                                    { start: "2021-03-01", dates: { occupancy: "2025-03-05", insurance: "2026-06-01" } }], {}, "2026-11-17"),  // missed this year's: overdue
+                       { overdue: 1, thisMonth: 1 });
 """
 
 
@@ -107,6 +144,9 @@ def main():
         assert cols["occupancy"][a["field"][len(PREFIX) + 1:]]["kind"] == "date", a
     assert cols["occupancy"][out["contact"][len(PREFIX) + 1:]]["kind"] == "date"
     assert [a["key"] for a in out["activities"]] == ["occupancy", "insurance"], "walk-bys aren't a verification, so they aren't on the hub"
+    assert "f-activity" not in page and 'id="insrows"' in page and 'id="card"' in page and "R.lapsed(" in page and "data-card=" in page, "insurance has its own list, apart from occupancy verification"
+    assert "clt_startdate" in page and "clt_startdate" in open(os.path.join(web, "overview.html")).read(), "the anniversary needs the start date"
+    assert cols["occupancy"]["startdate"]["kind"] == "date"
     assert "Record</button>" not in page and "r-save" not in page, "nothing is recorded from the hub: it leads to the request pages"
     # in the app: the page is under Activities, the two new lists are under Stewardship, and the occupancy form shows them
     assert core.PAGES["regular"] == ("Verification hub", "clt_/pages/stewardship.html")
@@ -115,11 +155,13 @@ def main():
     for res in ("clt_/pages/stewardship.html", "clt_/pages/stewardship.js"):
         assert res in core.WEB_RESOURCES and res in stu.WEB_RESOURCES, res
     occ_form = str(core.FORMS["occupancy"])
-    for piece in ("lastoccupancyverified", "lastinsuranceverified", "lastwalkby", "lastcontact", "relationshipnote", "walkby", "followup", "improvementcredit"):
+    for piece in ("lastoccupancyverified", "lastinsuranceverified", "lastcontact", "relationshipnote", "walkby", "followup", "improvementcredit"):
         assert piece in occ_form, piece
     assert "walkby" in core.FORMS and "relationshipnote" in core.FORMS
     names = open(os.path.join(web, "names.js")).read()
-    assert "dated: dated" in names and all(f[2] == "CLT.Names.dated" for f in core.FORM_SCRIPTS["walkby"] + core.FORM_SCRIPTS["relationshipnote"])
+    assert "dated: dated" in names and "walkby: walkby" in names and all(f[2] == "CLT.Names.dated" for f in core.FORM_SCRIPTS["relationshipnote"])
+    assert all(f[2] == "CLT.Names.walkby" for f in core.FORM_SCRIPTS["walkby"]), "a walk-by is named after its property"
+    assert "lastwalkby" not in occ_form and "lastwalkby" in str(core.FORMS["property"]), "the last walk-by is on the property"
     guides = open(os.path.join(web, "guides.html")).read()
     assert 'id="regular"' in guides and "insurancepolicy" not in occ_form, "insurance policies are off the occupancy form"
     assert page.index('src="pages.js"') < page.index('src="stewardship.js"') < page.index("CLTRegular")

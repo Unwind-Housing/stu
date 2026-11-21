@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Stu in the wild</title>
+<link rel="stylesheet" href="pages.css">
+<script src="pages.js"></script>
+<script src="field.js"></script>
+<style>
+  /* Built for a phone held in one hand: one column, big targets. It works on a desk too. */
+  :root { --todo: #B42318; --todo-bg: #FDE8E6; --started: #9A5B00; --started-bg: #FFF4E0; --done: #1B7F3B; --done-bg: #E3F4E8; }
+  .field { max-width: 640px; margin: 0 auto; padding: 12px max(14px, env(safe-area-inset-right)) 96px max(14px, env(safe-area-inset-left)); font-size: 16px; }
+  .top { display: flex; align-items: center; gap: 10px; min-height: 48px; margin-bottom: 8px; }
+  .top h1 { font-size: 20px; font-weight: 600; margin: 0; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .top .back { font: inherit; font-size: 16px; color: var(--accent); background: none; border: 0; padding: 10px 6px 10px 0; cursor: pointer; }
+  .sub { color: var(--muted); margin: 0 0 14px; }
+  .big { display: block; width: 100%; text-align: left; font: inherit; color: inherit; background: var(--card); border: 1px solid var(--line);
+         border-left: 6px solid var(--brand); border-radius: 10px; padding: 18px 16px; margin-bottom: 12px; cursor: pointer; }
+  .big b { display: block; font-size: 18px; font-weight: 600; }
+  .big span { color: var(--muted); font-size: 14px; }
+  .big.alldone { border-left-color: var(--done); }
+  .homes { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+  .home { text-align: left; font: inherit; color: var(--ink); border: 1px solid var(--line); border-radius: 10px; padding: 14px 12px; min-height: 92px; cursor: pointer;
+          border-top: 6px solid var(--todo); background: var(--todo-bg); }
+  .home.started { border-top-color: var(--started); background: var(--started-bg); }
+  .home.done { border-top-color: var(--done); background: var(--done-bg); }
+  .home b { display: block; font-size: 16px; font-weight: 600; line-height: 1.25; }
+  .home span { display: block; font-size: 13px; color: var(--muted); margin-top: 2px; }
+  .home em { display: block; font-style: normal; font-size: 12.5px; font-weight: 600; margin-top: 6px; color: var(--todo); }
+  .home.started em { color: var(--started); } .home.done em { color: var(--done); }
+  .key { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; color: var(--muted); margin: 14px 0 0; }
+  .key i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+  .box { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin-bottom: 12px; }
+  .box h2 { margin: 0 0 8px; font-size: 15px; }
+  .box label { display: block; font-size: 14px; color: var(--muted); margin-bottom: 4px; }
+  .box textarea, .box input[type=date] { width: 100%; font: inherit; font-size: 16px; color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
+  .box textarea { min-height: 130px; line-height: 1.45; resize: vertical; }
+  .tickrow { display: flex; align-items: center; gap: 12px; min-height: 48px; font-size: 16px; color: var(--ink); cursor: pointer; }
+  .tickrow input { width: 26px; height: 26px; flex: 0 0 auto; }
+  .photobtns { display: flex; flex-wrap: wrap; gap: 10px; }
+  .photobtns label { flex: 1 1 140px; text-align: center; font-size: 16px; font-weight: 600; color: var(--ink); background: var(--bg); border: 1px solid var(--line);
+                     border-radius: 8px; padding: 14px 10px; margin: 0; cursor: pointer; }
+  .photobtns input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+  .thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; margin-top: 10px; }
+  .thumbs figure { margin: 0; position: relative; }
+  .thumbs img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); display: block; background: var(--bg); }
+  .thumbs button { position: absolute; top: 4px; right: 4px; width: 30px; height: 30px; border-radius: 15px; border: 0; background: rgba(0,0,0,.6); color: #fff; font-size: 18px; line-height: 1; cursor: pointer; }
+  .bar { position: fixed; left: 0; right: 0; bottom: 0; display: flex; gap: 10px; background: var(--card); border-top: 1px solid var(--line);
+         padding: 10px max(14px, env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left)); }
+  .bar button { flex: 1 1 0; font: inherit; font-size: 17px; font-weight: 600; min-height: 50px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--ink); cursor: pointer; }
+  .bar button.go { background: var(--done); border-color: var(--done); color: #fff; }
+  .bar button:disabled { opacity: .55; }
+  .plain { font: inherit; font-size: 16px; font-weight: 600; min-height: 48px; width: 100%; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--ink); cursor: pointer; }
+  .err { color: var(--todo); background: var(--todo-bg); border: 1px solid var(--todo); border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; }
+  .okmsg { color: var(--done); background: var(--done-bg); border: 1px solid var(--done); border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; }
+  .quiet { color: var(--muted); font-size: 14px; }
+  .pre { white-space: pre-wrap; margin: 0 0 8px; }
+</style>
+</head>
+<body>
+<div class="field">
+  <div class="top">
+    <button class="back" id="back" type="button" hidden></button>
+    <h1 id="title">Stu in the wild</h1>
+  </div>
+  <div id="note"></div>
+
+  <!-- the jobs -->
+  <div data-view="jobs">
+    <p class="sub">Work you do away from your desk.</p>
+    <button class="big" id="job-walkby" type="button"><b>Staff walk-by</b><span id="job-walkby-count">Loading...</span></button>
+  </div>
+
+  <!-- the neighborhoods -->
+  <div data-view="hoods" hidden>
+    <p class="sub">Choose a neighborhood.</p>
+    <div id="hoods"></div>
+  </div>
+
+  <!-- the homes in one neighborhood -->
+  <div data-view="homes" hidden>
+    <p class="sub" id="homes-count"></p>
+    <div class="homes" id="homes"></div>
+    <p class="key"><span><i style="background:var(--todo)"></i>To do</span><span><i style="background:var(--started)"></i>Saved, not submitted</span><span><i style="background:var(--done)"></i>Done</span></p>
+  </div>
+
+  <!-- one home -->
+  <div data-view="home" hidden>
+    <p class="sub" id="home-who"></p>
+    <div class="box" id="last" hidden></div>
+    <button class="plain" id="again" type="button" hidden>Start a new walk-by</button>
+    <div id="form">
+      <div class="box">
+        <label for="notes">Notes</label>
+        <textarea id="notes" placeholder="What you saw from the street: the yard, the outside of the home"></textarea>
+      </div>
+      <div class="box">
+        <label class="tickrow"><input id="follow" type="checkbox"> Needs a follow-up</label>
+        <div id="duebox" hidden><label for="due">Follow-up due</label><input id="due" type="date"></div>
+      </div>
+      <div class="box">
+        <div class="photobtns">
+          <label>Take a photo<input id="camera" type="file" accept="image/*" capture="environment"></label>
+          <label>Choose photos<input id="library" type="file" accept="image/*" multiple></label>
+        </div>
+        <div class="thumbs" id="thumbs"></div>
+      </div>
+      <div id="problems"></div>
+    </div>
+  </div>
+</div>
+
+<div class="bar" id="bar" hidden>
+  <button id="save" type="button" title="Keeps it and goes back to the neighborhood. You can add to it later.">Save</button>
+  <button id="submit" class="go" type="button" title="Finishes the walk-by. The home turns green.">Submit</button>
+</div>
+
+<script>
+(function () {
+  var P = CLTPage, F = CLTField, $ = function (id) { return document.getElementById(id); };
+  var fv = P.fv, sets = {}, ch = {}, org = {}, props = [], occs = [], walks = [], hoods = [];
+  var view = "jobs", hood = "", home = null, pending = [], kept = [], urls = [], busy = false;
+  var TABLES = ["clt_property", "clt_occupancy", "clt_walkby", "clt_walkbyphoto", "clt_followup"];
+
+  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+  function today() { var d = new Date(); return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2); }
+  function note(text, bad) { $("note").innerHTML = text ? '<div class="' + (bad ? "err" : "okmsg") + '">' + esc(text) + "</div>" : ""; }
+  function problems(items) { $("problems").innerHTML = items.length ? '<div class="err">' + items.map(esc).join("<br>") + "</div>" : ""; return items.length; }
+
+  // ---- loading
+  function load() {
+    return Promise.all([
+      P.getAll(sets.clt_property + "?$select=clt_propertyid,clt_name,clt_status,clt_lastwalkby,_clt_neighborhood_value&$filter=statecode eq 0"),
+      P.getAll(sets.clt_occupancy + "?$select=clt_occupancyid,_clt_property_value,_clt_household_value&$filter=statecode eq 0 and clt_status eq " + ch.occupancystatus.Current),
+      P.getAll(sets.clt_walkby + "?$select=clt_walkbyid,clt_date,clt_status,clt_notes,clt_followupneeded,clt_followupdue,_clt_property_value&$filter=statecode eq 0")
+    ]).then(function (r) {
+      props = r[0].map(function (p) { return { id: p.clt_propertyid, name: p.clt_name, status: fv(p, "clt_status"), neighborhood: fv(p, "_clt_neighborhood_value"), lastWalkBy: P.day(p.clt_lastwalkby) }; });
+      occs = r[1].map(function (o) { return { id: o.clt_occupancyid, property: o._clt_property_value, household: fv(o, "_clt_household_value") }; });
+      walks = r[2].map(function (w) { return { id: w.clt_walkbyid, property: w._clt_property_value, date: P.day(w.clt_date), status: fv(w, "clt_status"), notes: w.clt_notes || "",
+                                               followUp: !!w.clt_followupneeded, due: P.day(w.clt_followupdue) }; });
+      hoods = F.neighborhoods(props, occs, walks, org, today());
+    });
+  }
+
+  // ---- the screens
+  function show(v) {
+    view = v;
+    document.querySelectorAll("[data-view]").forEach(function (el) { el.hidden = el.dataset.view !== v; });
+    $("back").hidden = v === "jobs";
+    $("back").textContent = v === "hoods" ? "‹ Back" : v === "homes" ? "‹ Neighborhoods" : "‹ " + hood;
+    $("title").textContent = v === "jobs" ? "Stu in the wild" : v === "hoods" ? "Staff walk-by" : v === "homes" ? hood : home.name;
+    $("bar").hidden = v !== "home" || $("form").hidden;
+    window.scrollTo(0, 0);
+  }
+  function renderJobs() {
+    var all = [].concat.apply([], hoods.map(function (h) { return h.homes; })), todo = all.filter(function (h) { return h.state !== F.DONE; }).length;
+    $("job-walkby-count").textContent = all.length ? todo + " of " + all.length + " homes to do" : "There are no homes yet";
+  }
+  function renderHoods() {
+    $("hoods").innerHTML = hoods.length ? hoods.map(function (h, i) {
+      return '<button class="big' + (h.done === h.total ? " alldone" : "") + '" type="button" data-hood="' + i + '"><b>' + esc(h.name) + "</b><span>" + h.done + " of " + h.total + " done" +
+             (h.started ? " &middot; " + h.started + " saved" : "") + "</span></button>"; }).join("") : '<p class="quiet">There are no homes yet.</p>';
+  }
+  function renderHomes() {
+    var h = hoods.filter(function (x) { return x.name === hood; })[0] || { homes: [], done: 0, total: 0 };
+    $("homes-count").textContent = h.done + " of " + h.total + " done. Tap a home.";
+    $("homes").innerHTML = h.homes.map(function (x) {
+      return '<button class="home ' + (x.state === F.DONE ? "done" : x.state === F.STARTED ? "started" : "") + '" type="button" data-home="' + x.id + '"><b>' + esc(x.name) + "</b><span>" +
+             esc(x.household || "Empty") + "</span><em>" + (x.state === F.DONE ? "Done " + x.last : x.state === F.STARTED ? "Saved, not submitted" : x.last ? "Last " + x.last : "Not walked yet") + "</em></button>"; }).join("");
+  }
+  function free() { urls.forEach(function (u) { URL.revokeObjectURL(u); }); urls = []; }
+  function openHome(id) {
+    var h = [].concat.apply([], hoods.map(function (x) { return x.homes; })).filter(function (x) { return x.id === id; })[0];
+    if (!h) return;
+    home = h; pending = []; kept = []; free(); problems([]); note("");
+    var draft = h.draft && walks.filter(function (w) { return w.id === h.draft; })[0];
+    $("notes").value = draft ? draft.notes : ""; $("follow").checked = !!(draft && draft.followUp); $("due").value = (draft && draft.due) || today(); $("due").min = today();
+    $("duebox").hidden = !$("follow").checked;
+    $("home-who").textContent = (h.household || "Empty home") + (draft ? " · saved " + draft.date + ", not submitted yet" : "");
+    // the last submitted walk-by, with its photos on request
+    var last = walks.filter(function (w) { return w.property === h.id && w.status === F.SUBMITTED; }).sort(function (a, b) { return a.date < b.date ? 1 : -1; })[0];
+    $("last").hidden = !last;
+    if (last) $("last").innerHTML = "<h2>Last walk-by, " + esc(last.date) + "</h2>" + (last.notes ? '<p class="pre">' + esc(last.notes) + "</p>" : '<p class="quiet">No notes.</p>') +
+      (last.followUp ? '<p class="quiet">A follow-up was added.</p>' : "") + '<button class="plain" type="button" id="lastphotos" data-walkby="' + last.id + '">Show its photos</button><div class="thumbs" id="lastthumbs"></div>';
+    var fresh = h.state === F.DONE;   // already done for now: the form waits behind a button
+    $("again").hidden = !fresh; $("form").hidden = fresh;
+    show("home"); renderThumbs();
+    if (draft) photosOf(draft.id).then(function (list) { kept = list; renderThumbs(); }).catch(function () { /* the draft still opens */ });
+  }
+
+  // ---- photos
+  function photosOf(walkby) {
+    return P.getAll(sets.clt_walkbyphoto + "?$select=clt_walkbyphotoid,clt_name&$filter=statecode eq 0 and _clt_walkby_value eq " + walkby + "&$orderby=createdon asc").then(function (rows) {
+      return Promise.all(rows.map(function (p) {
+        return P.download(sets.clt_walkbyphoto + "(" + p.clt_walkbyphotoid + ")/clt_photo").then(function (blob) {
+          var u = URL.createObjectURL(new Blob([blob], { type: "image/jpeg" })); urls.push(u);
+          return { id: p.clt_walkbyphotoid, url: u };
+        }, function () { return { id: p.clt_walkbyphotoid, url: "" }; });
+      }));
+    });
+  }
+  function renderThumbs() {
+    $("thumbs").innerHTML = kept.map(function (p) { return '<figure><img alt="Photo" src="' + p.url + '"><button type="button" data-drop="' + p.id + '" title="Remove this photo">&times;</button></figure>'; }).join("") +
+      pending.map(function (p, i) { return '<figure><img alt="Photo" src="' + p.url + '"><button type="button" data-unpick="' + i + '" title="Remove this photo">&times;</button></figure>'; }).join("");
+  }
+  // A photo is shrunk on the phone before it is kept, so uploads are quick and storage stays small.
+  function shrink(file) {
+    return new Promise(function (ok, fail) {
+      var src = URL.createObjectURL(file), img = new Image();
+      img.onload = function () {
+        var size = F.fit(img.naturalWidth, img.naturalHeight), c = document.createElement("canvas");
+        c.width = size.w; c.height = size.h; c.getContext("2d").drawImage(img, 0, 0, size.w, size.h);
+        URL.revokeObjectURL(src);
+        c.toBlob(function (b) { if (b) ok(b); else fail(new Error("The photo couldn't be read.")); }, "image/jpeg", 0.8);
+      };
+      img.onerror = function () { URL.revokeObjectURL(src); fail(new Error("The photo couldn't be read.")); };
+      img.src = src;
+    });
+  }
+  function picked(input) {
+    var files = Array.prototype.slice.call(input.files || []);
+    input.value = "";
+    files.reduce(function (chain, f) {
+      return chain.then(function () { return shrink(f); }).then(function (b) { var u = URL.createObjectURL(b); urls.push(u); pending.push({ blob: b, url: u }); renderThumbs(); });
+    }, Promise.resolve()).catch(function (e) { problems([e.message + " Try taking it again."]); });
+  }
+  function named(blob, n) {
+    var name = "photo-" + n + ".jpg";
+    try { return new File([blob], name, { type: "image/jpeg" }); } catch (e) { blob.name = name; return blob; }
+  }
+
+  // ---- save and submit
+  // Save keeps the walk-by as a draft; Submit finishes it. Either way the walk-by is written first as a draft, then each
+  // new photo, so a failure part way loses nothing: what was sent is kept, and trying again sends only the rest.
+  // Submitting is the last step and one change set: the walk-by becomes Submitted, the property gets its date and the
+  // follow-up is added, all or none.
+  function save(submit) {
+    if (busy || !home || view !== "home") return;   // only ever for the home that is open
+    var inp = { notes: $("notes").value, followUp: $("follow").checked, due: $("due").value, photos: kept.length + pending.length };
+    if (problems(F.problems(inp, submit, today()))) return;
+    busy = true; $("save").disabled = $("submit").disabled = true; $(submit ? "submit" : "save").textContent = submit ? "Submitting..." : "Saving...";
+    var h = home, draft = h.draft && walks.filter(function (w) { return w.id === h.draft; })[0], date = draft ? draft.date : today();
+    var body = { clt_notes: inp.notes.trim() || null, clt_followupneeded: inp.followUp, clt_followupdue: inp.followUp ? inp.due : null,
+                 clt_status: ch.walkbystatus[F.DRAFT] };
+    var bind = function (b) {
+      b["clt_property@odata.bind"] = "/" + sets.clt_property + "(" + h.id + ")";
+      if (h.occupancy) b["clt_occupancy@odata.bind"] = "/" + sets.clt_occupancy + "(" + h.occupancy + ")";
+      return b;
+    };
+    var written;
+    if (h.draft) written = P.patch(sets.clt_walkby + "(" + h.draft + ")", body).then(function () { return h.draft; });
+    else {
+      body.clt_name = F.recordName(date, h.name); body.clt_date = date;
+      written = P.create(sets.clt_walkby, bind(body)).then(function (rec) {
+        h.draft = rec.clt_walkbyid;   // from here on, trying again brings this one up to date
+        walks.push({ id: h.draft, property: h.id, date: date, status: F.DRAFT, notes: inp.notes, followUp: inp.followUp, due: inp.due });
+        return h.draft;
+      });
+    }
+    written.then(function (id) {
+      var n = kept.length;
+      function next() {
+        if (!pending.length) return null;
+        var p = pending[0], body = { clt_name: "Photo " + (++n) };
+        body["clt_walkby@odata.bind"] = "/" + sets.clt_walkby + "(" + id + ")";
+        return P.create(sets.clt_walkbyphoto, body).then(function (rec) {
+          return P.upload(sets.clt_walkbyphoto + "(" + rec.clt_walkbyphotoid + ")/clt_photo", named(p.blob, n)).then(function () {
+            pending.shift(); kept.push({ id: rec.clt_walkbyphotoid, url: p.url }); return next();
+          }, function (e) { return P.del(sets.clt_walkbyphoto + "(" + rec.clt_walkbyphotoid + ")").catch(function () {}).then(function () { throw e; }); });
+        });
+      }
+      return Promise.resolve(next()).then(function () {
+        if (!submit) return null;
+        var ops = [{ method: "PATCH", path: sets.clt_walkby + "(" + id + ")", body: { clt_status: ch.walkbystatus[F.SUBMITTED] } }];
+        var prop = props.filter(function (p) { return p.id === h.id; })[0];
+        if (!prop.lastWalkBy || date > prop.lastWalkBy) ops.push({ method: "PATCH", path: sets.clt_property + "(" + h.id + ")", body: { clt_lastwalkby: date } });
+        if (inp.followUp) {
+          var f = bind({ clt_name: F.followUpName(inp.notes, h.name), clt_duedate: inp.due, clt_status: ch.followupstatus.Open, clt_notes: inp.notes.trim() });
+          f["clt_walkby@odata.bind"] = "/" + sets.clt_walkby + "(" + id + ")";
+          ops.push({ method: "POST", path: sets.clt_followup, body: f });
+        }
+        return P.batch(ops);
+      });
+    }).then(function () { return load(); }).then(function () {
+      done(); renderJobs(); renderHoods(); renderHomes(); show("homes");
+      note(submit ? h.name + ": walk-by submitted" + (inp.followUp ? ", and a follow-up added for " + inp.due + "." : ".") : h.name + ": saved. Open it again to add to it or submit it.");
+    }).catch(function (e) {
+      done(); renderThumbs();
+      problems(["Couldn't " + (submit ? "submit" : "save") + " it: " + e.message + " What you typed and the photos are still here. Check your signal and try again."]);
+    });
+  }
+  function done() { busy = false; $("save").disabled = $("submit").disabled = false; $("save").textContent = "Save"; $("submit").textContent = "Submit"; }
+  function dirty() {
+    var draft = home && home.draft && walks.filter(function (w) { return w.id === home.draft; })[0];
+    return !$("form").hidden && (pending.length > 0 || $("notes").value.trim() !== ((draft && draft.notes) || "").trim() || $("follow").checked !== !!(draft && draft.followUp));
+  }
+
+  // ---- events
+  $("job-walkby").addEventListener("click", function () { renderHoods(); show("hoods"); });
+  $("hoods").addEventListener("click", function (e) {
+    var b = e.target.closest("[data-hood]"); if (!b) return;
+    hood = hoods[+b.dataset.hood].name; renderHomes(); show("homes");
+  });
+  $("homes").addEventListener("click", function (e) { var b = e.target.closest("[data-home]"); if (b) openHome(b.dataset.home); });
+  $("back").addEventListener("click", function () {
+    note("");
+    if (view === "hoods") show("jobs");
+    else if (view === "homes") { renderHoods(); show("hoods"); }
+    else if (view === "home") {
+      (dirty() ? P.confirm("Leave without saving?", "What you typed and any new photos for this home will be lost.") : Promise.resolve(true))
+        .then(function (ok) { if (ok) { free(); renderHomes(); show("homes"); } });
+    }
+  });
+  $("follow").addEventListener("change", function () { $("duebox").hidden = !$("follow").checked; });
+  $("camera").addEventListener("change", function () { picked($("camera")); });
+  $("library").addEventListener("change", function () { picked($("library")); });
+  $("thumbs").addEventListener("click", function (e) {
+    var t = e.target;
+    if (t.dataset.unpick !== undefined) { pending.splice(+t.dataset.unpick, 1); renderThumbs(); }
+    else if (t.dataset.drop) {
+      P.confirm("Remove this photo?", "It is deleted from the walk-by.").then(function (ok) {
+        if (!ok) return;
+        return P.del(sets.clt_walkbyphoto + "(" + t.dataset.drop + ")").then(function () { kept = kept.filter(function (p) { return p.id !== t.dataset.drop; }); renderThumbs(); });
+      }).catch(function (err) { problems(["Couldn't remove the photo: " + err.message]); });
+    }
+  });
+  $("last").addEventListener("click", function (e) {
+    var t = e.target; if (t.id !== "lastphotos") return;
+    t.disabled = true; t.textContent = "Loading...";
+    photosOf(t.dataset.walkby).then(function (list) {
+      t.hidden = true;
+      $("lastthumbs").innerHTML = list.length ? list.map(function (p) { return '<figure><a href="' + p.url + '" target="_blank" rel="noopener"><img alt="Photo" src="' + p.url + '"></a></figure>'; }).join("")
+                                              : '<p class="quiet">No photos were taken.</p>';
+    }).catch(function (err) { t.disabled = false; t.textContent = "Show its photos"; problems(["Couldn't load the photos: " + err.message]); });
+  });
+  $("again").addEventListener("click", function () { $("again").hidden = true; $("form").hidden = false; $("bar").hidden = false; });
+  $("save").addEventListener("click", function () { save(false); });
+  $("submit").addEventListener("click", function () { save(true); });
+
+  Promise.all([P.brand(), P.choice("clt_occupancystatus"), P.choice("clt_walkbystatus"), P.choice("clt_followupstatus")].concat(TABLES.map(P.entitySet)))
+    .then(function (r) {
+      org = r[0] || {}; ch = { occupancystatus: r[1], walkbystatus: r[2], followupstatus: r[3] };
+      TABLES.forEach(function (t, i) { sets[t] = r[4 + i]; });
+      return load();
+    }).then(function () { renderJobs(); })
+    .catch(function (e) { $("job-walkby-count").textContent = "Couldn't load"; note("Couldn't load: " + e.message, true); });
+})();
+</script>
+</body>
+</html>

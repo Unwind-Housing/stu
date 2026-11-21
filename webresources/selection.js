@@ -236,6 +236,8 @@ var CLTSelection = (function () {
   // review (once the full application is in): "Certified", "Not certified" or "To review", from the application's stage.
   // A household counts as invited once any of its list entries has an invited date. state: late | waiting | in.
   // Late ones come first, then the ones waiting (soonest due first), then the ones whose application is in.
+  // A household that has dropped out after being invited (it said no, or never answered) is shown as that, last, and
+  // isn't waited for: state "out".
   function dashboard(apps, entries, today) {
     var day = function (d) { return d ? String(d).slice(0, 10) : ""; }, t = day(today);
     var between = function (a, b) { return Math.round((new Date(b + "T00:00:00Z") - new Date(a + "T00:00:00Z")) / 86400000); };
@@ -246,8 +248,9 @@ var CLTSelection = (function () {
       listed[e.applicationId] = 1;
       if (!e.invitedOn) return;
       var row = rows.filter(function (r) { return r.applicationId === e.applicationId; })[0];
-      if (!row) { row = { applicationId: e.applicationId, lists: [], invitedOn: day(e.invitedOn), due: day(e.responseDue) }; rows.push(row); }
+      if (!row) { row = { applicationId: e.applicationId, lists: [], invitedOn: day(e.invitedOn), due: day(e.responseDue), statuses: [] }; rows.push(row); }
       row.lists.push({ bedrooms: e.bedrooms, rank: e.rank });
+      row.statuses.push({ status: e.status || "", date: day(e.statusDate), reason: e.statusReason || "" });
       if (day(e.invitedOn) < row.invitedOn) row.invitedOn = day(e.invitedOn);
       if (day(e.responseDue) && (!row.due || day(e.responseDue) < row.due)) row.due = day(e.responseDue);
     });
@@ -256,6 +259,8 @@ var CLTSelection = (function () {
       r.submittedOn = day(by[r.applicationId].fullAppSubmitted);
       var stage = by[r.applicationId].stage;
       r.review = !r.submittedOn ? "" : stage === "Certified" ? "Certified" : stage === "Not eligible" ? "Not certified" : "To review";
+      var gone = r.statuses.length > 0 && r.statuses.every(function (s) { return OUT.indexOf(s.status) >= 0; }), last = r.statuses[0]; delete r.statuses;
+      if (gone) { r.state = "out"; r.days = 0; r.review = ""; r.out = last.status; r.reason = last.reason; r.text = last.status + (last.date ? " " + last.date : ""); return; }
       if (r.submittedOn) { r.state = "in"; r.days = 0; r.text = "Submitted " + r.submittedOn; return; }
       if (!r.due) { r.state = "waiting"; r.days = 0; r.text = "Not yet (no due date)"; return; }
       r.days = between(t, r.due);
@@ -263,17 +268,54 @@ var CLTSelection = (function () {
       r.text = r.days < 0 ? "Overdue by " + (-r.days) + (r.days === -1 ? " day" : " days")
              : r.days === 0 ? "Not yet, due today" : "Not yet, " + r.days + (r.days === 1 ? " day left" : " days left");
     });
-    var order = { late: 0, waiting: 1, "in": 2 };
+    var order = { late: 0, waiting: 1, "in": 2, out: 3 };
     rows.sort(function (x, y) {
-      return order[x.state] - order[y.state] || (x.state === "in" ? (x.submittedOn < y.submittedOn ? -1 : 1) : (x.due || "9999") < (y.due || "9999") ? -1 : (x.due || "9999") > (y.due || "9999") ? 1 : 0);
+      return order[x.state] - order[y.state] || (x.state === "in" || x.state === "out" ? (x.submittedOn < y.submittedOn ? -1 : x.submittedOn > y.submittedOn ? 1 : 0) : (x.due || "9999") < (y.due || "9999") ? -1 : (x.due || "9999") > (y.due || "9999") ? 1 : 0);
     });
     var n = function (state) { return rows.filter(function (r) { return r.state === state; }).length; };
     return { figures: { applications: active.length, eligible: active.filter(function (a) { return a.result === "Eligible for selection"; }).length,
-                        listed: Object.keys(listed).length, invited: rows.length, submitted: n("in"), waiting: n("waiting"), late: n("late"),
+                        listed: Object.keys(listed).length, invited: rows.length, submitted: n("in"), waiting: n("waiting"), late: n("late"), out: n("out"),
                         certified: rows.filter(function (r) { return r.review === "Certified"; }).length,
                         notCertified: rows.filter(function (r) { return r.review === "Not certified"; }).length,
                         toReview: rows.filter(function (r) { return r.review === "To review"; }).length },
              invited: rows };
+  }
+
+  // ---------------------------------------------------------------- a household drops out
+  // An invited household says no (Declined), or never answers (Unresponsive). Every one of its entries on the project's
+  // lists takes that status, so it is no longer waited for, and the next household on each of those lists can be invited.
+  var OUT = ["Declined", "Unresponsive", "Removed", "Withdrawn"], DROPS = ["Declined", "Unresponsive"];
+  // The entries to change: all of the household's that aren't out already. -> [entry id]
+  function dropPlan(applicationId, entries) {
+    return (entries || []).filter(function (e) { return e.applicationId === applicationId && OUT.indexOf(e.status) < 0; }).map(function (e) { return e.id; });
+  }
+  // Putting a household back: an entry that had been invited is Invited again, the rest go back on the waitlist. -> [{ id, status }]
+  function restorePlan(applicationId, entries) {
+    return (entries || []).filter(function (e) { return e.applicationId === applicationId && DROPS.indexOf(e.status) >= 0; })
+      .map(function (e) { return { id: e.id, status: e.invitedOn ? "Invited" : "Waitlist" }; });
+  }
+  // Who is next on each list the household was on: the best-ranked entry still on the waitlist and not invited.
+  // -> [{ bedrooms, uniqueId, rank }], smallest home first. A list with nobody left has no line.
+  function nextUp(applicationId, entries) {
+    var sizes = {};
+    (entries || []).forEach(function (e) { if (e.applicationId === applicationId) sizes[e.bedrooms] = 1; });
+    return Object.keys(sizes).map(Number).sort(function (a, b) { return a - b; }).map(function (size) {
+      var left = (entries || []).filter(function (e) {
+        return e.bedrooms === size && e.applicationId !== applicationId && e.status === "Waitlist" && !e.invitedOn && !blank(e.rank);
+      }).sort(function (a, b) { return a.rank - b.rank; })[0];
+      return left ? { bedrooms: size, uniqueId: left.uniqueId || "", rank: left.rank } : null;
+    }).filter(Boolean);
+  }
+  // "Next on the 2 bedrooms list: ID-0012 (rank 4), not invited yet."
+  function nextText(next) {
+    return (next || []).map(function (n) { return "Next on the " + sizeName(n.bedrooms).toLowerCase() + " list: " + n.uniqueId + " (rank " + n.rank + "), not invited yet."; }).join(" ");
+  }
+  // The household's own status after it drops out: back to Applicant when it was only Invited, and isn't being worked
+  // on in another project. Anything else (certified, a homeowner) is left alone. -> the new status, or "" for no change
+  function householdAfterDrop(status, busyElsewhere) { return status === "Invited to full application" && !busyElsewhere ? "Applicant" : ""; }
+  // ... and after it is put back: Invited again, when dropping out had made it an Applicant and it has an invitation again.
+  function householdAfterRestore(status, restored) {
+    return status === "Applicant" && (restored || []).some(function (r) { return r.status === "Invited"; }) ? "Invited to full application" : "";
   }
 
   // ---------------------------------------------------------------- where the project is in the process
@@ -321,7 +363,8 @@ var CLTSelection = (function () {
       if (s.id === "invite" && at >= 4) state = "byhand";
       var summary = s.summary;
       if (s.id === "invite" && at >= 4 && f.invited) summary = plural(f.invited.invited, "household") + " invited, " + f.invited.submitted + " full " +
-        (f.invited.submitted === 1 ? "application" : "applications") + " in" + (f.invited.late ? ", " + f.invited.late + " past their date" : "") + ".";
+        (f.invited.submitted === 1 ? "application" : "applications") + " in" + (f.invited.late ? ", " + f.invited.late + " past their date" : "") +
+        (f.invited.out ? ", " + f.invited.out + " dropped out" : "") + ".";
       if (s.id === "review") {
         var v = f.invited || {};
         state = at >= 4 && v.submitted ? (v.toReview ? "byhand" : "done") : "waiting";
@@ -339,7 +382,8 @@ var CLTSelection = (function () {
               checkNumber: checkNumber, checkNumbers: checkNumbers, checkText: checkText,
               parseRoll: parseRoll, seedOf: seedOf, generator: generator, draw: draw,
               rankBySubmission: rankBySubmission, listsEndOn: listsEndOn, listsDocument: listsDocument,
-              resultsDocument: resultsDocument, dashboard: dashboard, progress: progress };
+              resultsDocument: resultsDocument, dashboard: dashboard, progress: progress, OUT: OUT, DROPS: DROPS, dropPlan: dropPlan,
+              restorePlan: restorePlan, nextUp: nextUp, nextText: nextText, householdAfterDrop: householdAfterDrop, householdAfterRestore: householdAfterRestore };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   return api;
 })();

@@ -28,20 +28,22 @@ PAGES = {
     "overview": ("Stewardship Dashboard", "clt_/pages/overview.html"),
     "guides":   ("How-to guides", "clt_/pages/guides.html"),
     "regular":  ("Verification hub", "clt_/pages/stewardship.html"),
+    "field":    ("Stu in the wild", "clt_/pages/field.html"),
     "insurance": ("Insurance verification", "clt_/pages/insurance.html"),
     "resale":   ("Resale", "clt_/pages/resale.html"),
+    "aftersale": ("After the sale", "clt_/pages/aftersale.html"),
     "verify":   ("Occupancy verification", "clt_/pages/verify.html"),
 }
 
 # Navigation: (group title, [table or "page:<id>", ...])
 NAVIGATION = [
-    ("Start here",  ["page:overview", "page:regular", "page:guides"]),
-    ("Activities",  ["page:verify", "page:insurance", "page:resale"]),
+    ("Start here",  ["page:overview", "page:regular", "page:field", "page:guides"]),
+    ("Activities",  ["page:verify", "page:insurance", "page:resale", "page:aftersale"]),
     ("Portfolio",   ["property", "occupancy", "sale", "loan", "improvementcredit"]),
     ("People",      ["household"]),
-    ("Stewardship", ["followup", "annualverification", "insuranceverification", "insurancepolicy", "walkby", "relationshipnote", "homeownerrequest"]),
+    ("Stewardship", ["followup", "annualverification", "insuranceverification", "insurancepolicy", "walkby", "walkbyphoto", "relationshipnote", "homeownerrequest"]),
     ("Finance",     ["fee", "errrtransaction", "errrreconciliation"]),
-    ("Settings",    ["listitem", "formsubmission", "sourceform"]),
+    ("Settings",    ["listitem", "aftersaletask", "formsubmission", "sourceform"]),
 ]
 
 # ---------------------------------------------------------------------------
@@ -120,6 +122,11 @@ VIEWS = [
     v("sale", None, [("recordnumber", 90), ("name", 200), ("property", 160), ("saletype", 120), ("status", 90),
                      ("contractdate", 100), ("closingdate", 100), ("purchaseprice", 120)],
       sort=("closingdate", True), default=True),
+    v("aftersaletask", None, [("order", 70), ("name", 300), ("action", 200), ("appliesto", 130)], sort=("order", False), default=True),
+    v("saletask", None, [("name", 280), ("sale", 200), ("status", 100), ("donedate", 100)], sort=("order", False), default=True),
+    v("salefunding", None, [("name", 220), ("sale", 200), ("type", 110), ("amount", 110), ("interestrate", 110)], default=True),
+    v("saleoffer", None, [("name", 220), ("sale", 200), ("household", 160), ("status", 110), ("offeredon", 110), ("responsedue", 110), ("respondedon", 110)],
+      sort=("offeredon", True), default=True),
     v("sale", "Pending sales", [("name", 200), ("property", 160), ("selleroccupancy", 160),
                                 ("buyerhousehold", 160), ("closingdate", 100), ("maxpriceatsale", 120),
                                 ("purchaseprice", 120)],
@@ -134,13 +141,15 @@ VIEWS = [
                       ("payment", 110), ("startdate", 100), ("enddate", 100)], default=True),
     v("insuranceverification", None, [("name", 240), ("occupancy", 200), ("status", 120), ("date", 100), ("verifieddate", 100)],
       sort=("date", True), default=True),
-    v("followup", None, [("name", 260), ("occupancy", 200), ("duedate", 100), ("status", 90), ("donedate", 100)], sort=("duedate", False), default=True),
-    v("followup", "Open follow-ups", [("name", 260), ("occupancy", 200), ("duedate", 100)], sort=("duedate", False), filters=[("status", "eq", "Open")],
+    v("followup", None, [("name", 260), ("property", 180), ("occupancy", 200), ("duedate", 100), ("status", 90), ("donedate", 100)], sort=("duedate", False), default=True),
+    v("followup", "Open follow-ups", [("name", 260), ("property", 180), ("occupancy", 200), ("duedate", 100)], sort=("duedate", False), filters=[("status", "eq", "Open")],
       desc="Follow-ups that haven't been done yet, soonest first"),
     v("improvementcredit", None, [("name", 220), ("occupancy", 200), ("originalvalue", 120), ("valuedate", 100), ("depreciationyears", 110), ("?currentvalue", 120)],
       default=True),
-    v("walkby", None, [("name", 240), ("occupancy", 200), ("date", 100), ("result", 130)],
+    v("walkby", None, [("name", 240), ("property", 180), ("occupancy", 200), ("date", 100), ("status", 100), ("followupneeded", 120)],
       sort=("date", True), default=True),
+    v("walkbyphoto", None, [("name", 160), ("walkby", 300)], default=True),
+    v("propertyphoto", None, [("name", 160), ("property", 260), ("flyer", 130)], default=True),
     v("relationshipnote", None, [("name", 240), ("occupancy", 200), ("date", 100), ("method", 110)],
       sort=("date", True), default=True),
     v("insurancepolicy", None, [("name", 180), ("occupancy", 180), ("carrier", 130), ("coveragea", 120),
@@ -189,6 +198,10 @@ def spdocs(parent, rows=10):
     return {"subgrid": True, "sharepoint": True, "label": "Documents", "child": "sharepointdocument",
             "lookup": None, "relationship": f"clt_{parent}_SharePointDocuments", "rows": rows}
 
+def page(label, webresource, rows=8):
+    """A page (web resource) shown on the form. It gets the record's id and table name in its address."""
+    return {"page": True, "label": label, "webresource": webresource, "rows": rows}
+
 def tab(label, *columns):
     return (label, list(columns))
 
@@ -199,7 +212,8 @@ FORMS = {
             tab("Overview",
                 [("Property", ["!recordnumber", "street", "unit", "city", "state", "county", "zip", "neighborhood",
                                "!name", "apn"]),
-                 ("Details", ["propertytype", "bedrooms", "bathrooms", "squarefeet", "yearbuilt", "acquisitiondate"])],
+                 ("Details", ["propertytype", "bedrooms", "bathrooms", "squarefeet", "yearbuilt", "acquisitiondate"]),
+                 ("Photos", [page("Photos", "clt_/pages/photos.html", rows=9)])],
                 [("Program", ["status", "tenuretype", "amitarget", "currentoccupancy"]),
                  ("Replacement cost", ["replacementcost", "replacementcostdate"]),
                  ("Notes", ["notes"])]),
@@ -207,7 +221,10 @@ FORMS = {
                 [("Occupancies", [sub("Occupancies", "occupancy", "property", "property")]),
                  ("Sales", [sub("Sales", "sale", "property", "property", rows=4)])]),
             tab("Stewardship",
-                [("Homeowner requests", [sub("Homeowner requests", "homeownerrequest", "property", "property")])]),
+                [("Walk-by history", ["!lastwalkby", page("Walk-by history", "clt_/pages/walkbys.html", rows=14)])],
+                [("Staff walk-bys", [sub("Staff walk-bys", "walkby", "property", "property", rows=4)]),
+                 ("Follow-ups", [sub("Follow-ups", "followup", "property", "property", rows=4)]),
+                 ("Homeowner requests", [sub("Homeowner requests", "homeownerrequest", "property", "property")])]),
             tab("ERRR and fees",
                 [("ERRR balance", ["?errrbalance", "?errrincreases", "?errrdecreases"]),
                  ("ERRR ledger", [sub("ERRR transactions", "errrtransaction", "property", "property", rows=10)])],
@@ -263,7 +280,7 @@ FORMS = {
                  ("Improvement credits", [sub("Improvement credits", "improvementcredit", "occupancy", "occupancy", rows=4)]),
                  ("Loans from the organization", [sub("Loans", "loan", "occupancy", "occupancy", rows=3)])]),
             tab("Stewardship",
-                [("Last done (blank counts as overdue)", ["lastoccupancyverified", "lastinsuranceverified", "lastwalkby", "lastcontact"]),
+                [("Last done (blank counts as overdue)", ["lastoccupancyverified", "lastinsuranceverified", "lastcontact"]),
                  ("Annual verifications", [sub("Annual verifications", "annualverification", "occupancy", "occupancy", rows=5)]),
                  ("Insurance verifications", [sub("Insurance verifications", "insuranceverification", "occupancy", "occupancy", rows=4)])],
                 [("Follow-ups", [sub("Follow-ups", "followup", "occupancy", "occupancy", rows=4)]),
@@ -281,12 +298,12 @@ FORMS = {
 
     "insuranceverification": dict(
         header=["status", "date", "verifieddate"],
-        tabs=[tab("General", [("Insurance verification", ["occupancy", "status", "method", "date", "duedate", "sentdate", "sentto", "contactrequested", "documentslink", "verifieddate", "replacementcoverage", "annualverification", "!sentlink", "!name"])],
+        tabs=[tab("General", [("Insurance verification", ["occupancy", "status", "method", "date", "duedate", "sentdate", "sentto", "contactrequested", "verifieddate", "replacementcoverage", "!sentlink", "!name"])],
                   [("Notes", ["notes"])])]),
 
     "followup": dict(
         header=["status", "duedate"],
-        tabs=[tab("General", [("Follow-up", ["name", "occupancy", "duedate", "status", "donedate"])], [("Notes", ["notes"])])]),
+        tabs=[tab("General", [("Follow-up", ["name", "property", "occupancy", "duedate", "status", "donedate", "walkby"])], [("Notes", ["notes"])])]),
 
     "improvementcredit": dict(
         header=["originalvalue", "?currentvalue"],
@@ -294,8 +311,19 @@ FORMS = {
                   [("Notes", ["notes"])])]),
 
     "walkby": dict(
-        header=["date", "result"],
-        tabs=[tab("General", [("Walk-by", ["occupancy", "date", "result", "!name"])], [("Notes", ["notes"])])]),
+        header=["date", "status"],
+        tabs=[tab("General",
+                  [("Walk-by", ["property", "occupancy", "date", "status", "!name"]),
+                   ("Follow-up", ["followupneeded", "followupdue", sub("Follow-ups", "followup", "walkby", "walkby", rows=2)])],
+                  [("Notes", ["notes"]),
+                   ("Photos", [page("Photos", "clt_/pages/walkbys.html", rows=10)])])]),
+
+    "propertyphoto": dict(
+        header=["property", "flyer"],
+        tabs=[tab("General", [("Photo", ["name", "property", "flyer"])])]),
+    "walkbyphoto": dict(
+        header=["walkby"],
+        tabs=[tab("General", [("Photo", ["name", "walkby"])])]),
 
     "relationshipnote": dict(
         header=["date", "method"],
@@ -306,8 +334,8 @@ FORMS = {
         tabs=[
             tab("General",
                 [("Verification", ["name", "occupancy", "year", "duedate", "method", "status", "sentdate", "receiveddate"])],
-                [("Findings", ["primaryresidence", "rentalstatus", "tenantdetails", "insurancereceived"]),
-                 ("From the online form", ["peopleinhome", "noshorttermrental", "insurancecurrent", "insurancecontact", "mortgagecontact", "signeddate", "phone", "uploadslink"]),
+                [("Findings", ["primaryresidence", "rentalstatus", "tenantdetails"]),
+                 ("From the online form", ["peopleinhome", "noshorttermrental", "mortgagecontact", "signeddate", "phone"]),
                  ("Form", ["verificationcode", "sentto", "!sentlink", "formlink", "formentryid"]),
                  ("Notes", ["notes"])]),
         ]),
@@ -340,14 +368,32 @@ FORMS = {
         tabs=[
             tab("Sale",
                 [("1. Property", ["!recordnumber", "name", "property", "saletype", "selleroccupancy", "noticedate"]),
+                 ("Offers", [sub("Offers", "saleoffer", "sale", "sale", rows=3)]),
                  ("2. Buyer and contract", ["buyerhousehold", "contractdate", "purchaseprice", "lender",
                                             "titlecompany"]),
-                 ("3. Closing", ["closingdate", "status", "buyeroccupancy"])],
+                 ("How the purchase price is made up", [sub("Purchase funding", "salefunding", "sale", "sale", rows=4)]),
+                 ("3. Closing", ["closingdate", "closingcosts", "status", "buyeroccupancy"]),
+                 ("After the sale", [sub("Sale tasks", "saletask", "sale", "sale", rows=5)])],
                 [("Resale price (set on the Resale page)", ["formulapriceatsale", "creditsatsale", "maxpriceatsale",
                                                             "appraisedvalue"]),
                  ("Seller's side", ["subsidyrecapture", "loanpayoff", "othercredits", "othercreditsnote", "otherdebits", "otherdebitsnote"]),
                  ("Notes", ["notes"])]),
         ]),
+
+    "aftersaletask": dict(
+        header=["order", "appliesto"],
+        tabs=[tab("General", [("After-sale task", ["name", "order", "action", "appliesto"])], [("Details", ["details"])])]),
+
+    "saletask": dict(
+        header=["status", "donedate"],
+        tabs=[tab("General", [("Sale task", ["name", "sale", "status", "donedate", "action", "order"])], [("Details", ["details"]), ("Notes", ["notes"])])]),
+
+    "saleoffer": dict(
+        header=["status", "responsedue"],
+        tabs=[tab("General", [("Offer", ["sale", "household", "offeredon", "responsedue", "status", "respondedon", "reason", "sentto", "!name"])])]),
+    "salefunding": dict(
+        header=["type", "amount"],
+        tabs=[tab("General", [("Purchase funding", ["sale", "type", "amount", "interestrate", "notes", "!name"])])]),
 
     "propertyfunding": dict(
         header=["funder", "targetami", "covenantend"],
@@ -420,6 +466,10 @@ WEB_RESOURCES = {
     "clt_/pages/pages.js":      "webresources/pages.js",
     "clt_/pages/overview.html": "webresources/overview.html",
     "clt_/pages/guides.html":   "webresources/guides.html",
+    "clt_/pages/field.html":       "webresources/field.html",
+    "clt_/pages/field.js":         "webresources/field.js",
+    "clt_/pages/walkbys.html":     "webresources/walkbys.html",
+    "clt_/pages/photos.html":      "webresources/photos.html",
     "clt_/pages/stewardship.html": "webresources/stewardship.html",
     "clt_/pages/stewardship.js":   "webresources/stewardship.js",
     "clt_/pages/verify.html":      "webresources/verify.html",
@@ -428,6 +478,9 @@ WEB_RESOURCES = {
     "clt_/pages/insurancecheck.js": "webresources/insurancecheck.js",
     "clt_/pages/resale.html":      "webresources/resale.html",
     "clt_/pages/resale.js":        "webresources/resale.js",
+    "clt_/pages/pdf.js": "webresources/pdf.js",   # the Resale page makes the home's flyer with it
+    "clt_/pages/aftersale.html":   "webresources/aftersale.html",
+    "clt_/pages/aftersale.js":     "webresources/aftersale.js",
     "clt_/pages/loan.js":          "webresources/loan.js",
 }
 # table -> [(event, field or None, function)]. Events: onload, onsave, onchange (needs a field).
@@ -441,7 +494,7 @@ FORM_SCRIPTS = {
     "loan":            [("onchange", "startingbalance", "CLT.Loans.fill"), ("onchange", "interestrate", "CLT.Loans.fill"),
                         ("onchange", "startdate", "CLT.Loans.fill"), ("onchange", "enddate", "CLT.Loans.fill")],
     "insuranceverification": [("onchange", "date", "CLT.Names.dated"), ("onchange", "occupancy", "CLT.Names.dated"), ("onsave", None, "CLT.Names.dated")],
-    "walkby":          [("onchange", "date", "CLT.Names.dated"), ("onchange", "occupancy", "CLT.Names.dated"), ("onsave", None, "CLT.Names.dated")],
+    "walkby":          [("onchange", "date", "CLT.Names.walkby"), ("onchange", "property", "CLT.Names.walkby"), ("onsave", None, "CLT.Names.walkby")],
     "relationshipnote": [("onchange", "date", "CLT.Names.dated"), ("onchange", "occupancy", "CLT.Names.dated"), ("onsave", None, "CLT.Names.dated")],
     "household":       [("onload", None, "CLT.Names.household"), ("onload", None, "CLT.Tips.documents")],
 }
