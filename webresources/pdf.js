@@ -7,6 +7,8 @@
 //   blocks: { h: "Heading" } | { p: "Paragraph", bold, size } | { gap: points }
 //         | { table: { columns: [{ label, width, align: "right" }], rows: [[...]] } }      width in points
 //         | { sign: ["Board Observer", "Staff"] }                                          signature lines
+//         | { image: { jpeg: bytes (one character per byte), width, height }, maxHeight }  a JPEG photo, in color,
+//             scaled to fit the page's width and maxHeight (default 250 points) and never enlarged past its own size
 var CLTPdf = (function () {
   var W = 612, H = 792, MARGIN = 54, BOTTOM = 64;   // US Letter, 3/4 inch margins, room for the page number
   // Helvetica's character widths (thousandths of the font size) for the characters from space to ~.
@@ -43,7 +45,7 @@ var CLTPdf = (function () {
   function n(x) { return String(Math.round(x * 100) / 100); }
 
   function make(doc) {
-    var pages = [], ops = [], y = H - MARGIN;
+    var pages = [], ops = [], y = H - MARGIN, images = [];
     function text(s, x, yy, size, bold) { ops.push("BT /F" + (bold ? 2 : 1) + " " + size + " Tf " + n(x) + " " + n(yy) + " Td " + literal(s) + " Tj ET"); }
     function rule(x1, yy, x2, weight) { ops.push(n(weight || 0.5) + " w " + n(x1) + " " + n(yy) + " m " + n(x2) + " " + n(yy) + " l S"); }
     function page() { if (ops.length) pages.push(ops); ops = []; y = H - MARGIN; }
@@ -55,6 +57,16 @@ var CLTPdf = (function () {
     if (doc.title) { para(doc.title, 16, true, 4); }
     (doc.blocks || []).forEach(function (b) {
       if (b.gap) { y -= b.gap; return; }
+      if (b.image) {
+        var im = b.image, iw = +im.width, ih = +im.height;
+        if (!im.jpeg || !(iw > 0) || !(ih > 0)) return;   // nothing usable: the page goes on without it
+        var k = Math.min((W - 2 * MARGIN) / iw, (b.maxHeight || 250) / ih, 1), dw = iw * k, dh = ih * k;
+        need(dh + 8); y -= dh;
+        images.push(im);
+        ops.push("q " + n(dw) + " 0 0 " + n(dh) + " " + n(MARGIN) + " " + n(y) + " cm /Im" + images.length + " Do Q");
+        y -= 8;
+        return;
+      }
       if (b.h) { need(40); y -= 10; para(b.h, 12, true, 2); return; }
       if (b.p !== undefined) { para(b.p, b.size || 10, b.bold, 3); return; }
       if (b.sign) {
@@ -102,10 +114,17 @@ var CLTPdf = (function () {
     objs[1] = "<< /Type /Catalog /Pages 2 0 R >>";
     objs[3] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>";
     objs[4] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>";
+    // pictures come after the pages; every page can use any of them
+    var firstImage = 5 + pages.length * 2;
+    var xobjects = images.length ? " /XObject << " + images.map(function (im, j) { return "/Im" + (j + 1) + " " + (firstImage + j) + " 0 R"; }).join(" ") + " >>" : "";
+    images.forEach(function (im, j) {
+      objs[firstImage + j] = "<< /Type /XObject /Subtype /Image /Width " + Math.round(im.width) + " /Height " + Math.round(im.height) +
+        " /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length " + im.jpeg.length + " >>\nstream\n" + im.jpeg + "\nendstream";
+    });
     pages.forEach(function (p, i) {
       var stream = p.join("\n"), pageNo = 5 + i * 2;
       kids.push(pageNo + " 0 R");
-      objs[pageNo] = "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 " + W + " " + H + "] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents " + (pageNo + 1) + " 0 R >>";
+      objs[pageNo] = "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 " + W + " " + H + "] /Resources << /Font << /F1 3 0 R /F2 4 0 R >>" + xobjects + " >> /Contents " + (pageNo + 1) + " 0 R >>";
       objs[pageNo + 1] = "<< /Length " + stream.length + " >>\nstream\n" + stream + "\nendstream";
     });
     objs[2] = "<< /Type /Pages /Kids [" + kids.join(" ") + "] /Count " + pages.length + " >>";

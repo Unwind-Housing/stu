@@ -191,7 +191,7 @@ FORMS = {
                    ("Monthly housing cost by home size (what the pre-screen tests against)", ["monthlycoststudio", "monthlycost1br", "monthlycost2br", "monthlycost3br", "monthlycost4br"])])]),
     "projecthome": dict(
         header=["bedrooms", "status", "estimatedprice"],
-        tabs=[tab("General", [("Home", ["name", "project", "property", "bedrooms", "status"])],
+        tabs=[tab("General", [("Home", ["name", "project", "property", "bedrooms", "status", "sale"])],
                   [("Price and monthly housing cost",
                     ["estimatedprice", "principalinterest", "propertytaxes", "insurance", "hoadues", "leasefee",
                      "reservefee", "estimatedmonthlycost", "targetami"])])]),

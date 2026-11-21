@@ -149,6 +149,7 @@ VIEWS = [
     v("walkby", None, [("name", 240), ("property", 180), ("occupancy", 200), ("date", 100), ("status", 100), ("followupneeded", 120)],
       sort=("date", True), default=True),
     v("walkbyphoto", None, [("name", 160), ("walkby", 300)], default=True),
+    v("propertyphoto", None, [("name", 160), ("property", 260), ("flyer", 130)], default=True),
     v("relationshipnote", None, [("name", 240), ("occupancy", 200), ("date", 100), ("method", 110)],
       sort=("date", True), default=True),
     v("insurancepolicy", None, [("name", 180), ("occupancy", 180), ("carrier", 130), ("coveragea", 120),
@@ -211,7 +212,8 @@ FORMS = {
             tab("Overview",
                 [("Property", ["!recordnumber", "street", "unit", "city", "state", "county", "zip", "neighborhood",
                                "!name", "apn"]),
-                 ("Details", ["propertytype", "bedrooms", "bathrooms", "squarefeet", "yearbuilt", "acquisitiondate"])],
+                 ("Details", ["propertytype", "bedrooms", "bathrooms", "squarefeet", "yearbuilt", "acquisitiondate"]),
+                 ("Photos", [page("Photos", "clt_/pages/photos.html", rows=9)])],
                 [("Program", ["status", "tenuretype", "amitarget", "currentoccupancy"]),
                  ("Replacement cost", ["replacementcost", "replacementcostdate"]),
                  ("Notes", ["notes"])]),
@@ -316,6 +318,9 @@ FORMS = {
                   [("Notes", ["notes"]),
                    ("Photos", [page("Photos", "clt_/pages/walkbys.html", rows=10)])])]),
 
+    "propertyphoto": dict(
+        header=["property", "flyer"],
+        tabs=[tab("General", [("Photo", ["name", "property", "flyer"])])]),
     "walkbyphoto": dict(
         header=["walkby"],
         tabs=[tab("General", [("Photo", ["name", "walkby"])])]),
@@ -464,6 +469,7 @@ WEB_RESOURCES = {
     "clt_/pages/field.html":       "webresources/field.html",
     "clt_/pages/field.js":         "webresources/field.js",
     "clt_/pages/walkbys.html":     "webresources/walkbys.html",
+    "clt_/pages/photos.html":      "webresources/photos.html",
     "clt_/pages/stewardship.html": "webresources/stewardship.html",
     "clt_/pages/stewardship.js":   "webresources/stewardship.js",
     "clt_/pages/verify.html":      "webresources/verify.html",

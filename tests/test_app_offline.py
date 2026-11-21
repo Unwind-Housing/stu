@@ -238,8 +238,10 @@ def main():
     assert 'datafieldname="clt_neighborhood"' in prop_form["formxml"]
     # a page on a form: the web resource control, handed the record's id
     pages = [c for c in ET.fromstring(prop_form["formxml"]).iter("control") if c.get("classid") == "{9FDF5F91-88B1-47f4-AD53-C11EFC01A01D}"]
-    assert len(pages) == 1 and pages[0].get("id").startswith("WebResource_") and pages[0].get("datafieldname") is None
-    assert pages[0].find("parameters/Url").text == "clt_/pages/walkbys.html" and pages[0].find("parameters/PassParameters").text == "true"
+    # two of them on the property form: the home's photos and its walk-by history, each with its own id
+    assert len(pages) == 2 and len({c.get("id") for c in pages}) == 2 and all(c.get("id").startswith("WebResource_") and c.get("datafieldname") is None for c in pages)
+    assert sorted(c.find("parameters/Url").text for c in pages) == ["clt_/pages/photos.html", "clt_/pages/walkbys.html"]
+    assert all(c.find("parameters/PassParameters").text == "true" for c in pages)
     assert any(v.get("name") == "List: Neighborhood" for v in fake.views.values())
     assert 'name="clt_neighborhood"' in next(v for v in fake.views.values() if v.get("name") == "Properties by neighborhood")["layoutxml"]
     # Documents tab shows the SharePoint folder on Property, Household and Occupancy

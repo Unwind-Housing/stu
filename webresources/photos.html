@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Photos</title>
+<link rel="stylesheet" href="pages.css">
+<script src="pages.js"></script>
+<script src="field.js"></script>
+<script src="resale.js"></script>
+<style>
+  /* Shown on the property form: the home's photos. One of them goes on the sales flyer. */
+  html, body { background: var(--card); }
+  .wrap { padding: 4px 2px 12px; }
+  .quiet { color: var(--muted); font-size: 12.5px; margin: 0 0 8px; }
+  .bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 10px; }
+  .thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 10px; }
+  .thumbs figure { margin: 0; position: relative; }
+  .thumbs img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); display: block; background: var(--bg); cursor: zoom-in; }
+  .thumbs figure.flyer img { outline: 3px solid var(--accent); outline-offset: -1px; }
+  .thumbs figcaption { display: flex; gap: 6px; align-items: center; justify-content: space-between; margin-top: 4px; font-size: 12px; }
+  .thumbs figcaption button { font: inherit; font-size: 12px; padding: 2px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); cursor: pointer; }
+  .thumbs figcaption .on { color: var(--accent); font-weight: 600; }
+  .big { position: fixed; inset: 0; background: rgba(0,0,0,.85); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 12px; z-index: 5; }
+  .big img { max-width: 100%; max-height: calc(100% - 56px); object-fit: contain; border-radius: 4px; }
+  .big button { font: inherit; color: #fff; background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.5); border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="bar" id="bar" hidden>
+    <label class="btn">Add photos <input id="pick" type="file" accept="image/*" multiple hidden></label>
+    <span class="quiet" id="msg" style="margin:0"></span>
+  </div>
+  <p class="quiet" id="note">Loading...</p>
+  <div class="thumbs" id="thumbs"></div>
+</div>
+<div class="big" id="big" hidden><img id="bigimg" alt="Photo"><button type="button" id="bigclose">Close</button></div>
+
+<script>
+(function () {
+  var P = CLTPage, F = CLTField, R = CLTResale, $ = function (id) { return document.getElementById(id); };
+  var rec = F.formRecord(location.search), set = "", propertySet = "", photos = [], urls = {}, busy = false, LIMIT = 12;
+
+  function say(text, err) { $("msg").textContent = text || ""; $("msg").style.color = err ? "#B42318" : ""; }
+  function load() {
+    return P.getAll(set + "?$select=clt_propertyphotoid,clt_name,clt_flyer,createdon&$filter=statecode eq 0 and _clt_property_value eq " + rec.id + "&$orderby=createdon asc").then(function (rows) {
+      photos = rows.map(function (p) { return { id: p.clt_propertyphotoid, name: p.clt_name || "Photo", flyer: !!p.clt_flyer, created: p.createdon }; });
+      render();
+      // each picture is fetched as the signed-in user, one after another
+      return photos.reduce(function (chain, p) {
+        if (urls[p.id]) return chain;
+        return chain.then(function () { return P.download(set + "(" + p.id + ")/clt_photo"); }).then(function (blob) {
+          urls[p.id] = URL.createObjectURL(new Blob([blob], { type: "image/jpeg" }));
+          var img = document.querySelector('img[data-id="' + p.id + '"]'); if (img) img.src = urls[p.id];
+        }, function () { /* a photo that can't be read shows as an empty frame */ });
+      }, Promise.resolve());
+    });
+  }
+  function render() {
+    var on = R.flyerPhoto(photos);
+    $("note").textContent = photos.length ? photos.length + (photos.length === 1 ? " photo. " : " photos. ") + "The one outlined goes on the sales flyer. Select a photo to see it larger."
+                                          : "No photos yet. Add some: the first one goes on the sales flyer.";
+    $("thumbs").innerHTML = photos.map(function (p) {
+      var flyer = on && on.id === p.id;
+      return '<figure class="' + (flyer ? "flyer" : "") + '"><img alt="Photo" data-id="' + p.id + '"' + (urls[p.id] ? ' src="' + urls[p.id] + '"' : "") + "><figcaption>" +
+        (flyer ? '<span class="on">On the flyer</span>' : '<button type="button" data-flyer="' + p.id + '">Use on the flyer</button>') +
+        '<button type="button" data-drop="' + p.id + '" title="Delete this photo">Delete</button></figcaption></figure>';
+    }).join("");
+  }
+  // A photo is shrunk before it is kept, so uploads are quick and storage stays small.
+  function shrink(file) {
+    return new Promise(function (ok, fail) {
+      var src = URL.createObjectURL(file), img = new Image();
+      img.onload = function () {
+        var size = F.fit(img.naturalWidth, img.naturalHeight), c = document.createElement("canvas");
+        c.width = size.w; c.height = size.h; c.getContext("2d").drawImage(img, 0, 0, size.w, size.h);
+        URL.revokeObjectURL(src);
+        c.toBlob(function (b) { if (b) ok(b); else fail(new Error("The photo couldn't be read.")); }, "image/jpeg", 0.8);
+      };
+      img.onerror = function () { URL.revokeObjectURL(src); fail(new Error("That file isn't a picture this browser can read.")); };
+      img.src = src;
+    });
+  }
+  function add(files) {
+    var list = Array.prototype.slice.call(files), n = photos.length;
+    if (!list.length || busy) return;
+    if (n + list.length > LIMIT) { say("A home can have up to " + LIMIT + " photos here. Delete some first, or add fewer.", true); return; }
+    busy = true;
+    function next() {
+      var f = list.shift();
+      if (!f) return null;
+      say("Adding photo " + (n + 1) + "...");
+      return shrink(f).then(function (blob) {
+        var body = { clt_name: "Photo " + (++n), clt_flyer: false };
+        body["clt_property@odata.bind"] = "/" + propertySet + "(" + rec.id + ")";
+        return P.create(set, body).then(function (made) {
+          var file; try { file = new File([blob], "photo-" + n + ".jpg", { type: "image/jpeg" }); } catch (e) { file = blob; file.name = "photo-" + n + ".jpg"; }
+          return P.upload(set + "(" + made.clt_propertyphotoid + ")/clt_photo", file)
+            .then(null, function (e) { return P.del(set + "(" + made.clt_propertyphotoid + ")").catch(function () {}).then(function () { throw e; }); });
+        });
+      }).then(next);
+    }
+    Promise.resolve().then(next).then(function () { say("Added."); }, function (e) { say("Couldn't add a photo: " + e.message, true); })
+      .then(function () { busy = false; $("pick").value = ""; return load(); });
+  }
+
+  $("pick").addEventListener("change", function () { add($("pick").files); });
+  $("thumbs").addEventListener("click", function (e) {
+    var t = e.target;
+    if (t.dataset.flyer) {
+      // one photo is on the flyer: this one, and no other
+      var ops = photos.filter(function (p) { return p.flyer && p.id !== t.dataset.flyer; }).map(function (p) { return { method: "PATCH", path: set + "(" + p.id + ")", body: { clt_flyer: false } }; });
+      ops.push({ method: "PATCH", path: set + "(" + t.dataset.flyer + ")", body: { clt_flyer: true } });
+      P.batch(ops).then(function () { say("That photo goes on the flyer now."); return load(); }, function (err) { say("Couldn't change it: " + err.message, true); });
+    } else if (t.dataset.drop) {
+      P.confirm("Delete this photo?", "It is removed from the home's record. This can't be undone.").then(function (yes) {
+        if (!yes) return;
+        return P.del(set + "(" + t.dataset.drop + ")").then(function () { say("Deleted."); return load(); });
+      }).catch(function (err) { say("Couldn't delete it: " + err.message, true); });
+    } else if (t.tagName === "IMG" && t.src) { $("bigimg").src = t.src; $("big").hidden = false; }
+  });
+  $("bigclose").addEventListener("click", function () { $("big").hidden = true; });
+  $("big").addEventListener("click", function (e) { if (e.target.id === "big") $("big").hidden = true; });
+
+  if (!rec.id) { $("note").textContent = "Save the property first. Photos can be added once it has been saved."; return; }
+  Promise.all([P.entitySet("clt_propertyphoto"), P.entitySet("clt_property")]).then(function (r) {
+    set = r[0]; propertySet = r[1]; $("bar").hidden = false;
+    return load();
+  }).catch(function (e) { $("note").textContent = "Couldn't load the photos: " + e.message; });
+})();
+</script>
+</body>
+</html>

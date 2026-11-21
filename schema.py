@@ -645,6 +645,14 @@ TABLES = [
          columns=[
              file("photo", "Photo", "The picture, as a JPG.", max_kb=10240),
          ]),
+    dict(name="propertyphoto", label="Property photo", plural="Property photos",
+         primary_required=False,  # name is filled by the Photos page on the property form
+         desc="A photo of a home. Added on the property's Photos section, which shrinks it first. One of a home's photos goes on its sales flyer.",
+         primary=("Photo", "For example: Photo 1"),
+         columns=[
+             file("photo", "Photo", "The picture, as a JPG.", max_kb=10240),
+             bool_("flyer", "On the sales flyer", "The one photo of the home that goes on its flyer. With none marked, the first photo is used."),
+         ]),
     dict(name="relationshipnote", label="Relationship note", plural="Relationship notes",
          primary_required=False,  # name is filled by the form script (webresources/names.js) or the Verification hub page
          desc="A note staff add each time they are in contact with a household about its home.",
@@ -1174,6 +1182,7 @@ LOOKUPS = [
     ("walkby",            "property",        "property",         "Property",             "Cascade",    True),
     ("walkby",            "occupancy",       "occupancy",        "Occupancy",            "RemoveLink", False),
     ("walkbyphoto",       "walkby",          "walkby",           "Staff walk-by",        "Cascade",    True),
+    ("propertyphoto",     "property",        "property",         "Property",             "Cascade",    True),
     ("insuranceverification", "occupancy",   "occupancy",        "Occupancy",            "Cascade",    True),
     ("followup",          "occupancy",       "occupancy",        "Occupancy",            "RemoveLink", False),
     ("followup",          "property",        "property",         "Property",             "Cascade",    False),
@@ -1229,6 +1238,8 @@ LOOKUPS = [
     ("project",           "reuseround",      "selectionround",   "Reuse list from round","RemoveLink", False),
     # the resale this project is finding the buyer for (set when the project is started from the Resale page)
     ("project",           "sale",            "sale",             "Resale",               "RemoveLink", False),
+    # the sale of one home in a project that isn't a resale (set when its sale is started from the Project workflow page)
+    ("projecthome",       "sale",            "sale",             "Sale",                 "RemoveLink", False),
     ("selectionround",    "project",         "project",          "Project",              "Restrict",   True),
     ("selectionround",    "drawnby",         "systemuser",       "Drawn by",             "RemoveLink", False),
     ("selectionentry",    "round",           "selectionround",   "Selection round",      "Cascade",    True),

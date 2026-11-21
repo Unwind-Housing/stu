@@ -316,7 +316,14 @@ var CLTResale = (function () {
               "respond by": longDate(o.due), organization: o.organization };
     return { to: o.email || "", subject: fill(String(t.subject || "").trim() || OFFER_DEFAULT.subject, v), body: fill(t.body, v) };
   }
+  // The photo of the home that goes on its flyer: the one marked for it, else the first one added. -> the photo, or null
+  //   photos: [{ id, flyer, created }]
+  function flyerPhoto(photos) {
+    var list = (photos || []).slice().sort(function (a, b) { return String(a.created || "") < String(b.created || "") ? -1 : String(a.created || "") > String(b.created || "") ? 1 : 0; });
+    return list.filter(function (p) { return p.flyer; })[0] || list[0] || null;
+  }
   // The one-page flyer for the home, as a document for CLTPdf.make (pdf.js).
+  //   h.photo (optional): { jpeg: the picture's bytes, width, height }, placed at the top
   //   h: { home, address, bedrooms, bathrooms, squareFeet, yearBuilt, price, due, organization,
   //        monthly: { principalInterest, taxes, insurance, hoa, leaseFee, reserveFee, total } (any of them, from the project) }
   function flyer(h) {
@@ -325,6 +332,7 @@ var CLTResale = (function () {
                  has(h.bathrooms) ? num(h.bathrooms) + (num(h.bathrooms) === 1 ? " bathroom" : " bathrooms") : "",
                  has(h.squareFeet) ? Number(num(h.squareFeet)).toLocaleString("en-US") + " square feet" : "", has(h.yearBuilt) ? "built " + num(h.yearBuilt) : ""].filter(Boolean);
     var blocks = [];
+    if (h.photo && h.photo.jpeg) blocks.push({ gap: 4 }, { image: h.photo, maxHeight: 270 });
     if (h.address && h.address !== h.home) blocks.push({ p: h.address });
     if (facts.length) blocks.push({ p: facts.join(", ") + "." });
     if (has(h.price)) blocks.push({ gap: 6 }, { p: "Sale price: " + dollars0(h.price), bold: true, size: 14 });
@@ -342,7 +350,22 @@ var CLTResale = (function () {
     return { title: h.home || "A home for you", footer: (h.organization ? h.organization + ", " : "") + (h.home || ""), blocks: blocks };
   }
 
-  function saleName(property, date) { return ((property || "Home") + " resale " + iso(date).slice(0, 4)).slice(0, 100); }
+  // The first sale of a home (new construction, or a home the organization bought): there is no seller, so no seller's
+  // steps. Its price comes from the project. Everything from the offer on is the same as a resale.
+  var FIRST = "Initial sale", RESALE = "Resale";
+  function stepsFor(type) { return type === FIRST ? STEPS.filter(function (s) { return s.key !== "start" && s.key !== "price"; }) : STEPS; }
+  // The project's certified households that can still be offered a home: not one that is out of the running, and not
+  // one already offered, or matched to, another home (mine: the household this sale's own offer is with).
+  //   buyers: [{ id, ... }]; prio: from priorities()
+  function available(buyers, prio, mine) {
+    return (buyers || []).filter(function (b) {
+      var p = (prio || {})[b.id];
+      if (!p || b.id === mine) return true;
+      return OUT_OF_RUNNING.indexOf(p.status) < 0 && p.status !== OFFERED && p.status !== ACCEPTED;
+    });
+  }
+  // "12 Pine St resale 2026"; a first sale is "111 Maple Ct sale 2026"
+  function saleName(property, date, type) { return ((property || "Home") + (type === FIRST ? " sale " : " resale ") + iso(date).slice(0, 4)).slice(0, 100); }
   // "Rivera - 12 Pine St" from a household named "Rivera" or "Rivera, Maria"
   function occupancyName(household, property) { return (String(household || "").split(",")[0].trim() + " - " + (property || "")).slice(0, 100); }
 
@@ -364,7 +387,7 @@ var CLTResale = (function () {
   //        values: { current, past, owner, closed, homeowner, pastHomeowner, ownerOccupied } }
   function closing(d) {
     var s = d.sets, v = d.values, at = iso(d.closingDate);
-    var occ = newTerms(d.seller, d.price, at, d.appraised);
+    var occ = newTerms(d.seller || {}, d.price, at, d.appraised), selling = d.seller && d.seller.clt_occupancyid;
     occ.clt_name = occupancyName(d.buyerHouseholdName, d.propertyName);
     occ.clt_role = v.owner; occ.clt_status = v.current; occ.clt_startdate = at;
     occ["clt_property@odata.bind"] = "/" + s.clt_property + "(" + d.propertyId + ")";
@@ -372,12 +395,13 @@ var CLTResale = (function () {
     var ops = [
       { method: "POST", path: s.clt_occupancy, body: occ },
       { method: "PATCH", path: s.clt_sale + "(" + d.saleId + ")", body: { clt_status: v.closed, clt_closingdate: at, "clt_buyeroccupancy@odata.bind": "$1" } },
-      { method: "PATCH", path: s.clt_occupancy + "(" + d.seller.clt_occupancyid + ")", body: { clt_status: v.past, clt_enddate: at } },
       { method: "PATCH", path: s.clt_property + "(" + d.propertyId + ")", body: { clt_status: v.ownerOccupied, "clt_currentoccupancy@odata.bind": "$1" } },
       { method: "PATCH", path: s.clt_household + "(" + d.buyerHouseholdId + ")", body: { clt_status: v.homeowner } }
     ];
+    // A resale ends the seller's occupancy (a first sale has none). It goes third, where it has always been.
+    if (selling) ops.splice(2, 0, { method: "PATCH", path: s.clt_occupancy + "(" + d.seller.clt_occupancyid + ")", body: { clt_status: v.past, clt_enddate: at } });
     // The seller becomes a past homeowner, unless they still own another home in the program.
-    if (d.sellerHouseholdId && !d.sellerHasOtherHome) {
+    if (selling && d.sellerHouseholdId && !d.sellerHasOtherHome) {
       ops.push({ method: "PATCH", path: s.clt_household + "(" + d.sellerHouseholdId + ")", body: { clt_status: v.pastHomeowner } });
     }
     return ops;
@@ -385,10 +409,10 @@ var CLTResale = (function () {
 
   var api = { pending: pending, OFFERED: OFFERED, ACCEPTED: ACCEPTED, DECLINED: DECLINED, NO_RESPONSE: NO_RESPONSE, WITHDRAWN: WITHDRAWN, ANSWERS: ANSWERS, OFFER_DAYS: OFFER_DAYS,
               offerDue: offerDue, offers: offers, nextToOffer: nextToOffer, offerName: offerName, entryStatus: entryStatus, OFFER_DEFAULT: OFFER_DEFAULT, OFFER_FIELDS: OFFER_FIELDS,
-              offerEmail: offerEmail, flyer: flyer, longDate: longDate, priorities: priorities, priorityText: priorityText, byPriority: byPriority, ahead: ahead, FUNDING_TYPES: FUNDING_TYPES, LOAN: LOAN, fundingLines: fundingLines, fundingTotal: fundingTotal, fundingProblems: fundingProblems, fundingWarnings: fundingWarnings,
+              offerEmail: offerEmail, flyer: flyer, flyerPhoto: flyerPhoto, longDate: longDate, priorities: priorities, priorityText: priorityText, byPriority: byPriority, ahead: ahead, FUNDING_TYPES: FUNDING_TYPES, LOAN: LOAN, fundingLines: fundingLines, fundingTotal: fundingTotal, fundingProblems: fundingProblems, fundingWarnings: fundingWarnings,
               fundingName: fundingName, fundingSummary: fundingSummary, statementProblem: statementProblem, usd: usd,
               STEPS: STEPS, COPIED: COPIED, num: num, loansOwed: loansOwed, creditValue: creditValue, creditsTotal: creditsTotal, improvements: improvements, buyerGroups: buyerGroups, figures: figures, check: check, warnings: warnings,
-              progress: progress, saleName: saleName, occupancyName: occupancyName, newTerms: newTerms, closing: closing };
+              progress: progress, FIRST: FIRST, RESALE: RESALE, stepsFor: stepsFor, available: available, saleName: saleName, occupancyName: occupancyName, newTerms: newTerms, closing: closing };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   return api;
 })();

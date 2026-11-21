@@ -78,6 +78,29 @@ var CLTJourney = (function () {
     return all;
   }
 
+  // Selling the homes of a project that isn't a resale: each home has its own sale, walked on the sale page from the
+  // offer to the closing.
+  //   homes: [{ id, name, price, status, sale: its sale's id (or "") }]
+  //   sales: { sale id: { next: the step it is waiting on, closed, cancelled, closedOn, buyer, offeredTo } }
+  //   certified: how many households the project has certified
+  // -> [{ id, name, price, sale, state: "wait" | "start" | "open" | "sold", line, button }], homes in name order
+  function homesToSell(homes, sales, certified) {
+    var name = function (h) { return String(h.name || "").toLowerCase(); };
+    return (homes || []).slice().sort(function (a, b) { return name(a) < name(b) ? -1 : name(a) > name(b) ? 1 : 0; }).map(function (h) {
+      var s = h.sale ? (sales || {})[h.sale] : null, row = { id: h.id, name: h.name || "", price: h.price, sale: s && !s.cancelled ? h.sale : "" };
+      if (!s || s.cancelled) {
+        row.state = certified > 0 ? "start" : "wait";
+        row.line = certified > 0 ? "Not started" : "Waiting for a certified household";
+        row.button = certified > 0 ? "Start the sale" : "";
+      } else if (s.closed) { row.state = "sold"; row.line = "Sold" + (s.buyer ? " to " + s.buyer : "") + (s.closedOn ? ", closed " + s.closedOn : ""); row.button = "Open"; }
+      else {
+        row.state = "open"; row.button = "Continue";
+        row.line = (s.next || "In progress") + (s.buyer ? ": " + s.buyer + " is the buyer" : s.offeredTo ? ": offered to " + s.offeredTo : "");
+      }
+      return row;
+    });
+  }
+
   // Every project with where it stands, by name; the ones that aren't closed first.
   //   projects: [{ id, name, status }]; apps: [{ project, tested, eligible }]; rounds: [{ project, status, created }];
   //   invited: [{ project }]; certified: [{ project }]
@@ -124,7 +147,7 @@ var CLTJourney = (function () {
     });
   }
 
-  var api = { STEPS: STEPS, OVERVIEW: OVERVIEW, step: step, next: next, track: track, whole: whole, RESALE_PAGE: RESALE_PAGE, standing: standing, inProgress: inProgress, bar: bar };
+  var api = { STEPS: STEPS, OVERVIEW: OVERVIEW, step: step, next: next, track: track, whole: whole, homesToSell: homesToSell, RESALE_PAGE: RESALE_PAGE, standing: standing, inProgress: inProgress, bar: bar };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   return api;
 })();

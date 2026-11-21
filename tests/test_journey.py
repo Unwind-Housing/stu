@@ -61,6 +61,17 @@ assert.deepStrictEqual(all.map(p => [p.id, p.next && p.next.key]), [["p1", "sele
 assert.deepStrictEqual(all[0].facts, { status: "Planning", applications: 2, untested: 0, eligible: 1, round: "", invited: 0, certified: 1 });
 assert.strictEqual(J.OVERVIEW, "clt_/pages/project.html");
 
+// ---- selling the homes of a project that isn't a resale: one sale per home
+const homes = [{ id: "b", name: "113 Maple Ct", price: 262000, sale: "s2" }, { id: "a", name: "111 Maple Ct", price: 250000, sale: "" }, { id: "c", name: "115 Maple Ct", price: 262000, sale: "s3" },
+               { id: "d", name: "117 Maple Ct", price: 270000, sale: "s4" }, { id: "e", name: "119 Maple Ct", price: 270000, sale: "s5" }];
+const their = { s2: { next: "The household's answer", offeredTo: "Rivera" }, s3: { closed: true, buyer: "Chen", closedOn: "2026-11-10" }, s4: { cancelled: true }, s5: { next: "Closing", buyer: "Okafor" } };
+assert.deepStrictEqual(J.homesToSell(homes, their, 3).map(h => [h.id, h.state, h.line, h.button, h.sale]), [
+  ["a", "start", "Not started", "Start the sale", ""], ["b", "open", "The household's answer: offered to Rivera", "Continue", "s2"],
+  ["c", "sold", "Sold to Chen, closed 2026-11-10", "Open", "s3"], ["d", "start", "Not started", "Start the sale", ""], ["e", "open", "Closing: Okafor is the buyer", "Continue", "s5"]],
+  "in address order; a cancelled sale can be started again");
+assert.deepStrictEqual(J.homesToSell(homes.slice(1, 2), {}, 0).map(h => [h.state, h.line, h.button]), [["wait", "Waiting for a certified household", ""]], "nobody certified yet: nothing to start");
+assert.deepStrictEqual(J.homesToSell([], {}, 2), []);
+
 // ---- a project that is finding a resale's buyer: one track, the resale's steps around the project's, one step next
 const w = (f, sale) => J.whole(f, sale).map(s => s.key + ":" + s.state[0]).join(" ");
 const none = { start: true }, priced = { start: true, price: true };
@@ -120,7 +131,7 @@ def main():
     assert "page:resale" not in dict(areas["Stewardship"])["Activities"] and "page:aftersale" in dict(areas["Stewardship"])["Activities"]
     assert "page:resale" in dict(core.NAVIGATION)["Activities"], "a Stewardship-only app keeps Resale"
     assert stu.NAVIGATION == [g for _, groups in stu.AREAS for g in groups]
-    for piece in ('id="landing"', 'id="track"', "J.standing(", "J.whole(", "CLTResale.progress(", "_clt_sale_value", '"sale=" + $("track").dataset.sale', 'get("data")', "Do this next", "data-step=", "data-open=", "clt_invitedon ne null", '"Eligible for selection"', '"Certified"'):
+    for piece in ('id="sell"', "J.homesToSell(", "function startSale(", "CLTResale.FIRST", "data-start=", "clt_maxpriceatsale: h.clt_estimatedprice || 0", 'id="landing"', 'id="track"', "J.standing(", "J.whole(", "CLTResale.progress(", "_clt_sale_value", '"sale=" + $("track").dataset.sale', 'get("data")', "Do this next", "data-step=", "data-open=", "clt_invitedon ne null", '"Eligible for selection"', '"Certified"'):
         assert piece in flow, piece
     assert "Eligible for selection" in CHOICES["prescreenresult"][1] and "Certified" in CHOICES["certificationstatus"][1]
     p = subprocess.run([node, "-e", "new Function(require('fs').readFileSync(0, 'utf8'))"], input=re.findall(r"<script>(.*?)</script>", flow, re.S)[-1], capture_output=True, text=True)
